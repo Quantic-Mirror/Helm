@@ -1,0 +1,5073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Helm</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230D1117'/%3E%3Cpath d='M9 6h14a2 2 0 0 1 2 2v18l-9-5-9 5V8a2 2 0 0 1 2-2z' fill='%2358A6FF'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0D1117">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0D1117;
+  --surface: #161B22;
+  --surface-2: #21262D;
+  --surface-3: #2D333B;
+  --border: #30363D;
+  --border-hover: #58A6FF;
+  --text: #F0F6FC;
+  --text-muted: #8B949E;
+  --text-dim: #484F58;
+  --accent: #58A6FF;
+  --accent-dim: rgba(88,166,255,0.12);
+  --green: #3FB950;
+  --green-dim: rgba(63,185,80,0.12);
+  --red: #F85149;
+  --amber: #E3B341;
+  --radius: 8px;
+  --font-display: 'Sora', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* TOP BAR */
+#topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(13,17,23,0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  height: 56px;
+}
+
+#topbar h1 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#topbar h1 span {
+  width: 22px; height: 22px;
+  background: var(--accent);
+  border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; line-height: 1;
+}
+
+#search-wrap {
+  flex: 1;
+  min-width: 120px;
+  max-width: 260px;
+  position: relative;
+}
+
+#search {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 7px 12px 7px 34px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+#search:focus { border-color: var(--accent); }
+#search-icon {
+  position: absolute; left: 10px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted); pointer-events: none;
+  font-size: 14px;
+}
+
+#topbar-actions { display: flex; gap: 4px; margin-left: auto; align-items: center; flex-shrink: 0; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn:hover { border-color: var(--accent); background: var(--surface-2); }
+.btn-group { display: flex; gap: 3px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #0D1117; }
+.btn.primary:hover { background: #79BBFF; border-color: #79BBFF; }
+.btn.danger { border-color: var(--red); color: var(--red); }
+.btn.danger:hover { background: rgba(248,81,73,0.1); }
+
+/* LAYOUT — masonry grid via CSS columns */
+#main {
+  padding: 20px 24px;
+  min-height: calc(100vh - 56px);
+}
+
+#grid {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.grid-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Each folder is a card that breaks-inside cleanly */
+.folder-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.folder-card:hover { border-color: var(--border); } /* cards don't highlight, rows do */
+
+.folder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+.folder-header:active { cursor: grabbing; }
+.folder-card.col-dragging { opacity: 0.4; }
+.folder-card.col-drag-over { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.col-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.column-title {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: none;
+  outline: none;
+  cursor: text;
+  flex: 1;
+  min-width: 0;
+}
+.column-title:focus { color: var(--text); }
+
+.col-count {
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+.col-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.folder-card:hover .col-actions { opacity: 1; }
+
+.icon-btn {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+  transition: background 0.12s, color 0.12s;
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn.danger:hover { color: var(--red); }
+
+/* BOOKMARK ROWS — no card border, just rows inside the folder card */
+.bookmarks-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.bookmark-card {
+  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  position: relative;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+.bookmark-card:last-child { border-bottom: none; }
+.bookmark-card:hover { background: var(--surface-2); }
+.bookmark-card.dragging { opacity: 0.4; }
+
+.bm-favicon {
+  width: 14px; height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.bm-favicon-fallback {
+  width: 14px; height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  background: var(--surface-3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px;
+  color: var(--text-dim);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.bm-title {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.bm-actions {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+}
+.bookmark-card:hover .bm-actions { opacity: 1; }
+
+/* ADD COLUMN BUTTON */
+#add-col-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  transition: border-color 0.15s, color 0.15s;
+  align-self: start;
+}
+#add-col-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ADD BOOKMARK BUTTON */
+.add-bm-btn {
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-top: 1px dashed var(--border);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: var(--font-body);
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.add-bm-btn:hover { color: var(--green); background: var(--green-dim); }
+
+/* MODAL */
+#modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+#modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+}
+
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.field { margin-bottom: 14px; }
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.field input, .field select {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 8px 11px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.field select option { background: var(--surface-2); }
+
+.modal-footer {
+  display: flex; gap: 8px; justify-content: flex-end;
+  margin-top: 20px;
+}
+
+
+/* EXPAND / COLLAPSE */
+.expand-btn {
+  width: 100%;
+  padding: 5px;
+  border-radius: var(--radius);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: var(--font-body);
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  transition: color 0.15s, background 0.15s;
+  margin-top: 2px;
+}
+.expand-btn:hover { color: var(--accent); background: var(--accent-dim); }
+.expand-btn.collapse:hover { color: var(--text-muted); }
+/* SEARCH HIGHLIGHT */
+.bm-title mark { background: rgba(88,166,255,0.25); color: var(--text); border-radius: 2px; }
+
+/* EMPTY STATE */
+.empty-state {
+  text-align: center;
+  padding: 24px 12px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.empty-state svg { margin-bottom: 8px; opacity: 0.3; }
+
+/* DRAG GHOST */
+.drop-zone {
+  min-height: 8px;
+  border-radius: var(--radius);
+  transition: background 0.1s, min-height 0.1s;
+}
+.drop-zone.active {
+  background: rgba(88,166,255,0.08);
+  min-height: 36px;
+  border: 1px dashed var(--accent);
+}
+
+/* TAGS PALETTE */
+.tag-palette {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 8px;
+}
+.tag-chip {
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: border-color 0.12s;
+}
+.tag-chip.selected { border-color: var(--text); }
+
+/* TOAST */
+#toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text);
+  z-index: 300;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+
+/* SEARCH CLEAR */
+#search-clear {
+  position: absolute; right: 8px; top: 50%;
+  transform: translateY(-50%);
+  background: none; border: none;
+  color: var(--text-muted); cursor: pointer; font-size: 14px;
+  display: none;
+}
+#search-clear.show { display: block; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 3px; }
+
+/* RESPONSIVE */
+@media (max-width: 900px) { #grid { gap: 12px; } }
+@media (max-width: 600px) { #grid { flex-direction: column; } #topbar { padding: 0 16px; } #main { padding: 12px 16px; } }
+
+.hidden { display: none !important; }
+
+/* ── WIDGET CARDS ───────────────────────────────────────────────────────── */
+.widget-card { }
+.widget-header { cursor: grab; }
+.widget-header:active { cursor: grabbing; }
+
+/* Search widget */
+.search-widget-body { padding: 10px 12px 12px; }
+
+.search-engine-row {
+  display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.eng-btn {
+  width: 28px; height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: pointer; font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.12s, background 0.12s;
+}
+.eng-btn:hover { border-color: var(--accent); }
+.eng-btn.active { border-color: var(--accent); background: var(--accent-dim); }
+
+.search-form {
+  display: flex; gap: 6px;
+}
+.search-input {
+  flex: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-go {
+  padding: 6px 10px;
+  background: var(--accent);
+  border: none; border-radius: var(--radius);
+  color: #0D1117; font-size: 14px;
+  cursor: pointer; transition: background 0.12s;
+}
+.search-go:hover { background: #79BBFF; }
+
+/* Calendar widget */
+.calendar-body { padding: 10px 14px 14px; }
+
+.cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.cal-month-label {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cal-weekday-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+.cal-weekday {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.cal-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text);
+  border-radius: 6px;
+}
+.cal-cell-empty { visibility: hidden; }
+.cal-today {
+  background: var(--accent);
+  color: #0D1117;
+  font-weight: 700;
+}
+
+.cal-today-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.cal-today-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.cal-agenda-list { display: flex; flex-direction: column; gap: 1px; }
+.cal-agenda-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.cal-agenda-row:last-child { border-bottom: none; }
+.cal-agenda-row.cal-agenda-today { color: var(--accent); }
+.cal-agenda-weekday { font-size: 12px; font-weight: 500; }
+.cal-agenda-date { font-size: 11px; color: var(--text-dim); }
+.cal-agenda-today .cal-agenda-date { color: var(--accent); }
+
+/* Clock widget */
+.clock-body {
+  padding: 18px 16px 20px;
+  text-align: center;
+}
+.clock-time {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.clock-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* System Stats widget */
+.sysstats-body { padding: 12px 14px 14px; }
+.sysstats-loading, .sysstats-error {
+  font-size: 12px; color: var(--text-dim); text-align: center; padding: 12px 0; line-height: 1.6;
+}
+.sysstats-host {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  margin-bottom: 10px;
+  display: flex; align-items: baseline; gap: 6px;
+}
+.sysstats-platform { font-size: 10px; font-weight: 400; color: var(--text-dim); }
+.sysstats-row { margin-bottom: 9px; }
+.sysstats-row:last-of-type { margin-bottom: 6px; }
+.sysstats-row-label {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text-muted); margin-bottom: 3px;
+}
+.sysstats-row-value { color: var(--text); font-variant-numeric: tabular-nums; }
+.sysstats-bar-track {
+  height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden;
+}
+.sysstats-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+.sysstats-uptime { font-size: 10px; color: var(--text-dim); margin-top: 8px; }
+
+/* Weather widget */
+.weather-body { padding: 10px 12px 12px; }
+.wx-loading, .wx-error {
+  color: var(--text-dim); font-size: 12px; text-align: center; padding: 12px 0;
+}
+.wx-current {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px;
+  margin: -4px -4px 6px;
+  transition: background 0.12s;
+}
+.wx-current:hover { background: var(--surface-3); }
+.wx-main-icon { font-size: 28px; line-height: 1; }
+.wx-main-temp { font-size: 22px; font-weight: 600; font-family: var(--font-display); }
+.wx-meta { font-size: 11px; color: var(--text-muted); margin-left: auto; text-align: right; line-height: 1.4; }
+
+.wx-forecast {
+  display: flex; gap: 4px;
+}
+.wx-day {
+  flex: 1; text-align: center;
+  background: var(--surface-2);
+  border-radius: 6px; padding: 6px 4px;
+}
+.wx-day-name { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+.wx-day-icon { font-size: 16px; margin-bottom: 4px; }
+.wx-day-temps { font-size: 10px; }
+.wx-hi { color: var(--text); font-weight: 500; }
+.wx-lo { color: var(--text-dim); margin-left: 2px; }
+
+
+
+/* Collapsed folder */
+.folder-card.collapsed .bookmarks-list,
+.folder-card.collapsed .expand-btn,
+.folder-card.collapsed .add-bm-btn { display: none; }
+.folder-card.collapsed { opacity: 0.85; }
+
+
+
+/* Notes widget */
+.notes-body { padding: 0; }
+.notes-textarea {
+  width: 100%;
+  min-height: 120px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  resize: vertical;
+  outline: none;
+}
+.notes-textarea::placeholder { color: var(--text-dim); }
+.notes-footer {
+  padding: 4px 12px 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+
+/* Sort modal */
+#sort-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); z-index: 200;
+  align-items: center; justify-content: center; padding: 24px;
+}
+#sort-modal.open { display: flex; }
+.sort-modal-inner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%; max-width: 380px;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+}
+.sort-folder-list {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 16px 0;
+  max-height: 300px; overflow-y: auto;
+}
+.sort-folder-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.sort-folder-item:hover { border-color: var(--accent); background: var(--accent-dim); }
+
+/* Bookmarklet modal */
+#bml-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); z-index: 200;
+  align-items: center; justify-content: center; padding: 24px;
+}
+#bml-modal.open { display: flex; }
+.bml-modal-inner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%; max-width: 480px;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+}
+.bml-instruction {
+  font-size: 12px; color: var(--text-muted); line-height: 1.7;
+  margin: 12px 0;
+}
+.bml-link {
+  display: block;
+  background: var(--accent);
+  color: #0D1117;
+  font-weight: 600;
+  font-size: 13px;
+  text-align: center;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  margin: 16px 0 8px;
+  cursor: grab;
+}
+.bml-link:active { cursor: grabbing; }
+.bml-hint {
+  font-size: 11px; color: var(--text-dim); text-align: center;
+}
+
+/* Autobackup indicator */
+#backup-indicator {
+  font-size: 10px; color: var(--text-dim);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+/* Compact density mode */
+body.compact .bookmark-card { padding: 2px 8px; }
+body.compact .bm-favicon, body.compact .bm-favicon-fallback { width: 12px; height: 12px; }
+body.compact .bm-title { font-size: 11px; }
+body.compact .folder-header { padding: 6px 10px 5px; }
+body.compact .bookmarks-list { gap: 1px; }
+body.compact .grid-col { gap: 10px; }
+body.compact #grid { gap: 10px; }
+body.compact .add-bm-btn { padding: 4px 8px; }
+
+/* Recently Added card */
+.recent-card { border-color: var(--amber); opacity: 0.95; }
+.recent-card .folder-header { border-bottom-color: rgba(227,179,65,0.2); }
+
+/* Topbar dropdown menus (Data / Widgets / Tools) */
+.dropdown { position: relative; }
+.dropdown-trigger { white-space: nowrap; }
+.dropdown-trigger.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dropdown-menu {
+  display: none;
+  position: fixed;
+  min-width: 200px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.4);
+  z-index: 150;
+}
+.dropdown-menu.open { display: flex; flex-direction: column; gap: 1px; }
+.dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+.dropdown-item:hover { background: var(--surface-3); }
+.dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+/* Collapsible topbar tools */
+#topbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox: hide scrollbar but keep scrollability */
+  transition: max-width 0.25s ease, opacity 0.2s ease;
+  max-width: 1200px; /* generous ceiling so the open state never clips buttons */
+  opacity: 1;
+  flex-shrink: 1;
+  min-width: 0;
+}
+#topbar-tools::-webkit-scrollbar { display: none; }
+
+/* ── TABS ───────────────────────────────────────────────────────────────────── */
+#tab-nav {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+.tab-btn {
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ── FEEDS PAGE ─────────────────────────────────────────────────────────────── */
+#feeds-page {
+  padding: 20px 24px;
+  min-height: calc(100vh - 56px);
+}
+#feeds-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+#feeds-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+#feeds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+/* Channel card */
+.channel-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.channel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.channel-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-3);
+  flex-shrink: 0;
+}
+.channel-avatar-fallback {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--red);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: white; font-weight: 700;
+  flex-shrink: 0;
+}
+.channel-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-display);
+}
+.channel-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+}
+.channel-card:hover .channel-actions { opacity: 1; }
+
+/* Video entries */
+.video-list { display: flex; flex-direction: column; }
+.video-item {
+  display: flex;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  transition: background 0.12s;
+  align-items: flex-start;
+}
+.video-item:last-child { border-bottom: none; }
+.video-item:hover { background: var(--surface-2); }
+.video-thumb {
+  width: 80px;
+  height: 45px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--surface-3);
+  flex-shrink: 0;
+}
+.video-info { flex: 1; min-width: 0; }
+.video-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.video-item:hover .video-title { color: var(--accent); }
+.video-age {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.channel-loading, .channel-error, .channel-empty {
+  padding: 16px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.channel-error { color: var(--red); }
+
+/* Show-more */
+.channel-show-more {
+  width: 100%;
+  padding: 7px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.channel-show-more:hover { color: var(--accent); background: var(--accent-dim); }
+
+/* Drag insertion indicator */
+.drop-indicator {
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  margin: 2px 0;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(88,166,255,0.5);
+}
+.grid-col-over {
+  background: rgba(88,166,255,0.03);
+  border-radius: 10px;
+}
+
+/* Pin / favorites */
+.pin-btn { font-size: 13px; }
+.pin-btn.active { color: #F0C419; opacity: 1 !important; }
+.bookmark-card.pinned { background: rgba(240,196,25,0.04); }
+.favorites-card { border-color: rgba(240,196,25,0.3); }
+.favorites-card .folder-header { border-bottom-color: rgba(240,196,25,0.15); }
+
+/* Channel drag-to-reorder */
+.channel-card.channel-dragging { opacity: 0.4; }
+.channel-card.channel-drag-over { outline: 2px solid var(--accent); outline-offset: -2px; }
+.channel-card[draggable="true"] .channel-header { cursor: grab; }
+.channel-card[draggable="true"] .channel-header:active { cursor: grabbing; }
+
+#feeds-sort {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+/* Rolling backups modal */
+.backup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.backup-row:last-child { border-bottom: none; }
+.backup-info { display: flex; flex-direction: column; gap: 2px; }
+.backup-label { font-size: 12px; color: var(--text); font-weight: 500; }
+.backup-size { font-size: 10px; color: var(--text-dim); }
+.backup-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.backup-dl-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.backup-restore-btn { padding: 4px 10px; font-size: 11px; }
+
+/* ── NEWS PAGE ──────────────────────────────────────────────────────────────── */
+#news-page {
+  padding: 20px 24px;
+  min-height: calc(100vh - 56px);
+}
+#news-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+#news-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+#news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+#news-view-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 3px;
+}
+.news-view-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.news-view-btn:hover { color: var(--text); }
+.news-view-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+#news-sort {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+/* News item rows reuse .video-item styling minus the thumbnail */
+.news-item .video-info { width: 100%; }
+
+/* YouTube video carousel (big thumbnail + prev/next nav) */
+.vc-wrap { display: flex; flex-direction: column; }
+
+.vc-thumb-link {
+  position: relative;
+  display: block;
+  text-decoration: none;
+  overflow: hidden;
+  border-radius: 0; /* flush with card edges */
+}
+.vc-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+  background: var(--surface-3);
+  transition: opacity 0.12s;
+}
+.vc-thumb-link:hover .vc-thumb { opacity: 0.85; }
+.vc-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.vc-thumb-link:hover .vc-play { opacity: 1; }
+
+.vc-meta {
+  padding: 10px 14px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.vc-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.45;
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.vc-title:hover { color: var(--accent); }
+.vc-age { font-size: 10px; color: var(--text-dim); }
+
+.vc-controls {
+  display: flex;
+  align-items: center;
+  padding: 6px 14px 12px;
+  gap: 6px;
+}
+.vc-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.vc-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.vc-btn:disabled { opacity: 0.35; cursor: default; }
+.vc-counter {
+  flex: 1;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.vc-save {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 28px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+/* Combined timeline */
+#news-timeline { max-width: 720px; }
+.timeline-list { display: flex; flex-direction: column; gap: 1px; }
+.timeline-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  text-decoration: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+.timeline-item:hover { border-color: var(--accent); background: var(--surface-2); }
+.timeline-source {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.timeline-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+}
+.timeline-item:hover .timeline-title { color: var(--accent); }
+.timeline-age {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* Save-as-bookmark buttons on feed items */
+.video-item-wrap, .timeline-item-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.video-item-wrap .video-item { flex: 1; }
+.timeline-item-wrap { margin-bottom: 6px; }
+.timeline-item-wrap .timeline-item { flex: 1; margin-bottom: 0; }
+
+.save-bm-btn {
+  flex-shrink: 0;
+  width: 32px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.video-item-wrap:hover .save-bm-btn,
+.timeline-item-wrap:hover .save-bm-btn { opacity: 1; }
+.save-bm-btn:hover { color: var(--accent); background: var(--surface-2); }
+
+.timeline-save-btn {
+  border-left: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-left: 6px;
+  align-self: center;
+  height: 32px;
+}
+
+#btn-invidious-toggle.active {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+#btn-refresh-all {
+  flex-shrink: 0;
+}
+#btn-refresh-all:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+#sync-indicator {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+#sync-indicator.synced { color: var(--green); }
+#sync-indicator.syncing { color: var(--accent); }
+#sync-indicator.offline { color: var(--text-dim); }
+
+/* ── READER PANE ────────────────────────────────────────────────────────────── */
+#reader-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 250;
+  justify-content: flex-end;
+}
+#reader-overlay.open { display: flex; }
+
+#reader-pane {
+  width: min(680px, 100%);
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -16px 0 48px rgba(0,0,0,0.4);
+  animation: reader-slide-in 0.2s ease-out;
+}
+@keyframes reader-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+#reader-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#reader-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 40px 80px;
+}
+
+#reader-loading {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+#reader-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+#reader-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+#reader-text {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text);
+}
+#reader-text p { margin-bottom: 18px; }
+#reader-text img { max-width: 100%; border-radius: 8px; margin: 16px 0; }
+#reader-text a { color: var(--accent); }
+#reader-text h2, #reader-text h3 { font-family: var(--font-display); margin: 28px 0 14px; color: var(--text); }
+#reader-text blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 16px;
+  margin: 18px 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+#reader-text ul, #reader-text ol { margin: 0 0 18px 24px; }
+#reader-text li { margin-bottom: 6px; }
+
+@media (max-width: 700px) {
+  #reader-pane { width: 100%; }
+  #reader-body { padding: 24px 20px 60px; }
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>
+    <span>⚑</span>
+    Helm
+  </h1>
+  <nav id="tab-nav">
+    <button class="tab-btn active" data-tab="bookmarks">Bookmarks</button>
+    <button class="tab-btn" data-tab="feeds">YouTube Feeds</button>
+    <button class="tab-btn" data-tab="news">News</button>
+  </nav>
+  <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
+  <span id="sync-indicator" title="Multi-device sync status"></span>
+  <div id="search-wrap">
+    <span id="search-icon">🔍</span>
+    <input id="search" type="text" placeholder="Search bookmarks…" autocomplete="off" spellcheck="false">
+    <button id="search-clear" title="Clear search">✕</button>
+  </div>
+  <div id="topbar-actions">
+    <div id="topbar-tools">
+      <div class="dropdown" id="dd-data">
+        <button class="btn dropdown-trigger" data-dd="dd-data">Data ▾</button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" id="btn-import">↑ Import Bookmarks</button>
+          <button class="dropdown-item" id="btn-export">↓ Export Bookmarks</button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-save-config">💾 Save Config</button>
+          <button class="dropdown-item" id="btn-load-config">📂 Load Config</button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-save-config-enc">🔐 Save Encrypted</button>
+          <button class="dropdown-item" id="btn-load-config-enc">🔓 Load Encrypted</button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-backups">🗄 Rolling Backups</button>
+        </div>
+      </div>
+      <div class="dropdown" id="dd-widgets">
+        <button class="btn dropdown-trigger" data-dd="dd-widgets">+ Widget ▾</button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" id="btn-add-search">Search</button>
+          <button class="dropdown-item" id="btn-add-weather">Weather</button>
+          <button class="dropdown-item" id="btn-add-notes">Notes</button>
+          <button class="dropdown-item" id="btn-add-clock">Clock</button>
+          <button class="dropdown-item" id="btn-add-sysstats">Sys Stats</button>
+          <button class="dropdown-item" id="btn-add-calendar">Calendar</button>
+        </div>
+      </div>
+      <div class="dropdown" id="dd-tools">
+        <button class="btn dropdown-trigger" data-dd="dd-tools">Tools ▾</button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" id="btn-sort">Sort a folder</button>
+          <button class="dropdown-item" id="btn-bg">Background</button>
+          <button class="dropdown-item" id="btn-density">Toggle density</button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-bookmarklet">Bookmarklet</button>
+          <button class="dropdown-item" id="btn-extension">Browser extension</button>
+        </div>
+      </div>
+    </div>
+    <button class="btn primary" id="btn-add-bm-top">+ Bookmark</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="grid">
+    <!-- folder cards injected here -->
+  </div>
+</div>
+
+<div id="feeds-page" style="display:none">
+  <div id="feeds-topbar">
+    <button class="btn primary" id="btn-add-channel">+ Add Channel</button>
+    <button class="btn" id="btn-refresh-feeds">↺ Refresh</button>
+    <select id="feeds-sort" class="btn" style="cursor:pointer">
+      <option value="manual">Manual order</option>
+      <option value="alpha">Alphabetical</option>
+      <option value="recent">Most recently active</option>
+    </select>
+    <button class="btn" id="btn-invidious-toggle" title="Open videos via Invidious instead of YouTube">Invidious: Off</button><button class="icon-btn" id="btn-invidious-config" title="Change Invidious instance" style="border:1px solid var(--border);border-radius:var(--radius);width:26px;height:26px">⚙</button>
+    <span id="feeds-status"></span>
+  </div>
+  <div id="feeds-grid"></div>
+</div>
+
+<div id="news-page" style="display:none">
+  <div id="news-topbar">
+    <button class="btn primary" id="btn-add-news-source">+ Add Source</button>
+    <button class="btn" id="btn-refresh-news">↺ Refresh</button>
+    <div id="news-view-toggle">
+      <button class="news-view-btn active" data-view="cards">Per-Source</button>
+      <button class="news-view-btn" data-view="timeline">Combined Timeline</button>
+    </div>
+    <select id="news-sort" class="btn" style="cursor:pointer">
+      <option value="manual">Manual order</option>
+      <option value="alpha">Alphabetical</option>
+      <option value="recent">Most recently active</option>
+    </select>
+    <span id="news-status"></span>
+  </div>
+  <div id="news-grid"></div>
+  <div id="news-timeline" style="display:none"></div>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Add bookmark</span>
+      <button class="icon-btn" id="modal-close">✕</button>
+    </div>
+    <div class="field">
+      <label for="bm-url-input">URL</label>
+      <input id="bm-url-input" type="url" placeholder="https://example.com" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="bm-title-input">Title</label>
+      <input id="bm-title-input" type="text" placeholder="Name this bookmark">
+    </div>
+    <div class="field">
+      <label>Tag</label>
+      <div class="tag-palette" id="tag-palette"></div>
+    </div>
+    <div class="field">
+      <label for="bm-col-select">Column</label>
+      <select id="bm-col-select"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="modal-cancel">Cancel</button>
+      <button class="btn primary" id="modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- BACKGROUND MODAL -->
+<div id="bg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:24px">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:420px;box-shadow:0 24px 48px rgba(0,0,0,0.4)">
+    <div class="modal-header">
+      <span class="modal-title">Background</span>
+      <button class="icon-btn" onclick="document.getElementById('bg-modal').style.display='none'">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
+      <label style="font-size:12px;color:var(--text-muted)">Preset</label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px" id="bg-presets"></div>
+      <label style="font-size:12px;color:var(--text-muted);margin-top:4px">Custom color or gradient</label>
+      <input id="bg-custom" type="text" placeholder="e.g. #1a1a2e or linear-gradient(135deg,#1a1a2e,#16213e)"
+        style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font-body);font-size:12px;padding:8px 10px;outline:none;width:100%">
+      <label style="font-size:12px;color:var(--text-muted)">Custom image URL</label>
+      <input id="bg-img" type="text" placeholder="https://example.com/image.jpg"
+        style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font-body);font-size:12px;padding:8px 10px;outline:none;width:100%">
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn primary" onclick="applyBgFromModal()" style="flex:1">Apply</button>
+        <button class="btn" onclick="resetBg()">Reset</button>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:14px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer">
+          <input type="checkbox" id="bg-weather-toggle" style="width:14px;height:14px;cursor:pointer">
+          Shift background with current weather
+        </label>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5">
+          Uses your first weather widget's location. Only applies when no preset/custom color or image is set above — click Reset first if you want to switch to this.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BACKUPS MODAL -->
+<div id="backups-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:24px">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:480px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 24px 48px rgba(0,0,0,0.4)">
+    <div class="modal-header" style="flex-shrink:0">
+      <span class="modal-title">Rolling Backups</span>
+      <button class="icon-btn" onclick="document.getElementById('backups-modal').style.display='none'">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin:12px 0 16px;flex-shrink:0;line-height:1.6">
+      The server automatically snapshots your data after each save, at most once per hour, keeping the 10 most recent.
+      To restore: click Restore next to any snapshot — this replaces your current data and syncs it to the server.
+    </p>
+    <div id="backups-list" style="flex:1;overflow-y:auto;min-height:60px">
+      <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">Loading…</div>
+    </div>
+    <div style="margin-top:16px;flex-shrink:0;display:flex;gap:8px">
+      <button class="btn" id="btn-backups-refresh" style="flex:1">↺ Refresh list</button>
+      <button class="btn" onclick="document.getElementById('backups-modal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXTENSION MODAL -->
+<div id="ext-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:24px">
+  <div class="bml-modal-inner">
+    <div class="modal-header">
+      <span class="modal-title">Browser Extension</span>
+      <button class="icon-btn" onclick="document.getElementById('ext-modal').style.display='none'">✕</button>
+    </div>
+    <p class="bml-instruction" style="margin-top:12px">
+      Helm doesn't have a published extension yet — but you can get most of the same benefit two ways:
+    </p>
+    <p class="bml-instruction" style="margin-top:8px">
+      <strong style="color:var(--text)">Option 1 — New Tab override</strong><br>
+      In Chrome: install <a href="https://chromewebstore.google.com/detail/new-tab-redirect/icpgjfneehieebagbmdbhnlpiopdcmna" target="_blank" style="color:var(--accent)">New Tab Redirect</a>, set the URL to this file's local path or hosted URL.<br>
+      In Firefox: install <a href="https://addons.mozilla.org/en-US/firefox/addon/new-tab-override/" target="_blank" style="color:var(--accent)">New Tab Override</a> and point it here.
+    </p>
+    <p class="bml-instruction" style="margin-top:8px">
+      <strong style="color:var(--text)">Option 2 — Bookmarklet</strong><br>
+      Use the ⊕ Bookmarklet button to add any page to Helm with one click from your toolbar.
+    </p>
+    <p class="bml-instruction" style="margin-top:8px">
+      <strong style="color:var(--text)">Option 3 — Self-host</strong><br>
+      Run <code style="background:var(--surface-2);padding:1px 5px;border-radius:3px;font-size:11px">python3 -m http.server 8080</code> in the folder containing this file, then set your new tab URL to <code style="background:var(--surface-2);padding:1px 5px;border-radius:3px;font-size:11px">http://localhost:8080/bookmark-manager.html</code>.
+    </p>
+    <button class="btn" style="width:100%;margin-top:12px" onclick="document.getElementById('ext-modal').style.display='none'">Got it</button>
+  </div>
+</div>
+<!-- SORT MODAL -->
+<div id="sort-modal">
+  <div class="sort-modal-inner">
+    <div class="modal-header">
+      <span class="modal-title">Sort a folder</span>
+      <button class="icon-btn" onclick="document.getElementById('sort-modal').classList.remove('open')">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--text-muted);margin-top:4px">Pick a folder to sort A→Z</p>
+    <div class="sort-folder-list" id="sort-folder-list"></div>
+  </div>
+</div>
+
+<!-- BOOKMARKLET MODAL -->
+<div id="bml-modal">
+  <div class="bml-modal-inner">
+    <div class="modal-header">
+      <span class="modal-title">Bookmarklet</span>
+      <button class="icon-btn" onclick="document.getElementById('bml-modal').classList.remove('open')">✕</button>
+    </div>
+    <div id="bml-file-warning" style="display:none;background:rgba(248,81,73,0.1);border:1px solid var(--red);border-radius:var(--radius);padding:10px 12px;margin:12px 0;font-size:12px;color:var(--text);line-height:1.6">
+      <strong style="color:var(--red)">⚠ Won't work from a local file</strong><br>
+      Helm is currently opened as a <code style="background:var(--surface-2);padding:0 4px;border-radius:3px">file://</code> page. Browsers block JavaScript from navigating to local files for security reasons, so the bookmarklet will silently do nothing.<br><br>
+      <strong>Fix:</strong> serve Helm over <code style="background:var(--surface-2);padding:0 4px;border-radius:3px">http://localhost</code> instead. In the folder containing this file, run:<br>
+      <code style="display:block;background:var(--surface-2);padding:6px 8px;border-radius:4px;margin-top:6px;font-size:11px">python3 -m http.server 8080</code>
+      then open <code style="background:var(--surface-2);padding:0 4px;border-radius:3px">http://localhost:8080/bookmark-manager.html</code> and re-grab the bookmarklet from there.
+    </div>
+    <p class="bml-instruction">Drag the button below to your browser's bookmarks bar. Then click it on any page to instantly add it to Helm.</p>
+    <a class="bml-link" id="bml-link" href="#">⊕ Add to Helm</a>
+    <p class="bml-hint">Drag this to your bookmarks bar ↑</p>
+    <p class="bml-instruction" style="margin-top:12px">Or: bookmark any page, then edit that bookmark's URL and paste in the code from the box below.</p>
+    <textarea id="bml-code" style="width:100%;height:60px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:10px;padding:8px;font-family:monospace;resize:none;outline:none" readonly></textarea>
+    <button class="btn" style="margin-top:8px;width:100%" onclick="navigator.clipboard.writeText(document.getElementById('bml-code').value).then(()=>toast('Copied!'))">Copy code</button>
+  </div>
+</div>
+<!-- READER PANE -->
+<div id="reader-overlay">
+  <div id="reader-pane">
+    <div id="reader-header">
+      <button class="icon-btn" id="reader-close" title="Close (Esc)">✕</button>
+      <a id="reader-original-link" href="#" target="_blank" rel="noopener" class="btn" style="margin-left:auto">↗ Open original</a>
+      <button class="btn" id="reader-save-bm">🔖 Save as bookmark</button>
+    </div>
+    <div id="reader-body">
+      <div id="reader-loading">Loading article…</div>
+      <article id="reader-content" style="display:none">
+        <h1 id="reader-title"></h1>
+        <div id="reader-meta"></div>
+        <div id="reader-text"></div>
+      </article>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<input type="file" id="import-input" accept=".json,.html,.htm" style="display:none">
+<input type="file" id="config-input" accept=".json" style="display:none">
+<input type="file" id="config-enc-input" accept=".helm" style="display:none">
+
+<script>
+const TAGS = [
+  { id: 'work',   label: 'Work',    bg: 'rgba(88,166,255,0.15)',  color: '#58A6FF' },
+  { id: 'dev',    label: 'Dev',     bg: 'rgba(63,185,80,0.15)',   color: '#3FB950' },
+  { id: 'read',   label: 'Reading', bg: 'rgba(227,179,65,0.15)',  color: '#E3B341' },
+  { id: 'media',  label: 'Media',   bg: 'rgba(188,113,255,0.15)', color: '#BC71FF' },
+  { id: 'tools',  label: 'Tools',   bg: 'rgba(255,123,114,0.15)', color: '#FF7B72' },
+  { id: 'ref',    label: 'Ref',     bg: 'rgba(139,148,158,0.15)', color: '#8B949E' },
+];
+
+const COL_COLORS = ['#58A6FF','#3FB950','#E3B341','#BC71FF','#FF7B72','#39D353','#FFA657'];
+
+let state = { columns: [], bookmarks: [], widgets: [], collapsedCols: [], settings: {} };
+let editingBm = null;
+let activeColId = null;
+let dragBm = null;
+let searchQ = '';
+const expandedCols = new Set(); // columns showing all bookmarks
+const PAGE_SIZE = 25;
+
+const LS_KEY = 'marks_v1';
+let SYNC_VERSION = 0;      // version number of the last state we know the server holds
+let syncDebounceTimer = null;
+let syncPollTimer = null;
+let syncPushPending = false; // true while a push is queued or in flight
+let LOCAL_BACKEND_AVAILABLE = null; // null = unchecked, true/false once confirmed
+
+function save() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
+  scheduleSyncPush();
+}
+
+// ── MULTI-DEVICE LIVE SYNC ───────────────────────────────────────────────────
+//
+// Architecture: the server (marks_server.py) is the single source of truth.
+// Last-write-wins — no conflict dialogs, no user decisions, no rejected writes.
+//
+// On open:  pull from server; if server is newer, adopt silently.
+//           If server has nothing yet, push local state to seed it.
+// On save:  push to server (debounced 600ms to absorb rapid edits like typing).
+// Polling:  every 5s, if server version advanced, pull silently.
+
+async function initSync() {
+  const indicator = document.getElementById('sync-indicator');
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) {
+    if (indicator) { indicator.textContent = '○ Local only'; indicator.className = 'offline'; }
+    return;
+  }
+  if (indicator) { indicator.textContent = '↻ Syncing…'; indicator.className = 'syncing'; }
+  try {
+    const pulled = await pullFromServer();
+    if (!pulled) {
+      // Server has no data yet — push local state to seed it
+      await pushStateToBackend();
+    }
+  } catch(e) {
+    console.log('[Helm] Initial sync failed:', e.message);
+  }
+  if (indicator) { indicator.textContent = '● Synced'; indicator.className = 'synced'; }
+  syncPollTimer = setInterval(pollForRemoteChanges, 5000);
+}
+
+// Pull state from server. Returns true if we adopted server state, false if
+// server had nothing or we were already current.
+async function pullFromServer() {
+  const resp = await fetch('/api/state', { signal: AbortSignal.timeout(8000) });
+  const data = await resp.json();
+  const serverVersion = data.version || 0;
+  if (serverVersion === 0 || !data.state) return false;
+  if (serverVersion > SYNC_VERSION) {
+    SYNC_VERSION = serverVersion;
+    state = data.state;
+    if (!state.collapsedCols) state.collapsedCols = [];
+    if (!state.settings) state.settings = {};
+    if (!state.feeds) state.feeds = [];
+    if (!state.newsSources) state.newsSources = [];
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    render();
+    return true;
+  }
+  SYNC_VERSION = serverVersion;
+  return false;
+}
+
+function scheduleSyncPush() {
+  if (syncPushPending) return; // already scheduled; will push after debounce
+  syncPushPending = true;
+  clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(pushStateToBackend, 600);
+}
+
+async function pushStateToBackend() {
+  syncPushPending = false;
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) return;
+  try {
+    const resp = await fetch('/api/state', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    SYNC_VERSION = data.version;
+    flashSyncIndicator();
+  } catch(e) {
+    console.log('[Helm] Sync push failed, retrying in 5s:', e.message);
+    syncDebounceTimer = setTimeout(pushStateToBackend, 5000);
+  }
+}
+
+function flashSyncIndicator() {
+  const indicator = document.getElementById('sync-indicator');
+  if (!indicator) return;
+  indicator.textContent = '✓ Saved';
+  indicator.className = 'synced';
+  clearTimeout(indicator._flashTimer);
+  indicator._flashTimer = setTimeout(() => {
+    indicator.textContent = '● Synced';
+    indicator.className = 'synced';
+  }, 1500);
+}
+
+async function pollForRemoteChanges() {
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) return;
+  try {
+    const resp = await fetch('/api/state', { signal: AbortSignal.timeout(5000) });
+    const data = await resp.json();
+    if ((data.version || 0) > SYNC_VERSION && data.state) {
+      SYNC_VERSION = data.version;
+      state = data.state;
+      if (!state.collapsedCols) state.collapsedCols = [];
+      if (!state.settings) state.settings = {};
+      if (!state.feeds) state.feeds = [];
+      if (!state.newsSources) state.newsSources = [];
+      localStorage.setItem(LS_KEY, JSON.stringify(state));
+      render(); // silent — no toast, no dialog
+    }
+  } catch(e) { /* polling is best-effort */ }
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) state = JSON.parse(raw);
+  } catch(e) {}
+  if (!state.columns || state.columns.length === 0) seedDefaults();
+  if (!state.collapsedCols) state.collapsedCols = [];
+  if (!state.settings) state.settings = {};
+  if (!state.feeds) state.feeds = [];
+  if (!state.newsSources) state.newsSources = [];
+  if (!state.widgets || state.widgets.length === 0) {
+    state.widgets = [
+      { id: uid(), type: 'search', engine: 'startpage' },
+      { id: uid(), type: 'weather', city: 'Athens, GA', unit: 'f' }
+    ];
+    save();
+  }
+}
+
+function seedDefaults() {
+  const cols = [
+    { id: uid(), title: 'Quick Links', color: COL_COLORS[0] },
+    { id: uid(), title: 'Dev Resources', color: COL_COLORS[1] },
+    { id: uid(), title: 'Reading List', color: COL_COLORS[2] },
+  ];
+  const bms = [
+    { id: uid(), colId: cols[0].id, url: 'https://claude.ai', title: 'Claude', tag: 'tools', order: 0 },
+    { id: uid(), colId: cols[0].id, url: 'https://github.com', title: 'GitHub', tag: 'dev', order: 1 },
+    { id: uid(), colId: cols[0].id, url: 'https://news.ycombinator.com', title: 'Hacker News', tag: 'read', order: 2 },
+    { id: uid(), colId: cols[1].id, url: 'https://developer.mozilla.org', title: 'MDN Web Docs', tag: 'dev', order: 0 },
+    { id: uid(), colId: cols[1].id, url: 'https://stackoverflow.com', title: 'Stack Overflow', tag: 'dev', order: 1 },
+    { id: uid(), colId: cols[1].id, url: 'https://css-tricks.com', title: 'CSS-Tricks', tag: 'dev', order: 2 },
+    { id: uid(), colId: cols[2].id, url: 'https://www.wikipedia.org', title: 'Wikipedia', tag: 'ref', order: 0 },
+    { id: uid(), colId: cols[2].id, url: 'https://readwise.io', title: 'Readwise', tag: 'read', order: 1 },
+  ];
+  state = { columns: cols, bookmarks: bms, settings: {}, widgets: [
+    { id: uid(), type: 'search', engine: 'startpage' },
+    { id: uid(), type: 'weather', city: 'Athens, GA', unit: 'f' }
+  ], collapsedCols: [] };
+  save();
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function faviconUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+  } catch { return ''; }
+}
+
+function hostLabel(url) {
+  try {
+    return new URL(url).hostname.replace('www.', '').slice(0, 2).toUpperCase();
+  } catch { return '?'; }
+}
+
+function getTag(id) { return TAGS.find(t => t.id === id) || null; }
+
+function colBooksmarks(colId) {
+  return state.bookmarks
+    .filter(b => b.colId === colId)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+function matchSearch(bm) {
+  if (!searchQ) return true;
+  const q = searchQ.toLowerCase();
+  return (bm.title || '').toLowerCase().includes(q)
+      || (bm.url || '').toLowerCase().includes(q)
+      || (getTag(bm.tag)?.label || '').toLowerCase().includes(q);
+}
+
+function highlight(text) {
+  if (!searchQ) return escHtml(text);
+  const q = searchQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escHtml(text).replace(new RegExp(`(${q})`, 'gi'), '<mark>$1</mark>');
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+/* RENDER */
+function render() {
+  // Apply background setting
+  applyBackground();
+  // Apply density
+  document.body.classList.toggle('compact', !!state.settings.compact);
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  // Build 3 explicit flex columns; widgets always go in the middle (index 1)
+  const cols3 = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
+  cols3.forEach(c => { c.className = 'grid-col'; });
+
+  // Widgets into middle column
+  const WIDGET_RENDERERS = {
+    search: renderSearchWidget,
+    notes: renderNotesWidget,
+    weather: renderWeatherWidget,
+    clock: renderClockWidget,
+    sysstats: renderSysStatsWidget,
+    calendar: renderCalendarWidget,
+  };
+  state.widgets.forEach(w => {
+    const renderer = WIDGET_RENDERERS[w.type] || renderWeatherWidget;
+    const el = renderer(w);
+    cols3[1].appendChild(el);
+  });
+
+  // Favorites card — top of col 2 (right), only if at least one pinned bookmark
+  if (!searchQ) {
+    const pinned = state.bookmarks.filter(b => b.pinned);
+    if (pinned.length) {
+      const fc = document.createElement('div');
+      fc.className = 'folder-card favorites-card';
+      fc.innerHTML = `
+        <div class="folder-header">
+          <span class="col-dot" style="background:#F0C419"></span>
+          <span class="column-title" style="cursor:default">★ Favorites</span>
+          <span class="col-count">${pinned.length}</span>
+        </div>
+        <div class="bookmarks-list">
+          ${pinned.map(bm => renderBmCard(bm)).join('')}
+        </div>
+      `;
+      cols3[2].appendChild(fc);
+    }
+  }
+
+  // Recently Added card — top of col 2 (right), always visible if bookmarks exist
+  if (!searchQ && state.bookmarks.length > 0) {
+    const recent = [...state.bookmarks]
+      .filter(b => b.addedAt) // dismissed items have addedAt cleared to 0/falsy — exclude them
+      .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+      .slice(0, 10);
+    if (recent.length) {
+      const rc = document.createElement('div');
+      rc.className = 'folder-card recent-card';
+      rc.innerHTML = `
+        <div class="folder-header">
+          <span class="col-dot" style="background:var(--amber)"></span>
+          <span class="column-title" style="cursor:default">Recently Added</span>
+          <span class="col-count">${recent.length}</span>
+        </div>
+        <div class="bookmarks-list">
+          ${recent.map(bm => renderBmCard(bm, 'recent')).join('')}
+        </div>
+      `;
+      cols3[2].appendChild(rc);
+    }
+  }
+
+  // Folder cards: each column object carries a persistent gridCol (0/1/2)
+  // saying which visual column it lives in, plus its order is implicit from
+  // state.columns array order. Migrate any column missing gridCol by
+  // round-robin assignment based on its position in state.columns.
+  state.columns.forEach((col, i) => {
+    if (col.gridCol === undefined) col.gridCol = i % 3;
+  });
+
+  const folderCardsByCol = [[], [], []];
+  state.columns.forEach((col) => {
+    const bms = colBooksmarks(col.id).filter(matchSearch);
+    if (searchQ && bms.length === 0) return;
+
+    const collapsed = !searchQ && state.collapsedCols.includes(col.id);
+    const isExpanded = expandedCols.has(col.id) || !!searchQ;
+    const visibleBms = isExpanded ? bms : bms.slice(0, PAGE_SIZE);
+    const hiddenCount = bms.length - visibleBms.length;
+
+    const card = document.createElement('div');
+    card.className = 'folder-card' + (collapsed ? ' collapsed' : '');
+    card.dataset.colId = col.id;
+    card.draggable = true;
+
+    card.innerHTML = `
+      <div class="folder-header">
+        <span class="col-dot drag-handle" style="background:${col.color}" title="Drag to reorder"></span>
+        <input class="column-title" value="${escHtml(col.title)}" data-col-id="${col.id}" aria-label="Column title" spellcheck="false" draggable="false">
+        <span class="col-count">${bms.length}</span>
+        <div class="col-actions">
+          <button class="icon-btn collapse-toggle" title="${collapsed ? 'Expand' : 'Collapse'}" data-toggle-col="${col.id}">${collapsed ? '▸' : '▾'}</button>
+          <button class="icon-btn" title="Add bookmark" data-add-col="${col.id}">+</button>
+          <button class="icon-btn danger" title="Delete folder" data-del-col="${col.id}">✕</button>
+        </div>
+      </div>
+      ${collapsed ? '' : `
+      <div class="bookmarks-list" data-bm-list="${col.id}">
+        ${bms.length === 0 && !searchQ ? '<div class="empty-state">Drop bookmarks here</div>' : ''}
+        ${visibleBms.map(bm => renderBmCard(bm)).join('')}
+      </div>
+      ${hiddenCount > 0 ? `<button class="expand-btn" data-expand-col="${col.id}">Show ${hiddenCount} more ▾</button>` : ''}
+      ${isExpanded && bms.length > PAGE_SIZE ? `<button class="expand-btn collapse" data-collapse-col="${col.id}">Show less ▴</button>` : ''}
+      <button class="add-bm-btn" data-add-col="${col.id}">+ Add bookmark</button>
+      `}
+    `;
+
+    const gc = Math.min(Math.max(col.gridCol || 0, 0), 2);
+    folderCardsByCol[gc].push(card);
+  });
+
+  // Append each visual column's folders in state.columns order (already filtered above)
+  folderCardsByCol.forEach((cards, idx) => {
+    cards.forEach(card => cols3[idx].appendChild(card));
+  });
+
+  // Add-folder button goes into col 0
+  const addBtn = document.createElement('button');
+  addBtn.id = 'add-col-btn';
+  addBtn.innerHTML = '+ Add folder';
+  addBtn.onclick = addColumn;
+  cols3[0].appendChild(addBtn);
+
+  cols3.forEach(c => grid.appendChild(c));
+
+  attachEvents();
+  setupDrag();
+  loadWeather();
+}
+
+
+// ── SEARCH WIDGET ────────────────────────────────────────────────────────────
+const ENGINES = {
+  startpage: { label: 'Startpage', url: 'https://www.startpage.com/search?q=',                icon: '🌐' },
+  privau:    { label: 'priv.au',   url: 'https://priv.au/search?q=',                          icon: '🔒' },
+  youtube:   { label: 'YouTube',   url: 'https://www.youtube.com/results?search_query=',       icon: '▶' },
+};
+
+// ── CLOCK WIDGET ──────────────────────────────────────────────────────────────
+const CLOCK_TIMERS = {}; // widgetId → interval id, so re-renders don't pile up timers
+
+function renderClockWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card clock-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false; // same drag-via-header-only pattern as notes, see setup below
+  const format = w.format || '24h';
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#BC71FF"></span>
+      <span class="column-title" style="cursor:default">Clock</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Toggle 12h/24h" data-toggle-clock-format="${w.id}">${format === '24h' ? '24h' : '12h'}</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="clock-body">
+      <div class="clock-time" id="clock-time-${w.id}">--:--</div>
+      <div class="clock-date" id="clock-date-${w.id}">…</div>
+    </div>
+  `;
+
+  // Header-only drag, same rationale as the notes widget: keeps the rest of
+  // the card free of native drag interference (not that a clock has inputs
+  // to type into, but consistency keeps the codebase predictable).
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    tickClock(w);
+    clearInterval(CLOCK_TIMERS[w.id]);
+    CLOCK_TIMERS[w.id] = setInterval(() => tickClock(w), 1000);
+  }, 0);
+
+  return el;
+}
+
+function tickClock(w) {
+  const timeEl = document.getElementById('clock-time-' + w.id);
+  const dateEl = document.getElementById('clock-date-' + w.id);
+  if (!timeEl || !dateEl) { clearInterval(CLOCK_TIMERS[w.id]); return; } // widget removed/re-rendered away
+
+  const now = new Date();
+  const format = w.format || '24h';
+  const opts = format === '24h'
+    ? { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }
+    : { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true };
+  timeEl.textContent = now.toLocaleTimeString([], opts);
+  dateEl.textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+// ── SYSTEM STATS WIDGET ───────────────────────────────────────────────────────
+// Shows CPU/memory/disk/uptime for the HOST machine running marks_server.py —
+// not the device currently viewing the page. Only works when the local
+// backend is reachable; shows a clear note otherwise.
+const SYSSTATS_TIMERS = {};
+
+function renderSysStatsWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card sysstats-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#3FB950"></span>
+      <span class="column-title" style="cursor:default">Host Stats</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="sysstats-body" id="sysstats-${w.id}">
+      <div class="sysstats-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    loadSysStats(w);
+    clearInterval(SYSSTATS_TIMERS[w.id]);
+    SYSSTATS_TIMERS[w.id] = setInterval(() => loadSysStats(w), 5000);
+  }, 0);
+
+  return el;
+}
+
+function formatBytes(bytes) {
+  if (bytes == null) return '—';
+  const gb = bytes / (1024 ** 3);
+  if (gb >= 1) return gb.toFixed(1) + ' GB';
+  return (bytes / (1024 ** 2)).toFixed(0) + ' MB';
+}
+
+function formatUptime(seconds) {
+  if (seconds == null) return '—';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+async function loadSysStats(w) {
+  const el = document.getElementById('sysstats-' + w.id);
+  if (!el) { clearInterval(SYSSTATS_TIMERS[w.id]); return; }
+
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) {
+    el.innerHTML = `<div class="sysstats-error">Host stats require the local backend (marks_server.py).<br>Not reachable right now.</div>`;
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/sysstats', { signal: AbortSignal.timeout(5000) });
+    const s = await resp.json();
+
+    const cpuPct = s.cpuPercent != null ? s.cpuPercent : null;
+    const memPct = (s.memUsedBytes != null && s.memTotalBytes) ? (s.memUsedBytes / s.memTotalBytes * 100) : null;
+    const diskPct = (s.diskUsedBytes != null && s.diskTotalBytes) ? (s.diskUsedBytes / s.diskTotalBytes * 100) : null;
+
+    el.innerHTML = `
+      <div class="sysstats-host">${escHtml(s.hostname || 'host')} <span class="sysstats-platform">${escHtml(s.platform || '')}</span></div>
+      ${renderStatBar('CPU', cpuPct, cpuPct != null ? cpuPct.toFixed(0) + '%' : '—')}
+      ${renderStatBar('Memory', memPct, formatBytes(s.memUsedBytes) + ' / ' + formatBytes(s.memTotalBytes))}
+      ${renderStatBar('Disk', diskPct, formatBytes(s.diskUsedBytes) + ' / ' + formatBytes(s.diskTotalBytes))}
+      <div class="sysstats-uptime">Uptime: ${formatUptime(s.uptimeSeconds)}</div>
+    `;
+  } catch(err) {
+    el.innerHTML = `<div class="sysstats-error">Could not load host stats.<br><small>${escHtml(err.message)}</small></div>`;
+  }
+}
+
+function renderStatBar(label, pct, valueText) {
+  const safePct = pct == null ? 0 : Math.min(100, Math.max(0, pct));
+  const barColor = safePct > 85 ? 'var(--red)' : safePct > 65 ? 'var(--amber)' : 'var(--green)';
+  return `
+    <div class="sysstats-row">
+      <div class="sysstats-row-label">
+        <span>${label}</span>
+        <span class="sysstats-row-value">${valueText}</span>
+      </div>
+      <div class="sysstats-bar-track">
+        <div class="sysstats-bar-fill" style="width:${safePct}%;background:${barColor}"></div>
+      </div>
+    </div>
+  `;
+}
+
+// ── CALENDAR WIDGET ───────────────────────────────────────────────────────────
+// Two views, switchable per-widget: a traditional month grid, and a compact
+// agenda-style list of the next ~14 days. No event data — purely a date
+// reference/navigator, since Helm doesn't pull from any calendar feed.
+
+function renderCalendarWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card calendar-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+  if (!w.viewMonth) { const t = new Date(); w.viewMonth = t.getFullYear() + '-' + (t.getMonth() + 1); }
+  const view = w.calView || 'month';
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#F0C419"></span>
+      <span class="column-title" style="cursor:default">Calendar</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Switch view" data-toggle-cal-view="${w.id}">${view === 'month' ? '☰' : '▦'}</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="calendar-body" id="cal-body-${w.id}"></div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    renderCalendarBody(w);
+  }, 0);
+
+  return el;
+}
+
+function renderCalendarBody(w) {
+  const body = document.getElementById('cal-body-' + w.id);
+  if (!body) return;
+  const view = w.calView || 'month';
+  body.innerHTML = view === 'month' ? buildMonthGridHTML(w) : buildAgendaHTML(w);
+  wireCalendarBody(w, body);
+}
+
+const WEEKDAY_LABELS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function buildMonthGridHTML(w) {
+  const [yearStr, monthStr] = w.viewMonth.split('-');
+  const year = parseInt(yearStr, 10), month = parseInt(monthStr, 10) - 1; // 0-indexed
+
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+  const todayDate = today.getDate();
+
+  const firstOfMonth = new Date(year, month, 1);
+  const startWeekday = firstOfMonth.getDay(); // 0 = Sunday
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  let cells = '';
+  for (let i = 0; i < startWeekday; i++) cells += `<div class="cal-cell cal-cell-empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isToday = isCurrentMonth && d === todayDate;
+    cells += `<div class="cal-cell${isToday ? ' cal-today' : ''}">${d}</div>`;
+  }
+
+  return `
+    <div class="cal-nav">
+      <button class="icon-btn" data-cal-nav="prev" data-widget-id="${w.id}">‹</button>
+      <span class="cal-month-label">${MONTH_LABELS[month]} ${year}</span>
+      <button class="icon-btn" data-cal-nav="next" data-widget-id="${w.id}">›</button>
+    </div>
+    <div class="cal-weekday-row">
+      ${WEEKDAY_LABELS.map(d => `<div class="cal-weekday">${d}</div>`).join('')}
+    </div>
+    <div class="cal-grid">${cells}</div>
+    <button class="cal-today-btn" data-cal-today="${w.id}">Today</button>
+  `;
+}
+
+function buildAgendaHTML(w) {
+  const days = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + i);
+    days.push(d);
+  }
+
+  return `
+    <div class="cal-agenda-list">
+      ${days.map(d => {
+        const isToday = d.getTime() === today.getTime();
+        const weekday = d.toLocaleDateString([], { weekday: 'short' });
+        const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        return `
+          <div class="cal-agenda-row${isToday ? ' cal-agenda-today' : ''}">
+            <span class="cal-agenda-weekday">${isToday ? 'Today' : weekday}</span>
+            <span class="cal-agenda-date">${monthDay}</span>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function wireCalendarBody(w, body) {
+  body.querySelectorAll('[data-cal-nav]').forEach(btn => {
+    btn.onclick = () => {
+      const [yearStr, monthStr] = w.viewMonth.split('-');
+      let year = parseInt(yearStr, 10), month = parseInt(monthStr, 10) - 1;
+      month += btn.dataset.calNav === 'prev' ? -1 : 1;
+      if (month < 0) { month = 11; year--; }
+      if (month > 11) { month = 0; year++; }
+      w.viewMonth = year + '-' + (month + 1);
+      save();
+      renderCalendarBody(w);
+    };
+  });
+  const todayBtn = body.querySelector('[data-cal-today]');
+  if (todayBtn) {
+    todayBtn.onclick = () => {
+      const t = new Date();
+      w.viewMonth = t.getFullYear() + '-' + (t.getMonth() + 1);
+      save();
+      renderCalendarBody(w);
+    };
+  }
+}
+
+function renderSearchWidget(w) {
+  const eng = ENGINES[w.engine] || ENGINES.startpage;
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card search-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = true;
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:var(--accent)"></span>
+      <span class="column-title" style="cursor:default">Search</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="search-widget-body">
+      <div class="search-engine-row">
+        ${Object.entries(ENGINES).map(([key, e]) =>
+          `<button class="eng-btn ${w.engine === key ? 'active' : ''}" data-engine="${key}" data-widget-id="${w.id}" title="${e.label}">${e.icon}</button>`
+        ).join('')}
+      </div>
+      <form class="search-form" onsubmit="doWidgetSearch(event,'${w.id}')">
+        <input class="search-input" type="text" placeholder="Search ${eng.label}…" id="sinput-${w.id}" autocomplete="off" spellcheck="false" draggable="false">
+        <button class="search-go" type="submit">${eng.icon}</button>
+      </form>
+    </div>
+  `;
+  return el;
+}
+
+window.doWidgetSearch = function(e, wid) {
+  e.preventDefault();
+  const w = state.widgets.find(x => x.id === wid);
+  if (!w) return;
+  const eng = ENGINES[w.engine] || ENGINES.startpage;
+  const q = document.getElementById('sinput-' + wid).value.trim();
+  if (q) window.open(eng.url + encodeURIComponent(q), '_blank', 'noopener');
+};
+
+
+// ── WEATHER WIDGET ────────────────────────────────────────────────────────────
+const WX_CACHE = {}; // widgetId → {data, ts}
+
+function renderWeatherWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card weather-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = true;
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#E3B341"></span>
+      <span class="column-title" style="cursor:default">Weather — ${escHtml(w.city || '—')}</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Change city" data-cfg-widget="${w.id}">⚙</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="weather-body" id="wx-${w.id}">
+      <div class="wx-loading">Loading…</div>
+    </div>
+  `;
+  return el;
+}
+
+async function loadWeather() {
+  const wxWidgets = state.widgets.filter(w => w.type === 'weather');
+  for (const w of wxWidgets) {
+    const el = document.getElementById('wx-' + w.id);
+    if (!el) continue;
+    const cached = WX_CACHE[w.id];
+    if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
+      el.innerHTML = renderWxHtml(cached.data, w);
+      continue;
+    }
+    try {
+      const rawCity = w.city || '';
+      const cityName = rawCity.split(',')[0].trim();
+      const parts = rawCity.split(',').map(s => s.trim());
+      const stateHint = parts[1]?.toUpperCase() || '';
+      const countryHint = parts[2]?.toUpperCase() || '';
+
+      const geoResp = await fetch(
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=10&language=en&format=json`
+      );
+      const geo = await geoResp.json();
+      if (!geo.results?.length) {
+        el.innerHTML = `<div class="wx-error">City not found: "${escHtml(rawCity)}"<br><small>Try just the city name, e.g. "Athens"</small></div>`;
+        continue;
+      }
+
+      const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC']);
+      let result = geo.results[0];
+      if (stateHint && US_STATES.has(stateHint)) {
+        const STATE_NAMES = {GA:'Georgia',TX:'Texas',FL:'Florida',NY:'New York',CA:'California',OH:'Ohio',PA:'Pennsylvania',IL:'Illinois',NC:'North Carolina',MI:'Michigan',VA:'Virginia',WA:'Washington',MA:'Massachusetts',TN:'Tennessee',IN:'Indiana',MO:'Missouri',MD:'Maryland',WI:'Wisconsin',CO:'Colorado',MN:'Minnesota',SC:'South Carolina',AL:'Alabama',LA:'Louisiana',KY:'Kentucky',OR:'Oregon',OK:'Oklahoma',CT:'Connecticut',IA:'Iowa',MS:'Mississippi',AR:'Arkansas',KS:'Kansas',UT:'Utah',NV:'Nevada',NM:'New Mexico',NE:'Nebraska',WV:'West Virginia',ID:'Idaho',HI:'Hawaii',NH:'New Hampshire',ME:'Maine',MT:'Montana',RI:'Rhode Island',DE:'Delaware',SD:'South Dakota',AK:'Alaska',ND:'North Dakota',VT:'Vermont',WY:'Wyoming',DC:'District of Columbia'};
+        const stateName = STATE_NAMES[stateHint] || '';
+        const usMatch = geo.results.find(r =>
+          r.country_code === 'US' && (!stateName || (r.admin1 || '').startsWith(stateName))
+        ) || geo.results.find(r => r.country_code === 'US');
+        if (usMatch) result = usMatch;
+      } else if (countryHint) {
+        const ccMatch = geo.results.find(r => r.country_code === countryHint);
+        if (ccMatch) result = ccMatch;
+      }
+
+      const { latitude: lat, longitude: lon, name, admin1, country_code } = result;
+      const wxResp = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weathercode,windspeed_10m,relativehumidity_2m&daily=weathercode,temperature_2m_max,temperature_2m_min&wind_speed_unit=mph&timezone=auto&forecast_days=4`
+      );
+      const wx = await wxResp.json();
+      const data = { name, admin1, country_code, lat, lon, current: wx.current, daily: wx.daily };
+      WX_CACHE[w.id] = { data, ts: Date.now() };
+      el.innerHTML = renderWxHtml(data, w);
+      if (state.settings.weatherBg && !state.settings.bgValue && !state.settings.bgImage) applyWeatherBackground();
+    } catch(err) {
+      el.innerHTML = `<div class="wx-error">Could not load weather<br><small>${escHtml(String(err))}</small></div>`;
+    }
+  }
+}
+
+function wmoIcon(code) {
+  if (code === 0) return '☀️';
+  if (code <= 2) return '⛅';
+  if (code <= 3) return '☁️';
+  if (code <= 49) return '🌫️';
+  if (code <= 59) return '🌦️';
+  if (code <= 69) return '🌧️';
+  if (code <= 79) return '🌨️';
+  if (code <= 82) return '🌧️';
+  if (code <= 84) return '🌨️';
+  if (code <= 99) return '⛈️';
+  return '🌡️';
+}
+
+function convertTemp(c, unit) {
+  return unit === 'f' ? Math.round(c * 9/5 + 32) + '°F' : Math.round(c) + '°C';
+}
+
+function renderWxHtml(data, w) {
+  const cur = data.current;
+  const d = data.daily;
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const forecasts = [0,1,2,3].map(i => {
+    const date = new Date(d.time[i] + 'T12:00:00');
+    return `<div class="wx-day">
+      <div class="wx-day-name">${i === 0 ? 'Today' : days[date.getDay()]}</div>
+      <div class="wx-day-icon">${wmoIcon(d.weathercode[i])}</div>
+      <div class="wx-day-temps"><span class="wx-hi">${convertTemp(d.temperature_2m_max[i], w.unit)}</span> <span class="wx-lo">${convertTemp(d.temperature_2m_min[i], w.unit)}</span></div>
+    </div>`;
+  }).join('');
+  const forecastUrl = `https://wttr.in/${encodeURIComponent((data.name + (data.admin1 ? ', ' + data.admin1 : '')).trim())}`;
+  return `
+    <a class="wx-current" href="${escHtml(forecastUrl)}" target="_blank" rel="noopener" title="Open full forecast">
+      <div class="wx-main-icon">${wmoIcon(cur.weathercode)}</div>
+      <div class="wx-main-temp">${convertTemp(cur.temperature_2m, w.unit)}</div>
+      <div class="wx-meta">${escHtml(data.name)}${data.admin1 ? ", " + escHtml(data.admin1) : ""}<br>${cur.relativehumidity_2m}% humidity</div>
+    </a>
+    <div class="wx-forecast">${forecasts}</div>
+  `;
+}
+
+
+// ── WIDGET CONFIG ─────────────────────────────────────────────────────────────
+window.openWidgetCfg = function(wid) {
+  const w = state.widgets.find(x => x.id === wid);
+  if (!w) return;
+  if (w.type === 'weather') {
+    const city = prompt('Enter city name (e.g. "Athens, GA" or just "Athens"):', w.city || '');
+    if (city === null) return;
+    w.city = city.trim() || w.city;
+    delete WX_CACHE[wid];
+    save(); render();
+  }
+};
+
+function renderBmCard(bm, context) {
+  const tag = getTag(bm.tag);
+  const fav = faviconUrl(bm.url);
+  const fb = hostLabel(bm.url);
+  const pinned = !!bm.pinned;
+  const inRecents = context === 'recent';
+  const deleteBtn = inRecents
+    ? `<button class="icon-btn" title="Remove from Recently Added (keeps the bookmark in its folder)" data-dismiss-recent-bm="${bm.id}" onclick="event.stopPropagation()">⊘</button>`
+    : `<button class="icon-btn danger" title="Delete" data-del-bm="${bm.id}" onclick="event.stopPropagation()">✕</button>`;
+  return `
+    <div class="bookmark-card${pinned ? ' pinned' : ''}" data-bm-id="${bm.id}" draggable="true" title="${escHtml(bm.url)}"
+         onclick="openBm(event,'${bm.id}')">
+      <img class="bm-favicon" src="${fav}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" loading="lazy">
+      <span class="bm-favicon-fallback" style="display:none">${fb}</span>
+      <span class="bm-title">${highlight(bm.title || bm.url)}</span>
+      <div class="bm-actions">
+        <button class="icon-btn pin-btn${pinned ? ' active' : ''}" title="${pinned ? 'Unpin' : 'Pin to favorites'}" data-pin-bm="${bm.id}" onclick="event.stopPropagation()">${pinned ? '★' : '☆'}</button>
+        <button class="icon-btn" title="Edit" data-edit-bm="${bm.id}" onclick="event.stopPropagation()">✎</button>
+        ${deleteBtn}
+      </div>
+    </div>
+  `;
+}
+
+window.openBm = function(e, id) {
+  if (e.target.closest('.bm-actions')) return;
+  const bm = state.bookmarks.find(b => b.id === id);
+  if (bm) window.open(bm.url, '_blank', 'noopener');
+};
+
+// Save an arbitrary URL/title as a bookmark — used by the "save" button on
+// YouTube video cards and news article cards. Switches to the Bookmarks tab
+// and opens the add-bookmark modal pre-filled, same flow as the bookmarklet.
+window.saveAsBookmark = function(url, title) {
+  switchTab('bookmarks');
+  const firstCol = state.columns[0];
+  setTimeout(() => {
+    openModal(null, firstCol ? firstCol.id : null, { url, title });
+  }, 50);
+};
+
+// Silent direct save — used by the browser extension when the user has
+// already chosen a folder in the popup. No modal, no tab switch.
+// Returns true if saved, false if the URL was already in that folder.
+window.saveToFolder = function(url, title, colId) {
+  const col = state.columns.find(c => c.id === colId);
+  if (!col) return false;
+  const already = state.bookmarks.find(b => b.colId === colId && b.url === url);
+  if (already) return false;
+  const id = uid();
+  state.bookmarks.push({ id, colId, url, title, addedAt: Date.now() });
+  save();
+  render();
+  return true;
+};
+
+function attachEvents() {
+  document.querySelectorAll('.column-title').forEach(inp => {
+    inp.onblur = () => {
+      const col = state.columns.find(c => c.id === inp.dataset.colId);
+      if (col && inp.value.trim()) { col.title = inp.value.trim(); save(); }
+    };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
+  });
+
+  document.querySelectorAll('[data-add-col]').forEach(btn => {
+    btn.onclick = () => openModal(null, btn.dataset.addCol);
+  });
+
+  document.querySelectorAll('[data-del-col]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.delCol;
+      const col = state.columns.find(c => c.id === id);
+      if (!col) return;
+      const count = state.bookmarks.filter(b => b.colId === id).length;
+      if (!confirm(`Delete "${col.title}"${count > 0 ? ` and its ${count} bookmark${count!==1?'s':''}` : ''}?`)) return;
+      state.columns = state.columns.filter(c => c.id !== id);
+      state.bookmarks = state.bookmarks.filter(b => b.colId !== id);
+      save(); render();
+      toast('Column deleted');
+    };
+  });
+
+  document.querySelectorAll('[data-edit-bm]').forEach(btn => {
+    btn.onclick = () => openModal(btn.dataset.editBm, null);
+  });
+
+  document.querySelectorAll('[data-del-bm]').forEach(btn => {
+    btn.onclick = () => {
+      state.bookmarks = state.bookmarks.filter(b => b.id !== btn.dataset.delBm);
+      save(); render();
+      toast('Bookmark removed');
+    };
+  });
+
+  document.querySelectorAll('[data-dismiss-recent-bm]').forEach(btn => {
+    btn.onclick = () => {
+      const bm = state.bookmarks.find(b => b.id === btn.dataset.dismissRecentBm);
+      if (!bm) return;
+      // Clear addedAt so it ages out of "Recently Added" without touching
+      // its home folder or deleting it. Sorts to the bottom of the recent
+      // list naturally next render, then drops out entirely once newer
+      // bookmarks push it past the slice(0, 10) cutoff.
+      bm.addedAt = 0;
+      save(); render();
+      toast('Removed from Recently Added');
+    };
+  });
+
+  document.querySelectorAll('[data-pin-bm]').forEach(btn => {
+    btn.onclick = () => {
+      const bm = state.bookmarks.find(b => b.id === btn.dataset.pinBm);
+      if (!bm) return;
+      bm.pinned = !bm.pinned;
+      save(); render();
+    };
+  });
+
+  document.querySelectorAll('[data-expand-col]').forEach(btn => {
+    btn.onclick = () => { expandedCols.add(btn.dataset.expandCol); render(); };
+  });
+
+  document.querySelectorAll('[data-collapse-col]').forEach(btn => {
+    btn.onclick = () => { expandedCols.delete(btn.dataset.collapseCol); render(); };
+  });
+
+  // Collapse toggle
+  document.querySelectorAll('[data-toggle-col]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.toggleCol;
+      const idx = state.collapsedCols.indexOf(id);
+      if (idx === -1) state.collapsedCols.push(id);
+      else state.collapsedCols.splice(idx, 1);
+      save(); render();
+    };
+  });
+
+  // Clock 12h/24h format toggle
+  document.querySelectorAll('[data-toggle-clock-format]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const w = state.widgets.find(x => x.id === btn.dataset.toggleClockFormat);
+      if (!w) return;
+      w.format = w.format === '24h' ? '12h' : '24h';
+      save(); render();
+    };
+  });
+
+  // Calendar month-grid / agenda view toggle
+  document.querySelectorAll('[data-toggle-cal-view]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const w = state.widgets.find(x => x.id === btn.dataset.toggleCalView);
+      if (!w) return;
+      w.calView = w.calView === 'month' ? 'agenda' : 'month';
+      save(); render();
+    };
+  });
+
+  // Search engine switcher
+  document.querySelectorAll('[data-engine]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const wid = btn.dataset.widgetId;
+      const w = state.widgets.find(x => x.id === wid);
+      if (!w) return;
+      w.engine = btn.dataset.engine;
+      save(); render();
+      // re-focus the input after re-render
+      setTimeout(() => { const inp = document.getElementById('sinput-' + wid); if (inp) inp.focus(); }, 20);
+    };
+  });
+
+  // Widget config
+  document.querySelectorAll('[data-cfg-widget]').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); openWidgetCfg(btn.dataset.cfgWidget); };
+  });
+
+  // Widget remove
+  document.querySelectorAll('[data-del-widget]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      state.widgets = state.widgets.filter(w => w.id !== btn.dataset.delWidget);
+      save(); render();
+    };
+  });
+
+}
+
+/* DRAG & DROP */
+let dragCol = null; // colId being dragged
+
+function setupDrag() {
+  // ── Bookmark drag ──────────────────────────────────────────────
+  document.querySelectorAll('.bookmark-card').forEach(card => {
+    card.ondragstart = (e) => {
+      if (dragCol) return; // ignore if a folder drag is in progress
+      dragBm = card.dataset.bmId;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.stopPropagation(); // don't bubble up to folder-card
+    };
+    card.ondragend = () => {
+      card.classList.remove('dragging');
+      dragBm = null;
+      document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    };
+  });
+
+  document.querySelectorAll('.bookmarks-list').forEach(list => {
+    list.ondragover = (e) => {
+      if (dragCol) return; // folder drag in progress — ignore
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      list.classList.add('drag-over');
+    };
+    list.ondragleave = (e) => {
+      if (!list.contains(e.relatedTarget)) list.classList.remove('drag-over');
+    };
+    list.ondrop = (e) => {
+      if (dragCol) return;
+      e.preventDefault();
+      list.classList.remove('drag-over');
+      if (!dragBm) return;
+      const targetColId = list.dataset.bmList;
+      const bm = state.bookmarks.find(b => b.id === dragBm);
+      if (!bm) return;
+      bm.colId = targetColId;
+      const colBms = colBooksmarks(targetColId).filter(b => b.id !== dragBm);
+      bm.order = colBms.length;
+      colBms.forEach((b, i) => b.order = i);
+      save(); render();
+    };
+  });
+
+  // ── Folder card drag ───────────────────────────────────────────
+  document.querySelectorAll('.folder-card').forEach(card => {
+    card.ondragstart = (e) => {
+      if (dragBm) return; // bookmark drag in progress
+      if (e.target.closest('textarea, input, select, [contenteditable]')) { e.preventDefault(); return; }
+      dragCol = 'col:' + card.dataset.colId;
+      card.classList.add('col-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragCol);
+    };
+
+    card.ondragend = () => {
+      card.classList.remove('col-dragging');
+      dragCol = null;
+      document.querySelectorAll('.col-drag-over').forEach(el => el.classList.remove('col-drag-over'));
+    };
+
+    // dragover/drop handled by parent .grid-col
+  });
+
+  // ── Widget card drag (search, weather) ────────────────────────────────────
+  // All draggable items in grid participate in a shared ordering:
+  // state.widgets come first, then state.columns; drag swaps items across both.
+  // For simplicity: widgets can be dragged onto other widgets or folder-cards,
+  // and folder-cards can be dragged onto widget-cards too.
+  document.querySelectorAll('.widget-card').forEach(card => {
+    const wid = card.dataset.widgetId;
+
+    card.ondragstart = (e) => {
+      if (dragBm) return;
+      // Don't start a card drag if the user is interacting with an editable
+      // element inside the card (textarea, input, search box, etc).
+      if (e.target.closest('textarea, input, select, [contenteditable]')) { e.preventDefault(); return; }
+      dragCol = 'widget:' + wid;
+      card.classList.add('col-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragCol);
+    };
+
+    card.ondragend = () => {
+      card.classList.remove('col-dragging');
+      dragCol = null;
+      document.querySelectorAll('.col-drag-over').forEach(el => el.classList.remove('col-drag-over'));
+    };
+
+    // dragover/drop handled by parent .grid-col
+  });
+
+  // cross-type drag handled by .grid-col ondrop
+
+  // ── Grid column drop zones — full column is a drop target ──────────────────
+  // Each .grid-col accepts drops anywhere (empty space OR over cards).
+  // We track the insertion point by finding which card the mouse is nearest to.
+  let dropIndicator = null;
+
+  function getDropIndicator() {
+    if (!dropIndicator) {
+      dropIndicator = document.createElement('div');
+      dropIndicator.className = 'drop-indicator';
+    }
+    return dropIndicator;
+  }
+
+  function clearDropIndicator() {
+    dropIndicator?.remove();
+    document.querySelectorAll('.grid-col-over').forEach(el => el.classList.remove('grid-col-over'));
+  }
+
+  function cardKey(card) {
+    if (!card) return null;
+    return card.dataset.colId ? 'col:' + card.dataset.colId
+         : card.dataset.widgetId ? 'widget:' + card.dataset.widgetId
+         : null;
+  }
+
+  function getCardsInCol(col) {
+    return [...col.querySelectorAll(':scope > .folder-card, :scope > .widget-card')];
+  }
+
+  function getNearestCard(col, clientY) {
+    const cards = getCardsInCol(col).filter(c => cardKey(c) !== dragCol);
+    let nearest = null, nearestDist = Infinity, insertAfter = false;
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect();
+      const mid  = rect.top + rect.height / 2;
+      const dist = Math.abs(clientY - mid);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest     = card;
+        insertAfter = clientY > mid;
+      }
+    }
+    return { nearest, insertAfter };
+  }
+
+  document.querySelectorAll('.grid-col').forEach((col, visualColIdx) => {
+    col.ondragover = (e) => {
+      if (!dragCol) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      col.classList.add('grid-col-over');
+
+      const { nearest, insertAfter } = getNearestCard(col, e.clientY);
+      const ind = getDropIndicator();
+      if (!nearest) {
+        col.appendChild(ind);
+      } else if (insertAfter) {
+        nearest.after(ind);
+      } else {
+        nearest.before(ind);
+      }
+    };
+
+    col.ondragleave = (e) => {
+      if (!col.contains(e.relatedTarget)) {
+        col.classList.remove('grid-col-over');
+      }
+    };
+
+    col.ondrop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearDropIndicator();
+      if (!dragCol) return;
+
+      const { nearest, insertAfter } = getNearestCard(col, e.clientY);
+      const toKey = nearest ? cardKey(nearest) : null;
+
+      moveItemToVisualColumn(dragCol, visualColIdx, toKey, insertAfter);
+    };
+  });
+}
+
+// Move a grid item (folder or widget) into a specific visual column (0/1/2),
+// positioned relative to an anchor card (toKey) — inserted before/after it,
+// or appended to the end of that column if no anchor (empty column / past last card).
+// This performs a true insert (array splice), never a swap.
+function moveItemToVisualColumn(fromKey, visualColIdx, toKey, insertAfter) {
+  const isWidget = fromKey.startsWith('widget:');
+  const fromId = fromKey.split(':')[1];
+
+  if (isWidget) {
+    // Widgets always live in the center column conceptually; just reorder within state.widgets
+    const items = allGridItems();
+    const fromIdx = items.findIndex(x => x.key === fromKey);
+    if (fromIdx === -1) return;
+    const [moved] = items.splice(fromIdx, 1);
+    if (toKey) {
+      let toIdx = items.findIndex(x => x.key === toKey);
+      if (toIdx === -1) { items.push(moved); }
+      else { items.splice(insertAfter ? toIdx + 1 : toIdx, 0, moved); }
+    } else {
+      items.push(moved);
+    }
+    applyGridOrder(items);
+    return;
+  }
+
+  // Folder card: update its gridCol, then reposition within state.columns
+  // so its array order matches its position among folders in that same column.
+  const folder = state.columns.find(c => c.id === fromId);
+  if (!folder) return;
+
+  folder.gridCol = visualColIdx;
+
+  // Remove it from its current array position
+  const fromArrIdx = state.columns.indexOf(folder);
+  state.columns.splice(fromArrIdx, 1);
+
+  if (toKey && toKey.startsWith('col:')) {
+    const targetId = toKey.split(':')[1];
+    const targetIdx = state.columns.findIndex(c => c.id === targetId);
+    if (targetIdx === -1) {
+      state.columns.push(folder);
+    } else {
+      state.columns.splice(insertAfter ? targetIdx + 1 : targetIdx, 0, folder);
+    }
+  } else {
+    // No anchor — dropped on empty column or past the last card.
+    // Insert after the last folder currently assigned to this visual column,
+    // so it lands at the bottom of that column instead of the absolute end.
+    let lastIdxInCol = -1;
+    state.columns.forEach((c, i) => { if (c.gridCol === visualColIdx) lastIdxInCol = i; });
+    if (lastIdxInCol === -1) {
+      state.columns.push(folder);
+    } else {
+      state.columns.splice(lastIdxInCol + 1, 0, folder);
+    }
+  }
+
+  save(); render();
+}
+
+// Unified reorder helpers. Keys: 'widget:<id>' or 'col:<id>'
+function allGridItems() {
+  return [
+    ...state.widgets.map(w => ({ key: 'widget:' + w.id, kind: 'widget', obj: w })),
+    ...state.columns.map(c => ({ key: 'col:'    + c.id, kind: 'col',    obj: c })),
+  ];
+}
+function applyGridOrder(items) {
+  state.widgets = items.filter(x => x.kind === 'widget').map(x => x.obj);
+  state.columns = items.filter(x => x.kind === 'col').map(x => x.obj);
+  save(); render();
+}
+
+// Swap fromKey to sit at toKey's position
+function reorderGrid(fromKey, toKey) {
+  const items = allGridItems();
+  const fromIdx = items.findIndex(x => x.key === fromKey);
+  const toIdx   = items.findIndex(x => x.key === toKey);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+  const [moved] = items.splice(fromIdx, 1);
+  items.splice(toIdx, 0, moved);
+  applyGridOrder(items);
+}
+
+// Move fromKey to just before toKey
+function reorderGridBefore(fromKey, toKey) {
+  const items = allGridItems();
+  const fromIdx = items.findIndex(x => x.key === fromKey);
+  const toIdx   = items.findIndex(x => x.key === toKey);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+  const [moved] = items.splice(fromIdx, 1);
+  const newTo = items.findIndex(x => x.key === toKey); // recalculate after splice
+  items.splice(newTo, 0, moved);
+  applyGridOrder(items);
+}
+
+// Move fromKey to absolute end
+function reorderGridToEnd(fromKey) {
+  const items = allGridItems();
+  const fromIdx = items.findIndex(x => x.key === fromKey);
+  if (fromIdx === -1) return;
+  const [moved] = items.splice(fromIdx, 1);
+  items.push(moved);
+  applyGridOrder(items);
+}
+
+/* MODAL */
+function openModal(bmId, colId, prefill) {
+  editingBm = bmId || null;
+  activeColId = colId || null;
+
+  const bm = editingBm ? state.bookmarks.find(b => b.id === editingBm) : null;
+  document.getElementById('modal-title').textContent = bm ? 'Edit bookmark' : 'Add bookmark';
+  document.getElementById('bm-url-input').value = bm ? bm.url : (prefill?.url || '');
+  document.getElementById('bm-title-input').value = bm ? bm.title : (prefill?.title || '');
+
+  const sel = document.getElementById('bm-col-select');
+  sel.innerHTML = state.columns.map(c =>
+    `<option value="${c.id}"${(bm ? bm.colId : colId) === c.id ? ' selected' : ''}>${escHtml(c.title)}</option>`
+  ).join('');
+
+  const pal = document.getElementById('tag-palette');
+  const curTag = bm ? bm.tag : null;
+  pal.innerHTML = TAGS.map(t =>
+    `<span class="tag-chip ${curTag === t.id ? 'selected' : ''}"
+      style="background:${t.bg};color:${t.color}"
+      data-tag="${t.id}">${t.label}</span>`
+  ).join('');
+
+  pal.querySelectorAll('.tag-chip').forEach(chip => {
+    chip.onclick = () => {
+      pal.querySelectorAll('.tag-chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+    };
+  });
+
+  document.getElementById('modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('bm-url-input').focus(), 50);
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  editingBm = null; activeColId = null;
+}
+
+function saveModal() {
+  const url = document.getElementById('bm-url-input').value.trim();
+  if (!url) { document.getElementById('bm-url-input').focus(); return; }
+  let fullUrl = url;
+  if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
+
+  const title = document.getElementById('bm-title-input').value.trim()
+    || fullUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+  const colId = document.getElementById('bm-col-select').value;
+  const tagChip = document.querySelector('#tag-palette .tag-chip.selected');
+  const tag = tagChip ? tagChip.dataset.tag : null;
+
+  if (editingBm) {
+    const bm = state.bookmarks.find(b => b.id === editingBm);
+    if (bm) { bm.url = fullUrl; bm.title = title; bm.colId = colId; bm.tag = tag; }
+    toast('Bookmark updated');
+  } else {
+    const colBms = colBooksmarks(colId);
+    state.bookmarks.push({ id: uid(), colId, url: fullUrl, title, tag, order: colBms.length, addedAt: Date.now() });
+    toast('Bookmark added');
+  }
+  save(); closeModal(); render();
+}
+
+/* ADD COLUMN */
+function addColumn() {
+  const color = COL_COLORS[state.columns.length % COL_COLORS.length];
+  const col = { id: uid(), title: 'New Folder', color };
+  state.columns.push(col);
+  save(); render();
+  setTimeout(() => {
+    const inp = document.querySelector(`[data-col-id="${col.id}"]`);
+    if (inp) { inp.select(); inp.focus(); }
+  }, 50);
+}
+
+/* SEARCH */
+function filterBookmarks(q) {
+  searchQ = q.trim().toLowerCase();
+  document.getElementById('search-clear').classList.toggle('show', !!q);
+  render();
+}
+
+/* EXPORT */
+// ── ROLLING BACKUPS UI ────────────────────────────────────────────────────────
+async function openBackupsModal() {
+  document.getElementById('backups-modal').style.display = 'flex';
+  await loadBackupsList();
+}
+
+async function loadBackupsList() {
+  const listEl = document.getElementById('backups-list');
+  listEl.innerHTML = '<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">Loading…</div>';
+
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) {
+    listEl.innerHTML = '<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">Backups require the local backend (marks_server.py).<br>Not reachable right now.</div>';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/backups');
+    const data = await resp.json();
+    const backups = data.backups || [];
+
+    if (backups.length === 0) {
+      listEl.innerHTML = '<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">No backups yet.<br>One is written automatically after your first save.</div>';
+      return;
+    }
+
+    listEl.innerHTML = backups.map(b => {
+      const date = new Date(b.createdAt * 1000);
+      const label = date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const kb = (b.size / 1024).toFixed(1) + ' KB';
+      return `
+        <div class="backup-row">
+          <div class="backup-info">
+            <span class="backup-label">${escHtml(label)}</span>
+            <span class="backup-size">${escHtml(kb)}</span>
+          </div>
+          <div class="backup-actions">
+            <a class="btn backup-dl-btn" href="/api/backups/${encodeURIComponent(b.filename)}" download="${escHtml(b.filename)}" title="Download this snapshot">↓</a>
+            <button class="btn backup-restore-btn" data-filename="${escHtml(b.filename)}" title="Restore this snapshot">Restore</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    listEl.querySelectorAll('.backup-restore-btn').forEach(btn => {
+      btn.onclick = () => restoreBackup(btn.dataset.filename);
+    });
+  } catch(err) {
+    listEl.innerHTML = `<div style="color:var(--red);font-size:12px;text-align:center;padding:20px">Could not load backups:<br>${escHtml(err.message)}</div>`;
+  }
+}
+
+async function restoreBackup(filename) {
+  const date = filename.replace('helm-backup-', '').replace('.json', '');
+  if (!confirm(`Restore the snapshot from ${date}?\n\nThis will REPLACE your current bookmarks, folders, feeds, and settings with the saved version. This cannot be undone (though your current state is itself a backup candidate if saved recently).`)) return;
+
+  try {
+    const resp = await fetch('/api/backups/' + encodeURIComponent(filename));
+    if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+    const envelope = await resp.json();
+
+    // The backup file is a full state envelope {state, version, updatedAt}
+    // We want just the state, then push it as a new version to the server.
+    const restoredState = envelope.state;
+    if (!restoredState || !restoredState.columns) throw new Error('Backup file format not recognised');
+
+    // Load locally
+    state = restoredState;
+    if (!state.collapsedCols) state.collapsedCols = [];
+    if (!state.settings) state.settings = {};
+    if (!state.feeds) state.feeds = [];
+    if (!state.newsSources) state.newsSources = [];
+    localStorage.setItem('marks_v1', JSON.stringify(state));
+
+    // Push to backend as a new save (resets version conflict risk)
+    SYNC_VERSION = envelope.version; // align version so the push lands correctly
+    await pushStateToBackend();
+
+    render();
+    document.getElementById('backups-modal').style.display = 'none';
+    toast(`Restored from ${date}`);
+  } catch(err) {
+    alert('Restore failed: ' + err.message);
+  }
+}
+
+function saveConfig() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `helm-config-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  toast('Config saved — transfer this file to your other device and use Load Config.');
+}
+
+// ── ENCRYPTED CONFIG EXPORT/IMPORT ──────────────────────────────────────────
+// Uses the browser's built-in Web Crypto API: PBKDF2 to derive a key from
+// the password, AES-GCM for authenticated encryption. No external library.
+// File format: [16-byte salt][12-byte IV][ciphertext+auth tag], base64-free —
+// written as raw bytes in a .helm file.
+
+const PBKDF2_ITERATIONS = 250000; // deliberately slow to resist brute-forcing a weak password
+
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function saveConfigEncrypted() {
+  const password = prompt(
+    'Set a password to encrypt this backup.\n\n' +
+    'Anyone with the file AND this password can read your bookmarks.\n' +
+    'Without the password, the file is unreadable — including by you, ' +
+    'so don\'t lose it.'
+  );
+  if (!password) return;
+  const confirm1 = prompt('Confirm the password:');
+  if (confirm1 !== password) { alert('Passwords did not match. Try again.'); return; }
+
+  try {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv   = crypto.getRandomValues(new Uint8Array(12));
+    const key  = await deriveKey(password, salt);
+
+    const plaintext = new TextEncoder().encode(JSON.stringify(state));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+
+    // File layout: salt (16) + iv (12) + ciphertext+tag
+    const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+    combined.set(salt, 0);
+    combined.set(iv, salt.length);
+    combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
+
+    const blob = new Blob([combined], { type: 'application/octet-stream' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `helm-backup-${new Date().toISOString().slice(0,10)}.helm`;
+    a.click();
+    toast('Encrypted backup saved. Remember your password — it cannot be recovered.');
+  } catch(err) {
+    alert('Encryption failed: ' + err.message);
+  }
+}
+
+async function loadConfigEncrypted(file) {
+  if (!file) return;
+  const password = prompt('Enter the password for this encrypted backup:');
+  if (!password) return;
+
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (buf.length < 28) throw new Error('File too small to be a valid encrypted backup');
+
+    const salt = buf.slice(0, 16);
+    const iv   = buf.slice(16, 28);
+    const ciphertext = buf.slice(28);
+
+    const key = await deriveKey(password, salt);
+    let plaintext;
+    try {
+      plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    } catch {
+      throw new Error('Wrong password, or the file is corrupted/not a Helm encrypted backup.');
+    }
+
+    const data = JSON.parse(new TextDecoder().decode(plaintext));
+    if (!data.columns || !data.bookmarks) {
+      alert('Decrypted successfully, but this doesn\'t look like a Helm config.');
+      return;
+    }
+
+    const summary = [
+      `${data.bookmarks.length} bookmarks`,
+      `${data.columns.length} folders`,
+      data.widgets?.length ? `${data.widgets.length} widgets` : null,
+      data.feeds?.length   ? `${data.feeds.length} YouTube channels` : null,
+      data.newsSources?.length ? `${data.newsSources.length} news sources` : null,
+    ].filter(Boolean).join(', ');
+    if (!confirm(`Decrypted: ${summary}.\n\nLoad this and REPLACE everything currently in Helm?`)) return;
+
+    state = {
+      columns:       data.columns       || [],
+      bookmarks:     data.bookmarks     || [],
+      widgets:       data.widgets       || [],
+      feeds:         data.feeds         || [],
+      newsSources:   data.newsSources   || [],
+      collapsedCols: data.collapsedCols || [],
+      settings:      data.settings      || {},
+    };
+    save();
+    render();
+    toast(`Encrypted config loaded: ${summary}`);
+  } catch(err) {
+    alert('Could not load encrypted backup: ' + err.message);
+  }
+}
+
+function loadConfig(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      // Validate it looks like a Helm config
+      if (!data.columns || !data.bookmarks) {
+        alert('This doesn\'t look like a Helm config file.\nMake sure you\'re using a file saved with "Save Config".');
+        return;
+      }
+      const summary = [
+        `${data.bookmarks.length} bookmarks`,
+        `${data.columns.length} folders`,
+        data.widgets?.length ? `${data.widgets.length} widgets` : null,
+        data.feeds?.length   ? `${data.feeds.length} YouTube channels` : null,
+        data.settings && Object.keys(data.settings).length ? 'settings' : null,
+      ].filter(Boolean).join(', ');
+      if (!confirm(`Load config with ${summary}?\n\nThis will REPLACE everything currently in Helm.`)) return;
+      state = {
+        columns:       data.columns       || [],
+        bookmarks:     data.bookmarks     || [],
+        widgets:       data.widgets       || [],
+        feeds:         data.feeds         || [],
+        collapsedCols: data.collapsedCols || [],
+        settings:      data.settings      || {},
+      };
+      save();
+      render();
+      toast(`Config loaded: ${summary}`);
+    } catch(err) {
+      alert('Could not read config file: ' + err.message);
+    }
+  };
+  reader.onerror = () => alert('Could not read the file.');
+  reader.readAsText(file);
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `helm-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  toast('Exported!');
+}
+
+/* IMPORT */
+function importFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    if (file.name.endsWith('.json')) {
+      importJSON(text);
+    } else if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
+      importNetscapeHTML(text);
+    } else {
+      // Sniff content
+      const trimmed = text.trimStart();
+      if (trimmed.startsWith('{')) importJSON(text);
+      else if (/<a\s/i.test(trimmed)) importNetscapeHTML(text);
+      else alert('Unrecognised file. Export a bookmarks HTML from your browser, or use a Helm JSON backup.');
+    }
+  };
+  reader.onerror = () => alert('Could not read the file.');
+  reader.readAsText(file);
+}
+
+function importJSON(text) {
+  try {
+    const data = JSON.parse(text);
+    if (data.columns && data.bookmarks) {
+      if (!confirm(`Import ${data.bookmarks.length} bookmarks across ${data.columns.length} columns? This will replace your current data.`)) return;
+      state = data;
+      save(); render();
+      toast(`Imported ${data.bookmarks.length} bookmarks`);
+    } else {
+      alert('Invalid JSON backup — missing columns or bookmarks keys.');
+    }
+  } catch (err) {
+    alert('Could not parse JSON: ' + err.message);
+  }
+}
+
+function importNetscapeHTML(text) {
+  // The Netscape bookmark format uses unclosed tags (<DT>, <p>) that browsers
+  // re-parse inconsistently. We scan the raw text directly instead of using
+  // DOMParser, mirroring how a streaming HTML parser would handle it.
+
+  const newCols  = [];
+  const newBms   = [];
+  const folderMap  = {};
+  const orderCount = {};
+  const stack = [];        // folder-name stack
+  let pendingFolder = null; // H3 text seen, waiting for its DL open
+
+  function getOrCreateCol(name) {
+    if (folderMap[name] !== undefined) return folderMap[name];
+    const id = uid();
+    const color = COL_COLORS[(newCols.length + state.columns.length) % COL_COLORS.length];
+    newCols.push({ id, title: name, color });
+    folderMap[name] = id;
+    return id;
+  }
+
+  // Tokenise: pull out tags and text nodes in document order
+  const tokenRe = /<(\/?)([A-Za-z0-9]+)([^>]*)>|([^<]+)/gi;
+  let m;
+  let inH3 = false, inA = false;
+  let h3Buf = '', aBuf = '', aHref = '';
+
+  while ((m = tokenRe.exec(text)) !== null) {
+    const [, slash, tagName, attrs, textNode] = m;
+
+    if (textNode !== undefined) {
+      if (inH3) h3Buf += textNode;
+      if (inA)  aBuf  += textNode;
+      continue;
+    }
+
+    const tag = tagName.toUpperCase();
+    const isClose = slash === '/';
+
+    if (!isClose) {
+      // Opening tag
+      if (tag === 'DL') {
+        if (pendingFolder !== null) {
+          stack.push(pendingFolder);
+          pendingFolder = null;
+        }
+      } else if (tag === 'H3') {
+        inH3 = true; h3Buf = '';
+      } else if (tag === 'A') {
+        // Extract HREF attribute (case-insensitive, handles both quote styles)
+        const hrefM = /\bHREF\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/i.exec(attrs);
+        aHref = hrefM ? (hrefM[1] ?? hrefM[2] ?? hrefM[3]) : '';
+        inA = true; aBuf = '';
+      }
+    } else {
+      // Closing tag
+      if (tag === 'DL') {
+        if (stack.length) stack.pop();
+      } else if (tag === 'H3') {
+        inH3 = false;
+        pendingFolder = h3Buf.trim() || 'Folder';
+      } else if (tag === 'A') {
+        inA = false;
+        const url = aHref;
+        if (url && !url.startsWith('javascript:') && !url.startsWith('place:')) {
+          const title   = aBuf.trim() || url;
+          const colName = stack.length ? stack[stack.length - 1] : 'Imported';
+          const colId   = getOrCreateCol(colName);
+          orderCount[colId] = (orderCount[colId] || 0);
+          newBms.push({ id: uid(), colId, url, title, tag: null, order: orderCount[colId]++ });
+        }
+      }
+    }
+  }
+
+  if (newBms.length === 0) {
+    alert("No bookmarks found. Make sure it's a browser bookmark export.");
+    return;
+  }
+
+
+  const doReplace = confirm(
+    `Found ${newBms.length} bookmarks in ${newCols.length} folder${newCols.length !== 1 ? 's' : ''}.\n\n` +
+    `OK = Replace all existing bookmarks\n` +
+    `Cancel = Add alongside existing bookmarks`
+  );
+  const doAppend = !doReplace && confirm(`Add ${newBms.length} bookmarks alongside your existing ones?`);
+  if (!doReplace && !doAppend) return;
+
+  if (doReplace) {
+    state.columns   = newCols;
+    state.bookmarks = newBms;
+  } else {
+    state.columns.push(...newCols);
+    state.bookmarks.push(...newBms);
+  }
+  save(); render();
+  toast(`Imported ${newBms.length} bookmarks across ${newCols.length} folder${newCols.length !== 1 ? 's' : ''}`);
+}
+
+
+
+// ── BACKGROUND ────────────────────────────────────────────────────────────────
+const BG_PRESETS = [
+  { label: 'Default',  value: '' },
+  { label: 'Midnight', value: 'linear-gradient(135deg,#0d1117,#161b22)' },
+  { label: 'Ocean',    value: 'linear-gradient(135deg,#0f2027,#203a43,#2c5364)' },
+  { label: 'Forest',   value: 'linear-gradient(135deg,#0f3443,#34e89e 120%)' },
+  { label: 'Dusk',     value: 'linear-gradient(135deg,#2d1b69,#11998e)' },
+  { label: 'Ember',    value: 'linear-gradient(135deg,#1a1a2e,#e94560)' },
+  { label: 'Slate',    value: '#1e2028' },
+  { label: 'Charcoal', value: '#1c1c1e' },
+];
+
+function applyBackground() {
+  const s = state.settings;
+  if (s.bgImage) {
+    document.body.style.background = `url(${s.bgImage}) center/cover fixed`;
+  } else if (s.bgValue) {
+    document.body.style.background = s.bgValue;
+  } else if (s.weatherBg) {
+    applyWeatherBackground();
+  } else {
+    document.body.style.background = '';
+  }
+}
+
+// ── WEATHER-DRIVEN BACKGROUND ─────────────────────────────────────────────────
+// When enabled (and no manual background color/image is set), the background
+// gradient shifts based on current conditions from the first weather widget:
+// warm tones for clear/sunny, cool desaturated tones for rain/snow, and a
+// day/night tint based on local hour. Falls back to the default background
+// if no weather widget exists yet or data hasn't loaded.
+
+function weatherToGradient(weathercode, hour, tempC) {
+  // Map WMO code + time of day + temperature to a CSS gradient.
+  // hour: 0-23 local time
+  // tempC: current temperature in Celsius (null if unavailable)
+
+  // ── Time-of-day sky tones ─────────────────────────────────────────────────
+  // Rather than binary day/night, we use five phases:
+  //   night (21-4), dawn (5-7), morning (8-11), afternoon (12-17), dusk (18-20)
+  let phase;
+  if      (hour >= 5  && hour <= 7)  phase = 'dawn';
+  else if (hour >= 8  && hour <= 11) phase = 'morning';
+  else if (hour >= 12 && hour <= 17) phase = 'afternoon';
+  else if (hour >= 18 && hour <= 20) phase = 'dusk';
+  else                               phase = 'night';
+
+  // ── Temperature tint (Celsius) ────────────────────────────────────────────
+  // Warm (>22°C) shifts clear-sky gradients toward more saturated orange-blue.
+  // Cold (<4°C) shifts them toward icy blue-white.
+  const warm = tempC !== null && tempC > 22;
+  const cold = tempC !== null && tempC < 4;
+
+  // ── Clear sky ─────────────────────────────────────────────────────────────
+  if (weathercode === 0) {
+    if (phase === 'night')     return 'linear-gradient(180deg,#060b18,#0d1f3c)';
+    if (phase === 'dawn')      return 'linear-gradient(170deg,#1a1035,#c2623f,#e8923a)';
+    if (phase === 'dusk')      return 'linear-gradient(170deg,#e8923a,#c2623f,#1a1035)';
+    if (phase === 'morning')   return warm ? 'linear-gradient(170deg,#2563a8,#5fa0d8,#fde68a)'
+                                           : cold ? 'linear-gradient(170deg,#2a4a7f,#7ab0d4,#e0eef7)'
+                                           : 'linear-gradient(170deg,#1e4d8c,#4a90d4,#fdf6c8)';
+    // afternoon
+    return warm ? 'linear-gradient(170deg,#1a5fb4,#4a9ede,#f97316)'
+                : cold ? 'linear-gradient(170deg,#1e3a6e,#4a7fba,#c8dff0)'
+                : 'linear-gradient(170deg,#1b4f8a,#3b82c4,#fbbf24)';
+  }
+
+  // ── Partly cloudy (codes 1-2) ─────────────────────────────────────────────
+  if (weathercode <= 2) {
+    if (phase === 'night')   return 'linear-gradient(160deg,#0d1225,#1e2a42)';
+    if (phase === 'dawn')    return 'linear-gradient(160deg,#221535,#7a4030,#c08050)';
+    if (phase === 'dusk')    return 'linear-gradient(160deg,#c08050,#7a4030,#221535)';
+    if (phase === 'morning') return 'linear-gradient(160deg,#2a4a7a,#6a92b8,#dde8f0)';
+    return 'linear-gradient(160deg,#2a4f84,#5a8ab8,#c8d8e8)';
+  }
+
+  // ── Overcast (code 3) ─────────────────────────────────────────────────────
+  if (weathercode <= 3) {
+    if (phase === 'night') return 'linear-gradient(180deg,#141620,#252836)';
+    if (phase === 'dawn' || phase === 'dusk') return 'linear-gradient(180deg,#2a2535,#504858)';
+    return 'linear-gradient(180deg,#3a3f4c,#5a6070,#767c88)';
+  }
+
+  // ── Fog / rime / depositing rime (45-49) ──────────────────────────────────
+  if (weathercode <= 49) {
+    if (phase === 'night') return 'linear-gradient(180deg,#1a1d24,#2a2e38)';
+    return 'linear-gradient(180deg,#4a4e58,#787e8a,#a8aeb6)';
+  }
+
+  // ── Drizzle light (51-53) ─────────────────────────────────────────────────
+  if (weathercode <= 53) {
+    if (phase === 'night') return 'linear-gradient(160deg,#131824,#1e2a38)';
+    return 'linear-gradient(160deg,#2a3444,#445566,#6a7888)';
+  }
+
+  // ── Drizzle moderate/heavy + freezing (55-67) ────────────────────────────
+  if (weathercode <= 67) {
+    if (phase === 'night') return 'linear-gradient(155deg,#0f1520,#1a2535)';
+    return 'linear-gradient(155deg,#1e2d40,#364a5e,#506070)';
+  }
+
+  // ── Rain light (80-81) ────────────────────────────────────────────────────
+  if (weathercode === 80 || weathercode === 81) {
+    if (phase === 'night') return 'linear-gradient(150deg,#111922,#1c2b3a)';
+    return 'linear-gradient(150deg,#1c2c3e,#2e4458,#4a6070)';
+  }
+
+  // ── Rain showers heavy / violent (82) ────────────────────────────────────
+  if (weathercode === 82) {
+    return 'linear-gradient(145deg,#0d1520,#162030,#1e2e40)';
+  }
+
+  // ── Steady rain moderate/heavy (68-69) ───────────────────────────────────
+  if (weathercode <= 69) {
+    if (phase === 'night') return 'linear-gradient(150deg,#0e1620,#162232)';
+    return 'linear-gradient(150deg,#1a2a3c,#2c3e50,#3a5060)';
+  }
+
+  // ── Snow (70-79) ─────────────────────────────────────────────────────────
+  if (weathercode <= 79) {
+    if (phase === 'night') return 'linear-gradient(170deg,#181e2c,#2a3248,#3c4460)';
+    if (phase === 'dawn' || phase === 'dusk') return 'linear-gradient(170deg,#2a2840,#7a7898,#c0bcd8)';
+    return 'linear-gradient(170deg,#3a4258,#7880a0,#c8ccd8)';
+  }
+
+  // ── Snow showers (85-86) ─────────────────────────────────────────────────
+  if (weathercode <= 86) {
+    if (phase === 'night') return 'linear-gradient(170deg,#141828,#262e44)';
+    return 'linear-gradient(170deg,#303858,#6068888,#b0b4c8)';
+  }
+
+  // ── Thunderstorm (95-99) ─────────────────────────────────────────────────
+  if (weathercode >= 95) {
+    if (phase === 'night') return 'linear-gradient(140deg,#080c14,#14161e,#1e1430)';
+    return 'linear-gradient(140deg,#0f1420,#1c1e2c,#2e2040)';
+  }
+
+  // ── Fallback ──────────────────────────────────────────────────────────────
+  return '';
+}
+
+function applyWeatherBackground() {
+  const wxWidget = state.widgets.find(w => w.type === 'weather');
+  if (!wxWidget) { document.body.style.background = ''; return; }
+  const cached = WX_CACHE[wxWidget.id];
+  if (!cached) { document.body.style.background = ''; return; }
+
+  const hour  = new Date().getHours();
+  const code  = cached.data.current.weathercode;
+
+  // Convert temperature to Celsius regardless of the widget's display unit
+  const rawTemp = cached.data.current?.temperature_2m ?? null;
+  const unit    = wxWidget.unit || 'f';
+  const tempC   = rawTemp === null ? null : unit === 'f' ? (rawTemp - 32) * 5 / 9 : rawTemp;
+
+  const gradient = weatherToGradient(code, hour, tempC);
+  document.body.style.background = gradient ? gradient + ' fixed' : '';
+}
+
+function openBgModal() {
+  const presets = document.getElementById('bg-presets');
+  const cur = state.settings.bgValue || '';
+  presets.innerHTML = BG_PRESETS.map((p, i) => {
+    const active = cur === p.value;
+    return `<button class="bg-preset-btn" data-idx="${i}"
+      style="padding:6px 10px;border-radius:6px;border:2px solid ${active?'var(--accent)':'var(--border)'};
+             background:${p.value||'var(--surface-2)'};color:var(--text);cursor:pointer;font-size:11px;
+             font-family:var(--font-body);transition:border-color 0.12s;min-width:60px">
+      ${p.label}
+    </button>`;
+  }).join('');
+  // Delegated click — no inline onclick, no quoting issues
+  presets.onclick = (e) => {
+    const btn = e.target.closest('.bg-preset-btn');
+    if (!btn) return;
+    const p = BG_PRESETS[+btn.dataset.idx];
+    state.settings.bgValue = p.value;
+    state.settings.bgImage = '';
+    state.settings.weatherBg = false;
+    save(); applyBackground(); openBgModal();
+  };
+  document.getElementById('bg-custom').value = state.settings.bgValue || '';
+  document.getElementById('bg-img').value = state.settings.bgImage || '';
+
+  const wxToggle = document.getElementById('bg-weather-toggle');
+  wxToggle.checked = !!state.settings.weatherBg;
+  wxToggle.onchange = () => {
+    state.settings.weatherBg = wxToggle.checked;
+    save();
+    applyBackground();
+  };
+
+  document.getElementById('bg-modal').style.display = 'flex';
+}
+
+window.applyBgFromModal = function() {
+  const custom = document.getElementById('bg-custom').value.trim();
+  const img = document.getElementById('bg-img').value.trim();
+  if (img) { state.settings.bgImage = img; state.settings.bgValue = ''; state.settings.weatherBg = false; }
+  else if (custom) { state.settings.bgValue = custom; state.settings.bgImage = ''; state.settings.weatherBg = false; }
+  save(); applyBackground();
+  document.getElementById('bg-modal').style.display = 'none';
+};
+
+window.resetBg = function() {
+  state.settings.bgValue = '';
+  state.settings.bgImage = '';
+  state.settings.weatherBg = false;
+  save(); applyBackground();
+  document.getElementById('bg-modal').style.display = 'none';
+};
+
+// ── DENSITY TOGGLE ────────────────────────────────────────────────────────────
+function toggleDensity() {
+  state.settings.compact = !state.settings.compact;
+  save(); render();
+  toast(state.settings.compact ? 'Compact mode on' : 'Comfortable mode on');
+}
+
+// ── NOTES WIDGET ──────────────────────────────────────────────────────────────
+function renderNotesWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card notes-widget';
+  el.dataset.widgetId = w.id;
+  // Not draggable by default — only the header grants drag, set dynamically below.
+  // This keeps the textarea outside any natively-draggable ancestor during normal use,
+  // since draggable="true" ancestors can interfere with text selection/cursor placement
+  // in the browser's native handling, independent of any JS dragstart guard.
+  el.draggable = false;
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:var(--green)"></span>
+      <span class="column-title" style="cursor:default">Notes</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn danger" title="Remove notes" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="notes-body">
+      <textarea class="notes-textarea" id="notes-${w.id}" placeholder="Type a note…" spellcheck="true" draggable="false">${escHtml(w.content || '')}</textarea>
+    </div>
+    <div class="notes-footer" id="notes-footer-${w.id}"></div>
+  `;
+  // Header grants drag only while the mouse is pressed on it
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) {
+      header.onmousedown = () => { el.draggable = true; };
+    }
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    // Also reset on a plain mouseup anywhere (covers click-without-drag)
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+  }, 0);
+  // Wire up autosave after insertion (deferred so DOM is ready)
+  setTimeout(() => {
+    const ta = document.getElementById('notes-' + w.id);
+    const footer = document.getElementById('notes-footer-' + w.id);
+    if (!ta) return;
+    let saveTimer;
+    ta.oninput = () => {
+      if (footer) footer.textContent = 'Unsaved…';
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        w.content = ta.value;
+        save();
+        if (footer) footer.textContent = 'Saved ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      }, 800);
+    };
+    if (footer && w.content) footer.textContent = '';
+  }, 0);
+  return el;
+}
+
+// ── SORT FOLDER ───────────────────────────────────────────────────────────────
+function openSortModal() {
+  const list = document.getElementById('sort-folder-list');
+  list.innerHTML = state.columns.map(col => {
+    const count = state.bookmarks.filter(b => b.colId === col.id).length;
+    return `<div class="sort-folder-item" data-sort-col="${col.id}">
+      <span style="width:8px;height:8px;border-radius:50%;background:${col.color};flex-shrink:0;display:inline-block"></span>
+      <span style="flex:1">${escHtml(col.title)}</span>
+      <span style="color:var(--text-dim);font-size:11px">${count}</span>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-sort-col]').forEach(item => {
+    item.onclick = () => {
+      const colId = item.dataset.sortCol;
+      const bms = state.bookmarks.filter(b => b.colId === colId);
+      bms.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+      bms.forEach((bm, i) => bm.order = i);
+      save(); render();
+      document.getElementById('sort-modal').classList.remove('open');
+      toast('Folder sorted A→Z');
+    };
+  });
+  document.getElementById('sort-modal').classList.add('open');
+}
+
+// ── BOOKMARKLET ───────────────────────────────────────────────────────────────
+function openBookmarkletModal() {
+  const marksUrl = location.href.split('?')[0].split('#')[0];
+  const isFileUrl = marksUrl.startsWith('file://');
+
+  const bml = `javascript:(function(){` +
+    `var u=encodeURIComponent(location.href);` +
+    `var t=encodeURIComponent(document.title);` +
+    `location.href='${marksUrl}#bml&url='+u+'&title='+t;` +
+  `})();`;
+
+  document.getElementById('bml-link').href = bml;
+  document.getElementById('bml-code').value = bml;
+
+  // Warn clearly if running from file:// — browsers block JS navigation
+  // from https/http pages TO file:// URLs as a security restriction.
+  // No code fix is possible; Helm must be served over http:// for the
+  // bookmarklet to work (e.g. `python3 -m http.server` in its folder).
+  const warningEl = document.getElementById('bml-file-warning');
+  if (warningEl) warningEl.style.display = isFileUrl ? 'block' : 'none';
+
+  document.getElementById('bml-modal').classList.add('open');
+}
+
+// ── AUTO BACKUP ───────────────────────────────────────────────────────────────
+const BACKUP_INTERVAL_DAYS = 7;
+const BACKUP_KEY = 'marks_last_backup';
+
+function checkAutoBackup() {
+  const last = parseInt(localStorage.getItem(BACKUP_KEY) || '0', 10);
+  const daysSince = (Date.now() - last) / (1000 * 60 * 60 * 24);
+  if (daysSince >= BACKUP_INTERVAL_DAYS) {
+    // Show a gentle reminder rather than auto-downloading unexpectedly
+    setTimeout(() => {
+      toast('Auto-backup reminder: download a backup now?');
+      // Give them 5 seconds to see the toast, then offer download
+      setTimeout(() => {
+        if (confirm('It\'s been ' + Math.floor(daysSince) + ' days since your last backup.\nDownload one now?')) {
+          exportData();
+          localStorage.setItem(BACKUP_KEY, Date.now().toString());
+        } else {
+          // Snooze for 1 day
+          localStorage.setItem(BACKUP_KEY, (Date.now() - (BACKUP_INTERVAL_DAYS - 1) * 86400000).toString());
+        }
+      }, 3000);
+    }, 2000);
+  }
+}
+
+/* INIT EVENTS */
+// add-col-btn onclick set inline in render()
+document.getElementById('btn-add-bm-top').onclick = () => {
+  const firstCol = state.columns[0];
+  openModal(null, firstCol ? firstCol.id : null);
+};
+document.getElementById('modal-close').onclick = closeModal;
+document.getElementById('modal-cancel').onclick = closeModal;
+document.getElementById('modal-save').onclick = saveModal;
+document.getElementById('modal-overlay').onclick = (e) => { if (e.target === e.currentTarget) closeModal(); };
+document.getElementById('btn-export').onclick = exportData;
+document.getElementById('btn-save-config').onclick = saveConfig;
+document.getElementById('btn-load-config').onclick = () => document.getElementById('config-input').click();
+document.getElementById('config-input').onchange = (e) => { loadConfig(e.target.files[0]); e.target.value = ''; };
+document.getElementById('btn-save-config-enc').onclick = saveConfigEncrypted;
+document.getElementById('btn-backups').onclick = openBackupsModal;
+document.getElementById('btn-backups-refresh').onclick = loadBackupsList;
+document.getElementById('btn-load-config-enc').onclick = () => document.getElementById('config-enc-input').click();
+document.getElementById('config-enc-input').onchange = (e) => { loadConfigEncrypted(e.target.files[0]); e.target.value = ''; };
+
+document.getElementById('reader-close').onclick = closeReader;
+document.getElementById('reader-overlay').onclick = (e) => { if (e.target.id === 'reader-overlay') closeReader(); };
+document.getElementById('reader-save-bm').onclick = () => {
+  if (!currentReaderUrl) return;
+  const title = document.getElementById('reader-title').textContent;
+  saveAsBookmark(currentReaderUrl, title);
+};
+document.getElementById('btn-import').onclick = () => document.getElementById('import-input').click();
+document.getElementById('btn-add-search').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'search', engine: 'startpage' });
+  save(); render();
+};
+document.getElementById('btn-sort').onclick = openSortModal;
+document.getElementById('btn-bg').onclick = openBgModal;
+document.getElementById('btn-density').onclick = toggleDensity;
+document.getElementById('btn-extension').onclick = () => { document.getElementById('ext-modal').style.display = 'flex'; };
+document.getElementById('btn-bookmarklet').onclick = openBookmarkletModal;
+document.getElementById('btn-add-notes').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'notes', content: '' });
+  save(); render();
+};
+document.getElementById('btn-add-weather').onclick = () => {
+  const city = prompt('City name for weather:', 'Athens, GA');
+  if (!city) return;
+  state.widgets.push({ id: uid(), type: 'weather', city: city.trim(), unit: 'f' });
+  save(); render();
+};
+document.getElementById('btn-add-clock').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'clock', format: '24h' });
+  save(); render();
+};
+document.getElementById('btn-add-sysstats').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'sysstats' });
+  save(); render();
+};
+document.getElementById('btn-add-calendar').onclick = () => {
+  const t = new Date();
+  state.widgets.push({ id: uid(), type: 'calendar', calView: 'month', viewMonth: t.getFullYear() + '-' + (t.getMonth() + 1) });
+  save(); render();
+};
+document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
+document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);
+document.getElementById('search-clear').onclick = () => {
+  document.getElementById('search').value = '';
+  filterBookmarks('');
+};
+
+document.onkeydown = (e) => {
+  if (e.key === 'Escape') { closeModal(); closeReader(); ['sort-modal','bml-modal'].forEach(id => document.getElementById(id).classList.remove('open')); ['bg-modal','ext-modal','backups-modal'].forEach(id => document.getElementById(id).style.display='none'); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    document.getElementById('search').focus();
+  }
+  if (e.key === 'Enter' && document.getElementById('modal-overlay').classList.contains('open')) {
+    if (document.activeElement !== document.getElementById('modal-cancel')) saveModal();
+  }
+};
+
+document.getElementById('bm-url-input').oninput = function() {
+  const titleInput = document.getElementById('bm-title-input');
+  if (!titleInput.value || titleInput.dataset.userEdited !== '1') {
+    try {
+      const host = new URL(this.value).hostname.replace('www.','');
+      if (host && !titleInput.dataset.userEdited) titleInput.placeholder = host;
+    } catch {}
+  }
+};
+document.getElementById('bm-title-input').oninput = function() {
+  this.dataset.userEdited = this.value ? '1' : '';
+};
+
+
+load();
+render();
+checkAutoBackup();
+updateInvidiousButton();
+// ── Topbar dropdown menus (Data / Widgets / Tools) ──────────────────────────
+document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
+  trigger.onclick = (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById(trigger.dataset.dd);
+    const menu = dd.querySelector('.dropdown-menu');
+    const wasOpen = menu.classList.contains('open');
+    // Close all other dropdowns first
+    document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('.dropdown-trigger.active').forEach(t => t.classList.remove('active'));
+    if (!wasOpen) {
+      // position:fixed menu needs explicit coordinates — the menu lives inside
+      // an overflow-clipped scrolling container (#topbar-tools), so position:
+      // absolute would get invisibly cut off. Compute screen position from
+      // the trigger button's actual rect instead.
+      const rect = trigger.getBoundingClientRect();
+      menu.style.top = (rect.bottom + 6) + 'px';
+      menu.style.left = rect.left + 'px';
+      menu.classList.add('open');
+      trigger.classList.add('active');
+
+      // If the menu would overflow the right edge of the viewport, align its
+      // right edge to the trigger's right edge instead (flip open-direction).
+      requestAnimationFrame(() => {
+        const menuRect = menu.getBoundingClientRect();
+        if (menuRect.right > window.innerWidth - 8) {
+          menu.style.left = (rect.right - menuRect.width) + 'px';
+        }
+      });
+    }
+  };
+});
+
+// Close any open dropdown when clicking elsewhere, or when any item inside is clicked
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.dropdown-item')) {
+    // Let the item's own handler run first, then close the menu
+    setTimeout(() => {
+      document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
+      document.querySelectorAll('.dropdown-trigger.active').forEach(t => t.classList.remove('active'));
+    }, 0);
+    return;
+  }
+  if (!e.target.closest('.dropdown')) {
+    document.querySelectorAll('.dropdown-menu.open').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('.dropdown-trigger.active').forEach(t => t.classList.remove('active'));
+  }
+});
+
+initSync();
+
+// Register service worker for PWA installability and offline app-shell caching.
+// Only works over http(s) — service workers are not available on file:// origins.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').catch((err) => {
+    console.log('[Helm] Service worker registration failed:', err.message);
+  });
+}
+
+// Handle bookmarklet: #bml&url=...&title=...&colId=...
+// The optional colId param is added by the browser extension when the user
+// has selected a specific folder — in that case we save silently without
+// opening the modal (same as saveToFolder() called via executeScript).
+(function() {
+  const hash = location.hash;
+  if (!hash.startsWith('#bml')) return;
+  const raw = hash.slice(1);
+  const pairs = {};
+  raw.split('&').forEach(part => {
+    const eq = part.indexOf('=');
+    if (eq > -1) pairs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
+  });
+  const url   = pairs.url   || '';
+  const title = pairs.title || '';
+  const colId = pairs.colId || '';
+  if (!url) return;
+  history.replaceState({}, '', location.pathname);
+
+  setTimeout(() => {
+    if (colId && typeof saveToFolder === 'function') {
+      // Silent save directly to the chosen folder — no modal
+      const saved = saveToFolder(url, title || url, colId);
+      if (saved) toast('Saved to ' + (state.columns.find(c => c.id === colId)?.title || 'folder'));
+      // If already exists in that folder, fall through to modal so user can see it
+      else { openModal(null, colId, { url, title }); }
+    } else {
+      // No folder specified — open the modal pre-filled as before
+      const firstCol = state.columns[0];
+      openModal(null, firstCol ? firstCol.id : null, { url, title });
+    }
+  }, 200);
+})();
+
+// ── YOUTUBE FEEDS PAGE ────────────────────────────────────────────────────────
+// YouTube exposes public Atom feeds per channel, no API key needed:
+// https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID
+// We fetch via a CORS proxy (rss2json.com, free for public feeds).
+// Users can add channels by URL, handle (@name), or channel ID.
+
+const FEEDS_CACHE = {}; // channelId → { items, title, avatar, ts }
+// Per-channel carousel index — see VIDEO_CAROUSEL_IDX below
+
+// ── State: channels stored in state.feeds ────────────────────────────────────
+function ensureFeeds() {
+  if (!state.feeds) state.feeds = [];
+  if (!state.newsSources) state.newsSources = [];
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+let currentTab = 'bookmarks';
+document.title = 'Helm — Bookmarks';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('main').style.display        = tab === 'bookmarks' ? '' : 'none';
+  document.getElementById('feeds-page').style.display  = tab === 'feeds'     ? '' : 'none';
+  document.getElementById('news-page').style.display   = tab === 'news'      ? '' : 'none';
+  document.getElementById('search-wrap').style.display = tab === 'bookmarks' ? '' : 'none';
+  document.getElementById('topbar-actions').style.display = tab === 'bookmarks' ? '' : 'none';
+  document.title = tab === 'feeds' ? 'Helm — YouTube Feeds' : tab === 'news' ? 'Helm — News' : 'Helm — Bookmarks';
+  if (tab === 'feeds') renderFeeds();
+  if (tab === 'news') renderNews();
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.onclick = () => switchTab(btn.dataset.tab);
+});
+
+// ── Add channel ───────────────────────────────────────────────────────────────
+document.getElementById('btn-add-channel').onclick = addChannel;
+document.getElementById('btn-refresh-feeds').onclick = () => {
+  Object.keys(FEEDS_CACHE).forEach(k => delete FEEDS_CACHE[k]);
+  renderFeeds();
+};
+document.getElementById('feeds-sort').onchange = (e) => {
+  state.settings.feedsSortMode = e.target.value;
+  save(); renderFeeds();
+};
+
+document.getElementById('btn-invidious-toggle').onclick = toggleInvidious;
+document.getElementById('btn-invidious-toggle').oncontextmenu = (e) => { e.preventDefault(); changeInvidiousInstance(); };
+document.getElementById('btn-invidious-config').onclick = changeInvidiousInstance;
+document.getElementById('btn-add-news-source').onclick = addNewsSource;
+document.getElementById('btn-refresh-news').onclick = () => {
+  Object.keys(NEWS_CACHE).forEach(k => delete NEWS_CACHE[k]);
+  renderNews();
+};
+document.getElementById('news-sort').onchange = (e) => {
+  state.settings.newsSortMode = e.target.value;
+  save(); renderNews();
+};
+
+document.getElementById('btn-refresh-all').onclick = async () => {
+  const btn = document.getElementById('btn-refresh-all');
+  btn.disabled = true;
+  btn.textContent = '↺ Refreshing…';
+
+  Object.keys(FEEDS_CACHE).forEach(k => delete FEEDS_CACHE[k]);
+  Object.keys(NEWS_CACHE).forEach(k => delete NEWS_CACHE[k]);
+
+  // Re-render whichever tab is currently visible so the user sees it update right away
+  if (currentTab === 'feeds') renderFeeds();
+  else if (currentTab === 'news') renderNews();
+  else render(); // bookmarks tab — favicons re-fetch naturally via <img> tags
+
+  // Pre-warm the other two tabs' data in the background so switching to them is instant
+  const warmups = [];
+  if (currentTab !== 'feeds' && state.feeds?.length) {
+    warmups.push(...state.feeds.map(ch => loadChannelFeed(ch)));
+  }
+  if (currentTab !== 'news' && state.newsSources?.length) {
+    warmups.push(...state.newsSources.map(src => loadNewsSource(src)));
+  }
+  await Promise.allSettled(warmups);
+
+  btn.disabled = false;
+  btn.textContent = '↺ Refresh All';
+  toast('Refreshed everything');
+};
+document.querySelectorAll('.news-view-btn').forEach(btn => {
+  btn.onclick = () => { newsViewMode = btn.dataset.view; renderNews(); };
+});
+
+async function resolveChannelId(input) {
+  input = input.trim();
+  // Already a bare channel ID
+  if (/^UC[\w-]{22}$/.test(input)) return input;
+  // Feed URL with channel_id param
+  const fidMatch = input.match(/channel_id=(UC[\w-]{22})/);
+  if (fidMatch) return fidMatch[1];
+  // youtube.com/channel/UCxxxxx URL
+  const chanMatch = input.match(/youtube\.com\/channel\/(UC[\w-]{22})/);
+  if (chanMatch) return chanMatch[1];
+
+  // @handle or youtube.com/@handle — use YouTube's oEmbed API.
+  // oEmbed is CORS-enabled and returns video/channel metadata without a proxy.
+  // We fetch a known video from the channel page to extract the channel ID.
+  let handle = input.replace(/.*youtube\.com\//,'').replace(/^@/,'').split(/[/?]/)[0];
+  if (handle) {
+    try {
+      // oEmbed on the channel URL returns JSON with author info but not channel ID.
+      // Instead, fetch the channel's RSS feed via corsproxy.io (reliable for XML).
+      // Try the /user/ legacy feed first, then @handle via proxy.
+      const userFeed = `https://www.youtube.com/feeds/videos.xml?user=${handle}`;
+      const xml = await fetchViaProxy(userFeed);
+      const m = xml.match(/channel_id=(UC[\w-]{22})/)
+             || xml.match(/<yt:channelId>(UC[\w-]{22})<\/yt:channelId>/)
+             || xml.match(/\/(UC[\w-]{22})\//);
+      if (m) return m[1];
+    } catch {}
+  }
+  return null;
+}
+
+async function addChannel() {
+  const input = prompt(
+    'Paste a YouTube channel ID (most reliable):\n' +
+    'Find it: channel page → About → Share → Copy channel ID\n\n' +
+    'Or try a @handle or channel URL — may need a moment to resolve:\n\n' +
+    'Examples:\n' +
+    '  UCBcRF18a7Qf58cCRy5xuWwQ   ← channel ID (best)\n' +
+    '  @mkbhd                      ← handle\n' +
+    '  https://youtube.com/@mkbhd  ← URL'
+  );
+  if (!input) return;
+  ensureFeeds();
+  const status = document.getElementById('feeds-status');
+  status.textContent = 'Resolving channel…';
+
+  let channelId = await resolveChannelId(input);
+
+  if (!channelId) {
+    status.textContent = '';
+    // Resolution failed — ask for the ID directly
+    const fallback = prompt('Could not resolve that automatically.\n\nPlease paste the channel ID directly (starts with UC, ~24 chars).\nFind it: YouTube channel → About → Share → Copy channel ID.');
+    if (!fallback) return;
+    channelId = fallback.trim();
+  }
+
+  if (!/^UC[\w-]{20,}$/.test(channelId)) {
+    alert(channelId + ' doesn\'t look like a valid channel ID. It should start with UC and be ~24 characters.');
+    return;
+  }
+
+  if (state.feeds.find(f => f.id === channelId)) {
+    toast('Channel already added'); status.textContent = ''; return;
+  }
+
+  state.feeds.push({ id: channelId, addedAt: Date.now() });
+  save();
+  status.textContent = '';
+  renderFeeds();
+}
+
+// ── Render feeds page ─────────────────────────────────────────────────────────
+function getSortedFeeds() {
+  const mode = state.settings.feedsSortMode || 'manual';
+  const feeds = [...state.feeds];
+  if (mode === 'alpha') {
+    feeds.sort((a, b) => {
+      const nameA = FEEDS_CACHE[a.id]?.title || a.id;
+      const nameB = FEEDS_CACHE[b.id]?.title || b.id;
+      return nameA.localeCompare(nameB);
+    });
+  } else if (mode === 'recent') {
+    feeds.sort((a, b) => {
+      const latestA = FEEDS_CACHE[a.id]?.items?.[0]?.pubDate || '';
+      const latestB = FEEDS_CACHE[b.id]?.items?.[0]?.pubDate || '';
+      return new Date(latestB) - new Date(latestA);
+    });
+  }
+  // manual = keep state.feeds array order as-is
+  return feeds;
+}
+
+function renderFeeds() {
+  ensureFeeds();
+  const grid = document.getElementById('feeds-grid');
+  grid.innerHTML = '';
+
+  // Sync the sort dropdown to the saved preference
+  const sortSel = document.getElementById('feeds-sort');
+  if (sortSel) sortSel.value = state.settings.feedsSortMode || 'manual';
+
+  if (state.feeds.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-dim);font-size:13px">
+      No channels yet.<br><br>Click <strong style="color:var(--text)">+ Add Channel</strong> and paste a YouTube channel URL or @handle.
+    </div>`;
+    return;
+  }
+
+  const sorted = getSortedFeeds();
+  const manualMode = (state.settings.feedsSortMode || 'manual') === 'manual';
+
+  sorted.forEach(ch => {
+    const card = document.createElement('div');
+    card.className = 'channel-card';
+    card.dataset.channelId = ch.id;
+    card.draggable = manualMode;
+    card.innerHTML = buildChannelCardHTML(ch);
+    grid.appendChild(card);
+    loadChannelFeed(ch);
+  });
+
+  if (manualMode) setupChannelDrag();
+}
+
+// ── Drag-to-reorder channels (manual mode only) ────────────────────────────────
+function setupChannelDrag() {
+  let dragChannelId = null;
+
+  document.querySelectorAll('.channel-card').forEach(card => {
+    card.ondragstart = (e) => {
+      if (e.target.closest('a, button, input, textarea')) { e.preventDefault(); return; }
+      dragChannelId = card.dataset.channelId;
+      card.classList.add('channel-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    };
+    card.ondragend = () => {
+      card.classList.remove('channel-dragging');
+      document.querySelectorAll('.channel-drag-over').forEach(el => el.classList.remove('channel-drag-over'));
+      dragChannelId = null;
+    };
+    card.ondragover = (e) => {
+      if (!dragChannelId || dragChannelId === card.dataset.channelId) return;
+      e.preventDefault();
+      card.classList.add('channel-drag-over');
+    };
+    card.ondragleave = () => card.classList.remove('channel-drag-over');
+    card.ondrop = (e) => {
+      e.preventDefault();
+      card.classList.remove('channel-drag-over');
+      if (!dragChannelId || dragChannelId === card.dataset.channelId) return;
+      const fromIdx = state.feeds.findIndex(f => f.id === dragChannelId);
+      const toIdx   = state.feeds.findIndex(f => f.id === card.dataset.channelId);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const [moved] = state.feeds.splice(fromIdx, 1);
+      state.feeds.splice(toIdx, 0, moved);
+      save(); renderFeeds();
+    };
+  });
+}
+
+function buildChannelCardHTML(ch) {
+  const cached = FEEDS_CACHE[ch.id];
+  const name = cached?.title || ch.id;
+  const avatar = cached?.avatar || '';
+  return `
+    <div class="channel-header">
+      ${avatar
+        ? `<img class="channel-avatar" src="${escHtml(avatar)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+        : ''}
+      <div class="channel-avatar-fallback" style="${avatar ? 'display:none' : ''}">▶</div>
+      <span class="channel-name">${escHtml(name)}</span>
+      <div class="channel-actions">
+        <a class="icon-btn" href="${escHtml(toInvidiousUrl(`https://youtube.com/channel/${ch.id}`))}" target="_blank" rel="noopener" title="Open channel">↗</a>
+        <button class="icon-btn danger" title="Remove channel" onclick="removeChannel('${ch.id}')">✕</button>
+      </div>
+    </div>
+    <div class="video-list" id="vlist-${ch.id}">
+      <div class="channel-loading">Loading…</div>
+    </div>
+  `;
+}
+
+window.removeChannel = function(id) {
+  state.feeds = state.feeds.filter(f => f.id !== id);
+  save(); renderFeeds();
+};
+
+// ── Load a channel's feed ─────────────────────────────────────────────────────
+// CORS proxies tried in order — corsproxy.io is most reliable for XML feeds
+// Local backend (marks_server.py) — checked once per session. When running,
+// it's strongly preferred over public CORS proxies: faster, no rate limits,
+// doesn't depend on a third party staying online. Falls back automatically
+// if the local server isn't running (e.g. opened as file:// or server not started).
+
+async function checkLocalBackend() {
+  if (LOCAL_BACKEND_AVAILABLE !== null) return LOCAL_BACKEND_AVAILABLE;
+  if (!location.protocol.startsWith('http')) { LOCAL_BACKEND_AVAILABLE = false; return false; }
+  try {
+    const resp = await fetch('/api/health', { signal: AbortSignal.timeout(1500) });
+    const data = await resp.json();
+    LOCAL_BACKEND_AVAILABLE = resp.ok && data.service === 'marks-local-server';
+  } catch {
+    LOCAL_BACKEND_AVAILABLE = false;
+  }
+  console.log('[Helm] Local backend available:', LOCAL_BACKEND_AVAILABLE);
+  return LOCAL_BACKEND_AVAILABLE;
+}
+
+const CORS_PROXIES = [
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+
+async function fetchViaProxy(targetUrl) {
+  // Try the local backend first, if available
+  const hasLocal = await checkLocalBackend();
+  if (hasLocal) {
+    try {
+      const resp = await fetch(`/api/proxy?url=${encodeURIComponent(targetUrl)}`, { signal: AbortSignal.timeout(10000) });
+      if (resp.ok) {
+        const text = await resp.text();
+        if (text.trimStart().length > 0) return text;
+      }
+      console.log('[Helm] Local backend returned non-OK, falling back to public proxies');
+    } catch(e) {
+      console.log('[Helm] Local backend request failed, falling back:', e.message);
+    }
+  }
+
+  // Fall back to public CORS proxy chain
+  let lastErr;
+  for (const proxy of CORS_PROXIES) {
+    const proxyUrl = proxy(targetUrl);
+    console.log('[Helm] Trying proxy:', proxyUrl.slice(0, 80));
+    try {
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+      console.log('[Helm] Proxy response status:', resp.status, resp.type);
+      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status} from proxy`); continue; }
+      const text = await resp.text();
+      console.log('[Helm] Proxy raw text (first 200):', text.slice(0, 200));
+      const trimmed = text.trimStart();
+      if (trimmed.startsWith('{')) {
+        try {
+          const j = JSON.parse(text);
+          const contents = j.contents ?? j.data ?? j.body ?? null;
+          if (contents) { console.log('[Helm] Unwrapped JSON, contents length:', contents.length); return contents; }
+        } catch {}
+      }
+      if (trimmed.startsWith('<')) return text;
+      lastErr = new Error('Proxy returned unexpected format: ' + text.slice(0, 80));
+    } catch(e) {
+      console.log('[Helm] Proxy error:', e.message);
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('All proxies failed');
+}
+
+function parseYouTubeAtom(xml, channelId) {
+  const clean = xml.replace(/^\uFEFF/, '').trim();
+  const parser = new DOMParser();
+  let doc = parser.parseFromString(clean, 'text/xml');
+  if (doc.querySelector('parsererror')) {
+    const decoded = clean
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    doc = parser.parseFromString(decoded, 'text/xml');
+    if (doc.querySelector('parsererror')) throw new Error('XML parse failed');
+  }
+  const get  = (el, tag) => el.querySelector(tag)?.textContent?.trim() || '';
+  const getA = (el, tag, attr) => el.querySelector(tag)?.getAttribute(attr) || '';
+  const getNS = (el, local) =>
+    el.getElementsByTagName(local)[0]?.textContent?.trim() ||
+    el.getElementsByTagName('yt:' + local)[0]?.textContent?.trim() || '';
+  const getMediaAttr = (el, local, attr) =>
+    (el.getElementsByTagName(local)[0] || el.getElementsByTagName('media:' + local)[0])
+      ?.getAttribute(attr) || '';
+
+  const title   = get(doc, 'feed > title') || channelId;
+  const entries = [...doc.getElementsByTagName('entry')];
+  const items   = entries.map(e => {
+    const videoId = getNS(e, 'videoId') || extractVideoId(getA(e, 'link', 'href'));
+    const link    = getA(e, 'link', 'href') || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : '');
+    const thumb   = getMediaAttr(e, 'thumbnail', 'url')
+                 || (videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : '');
+    return { title: get(e, 'title') || '(no title)', link, pubDate: get(e, 'published') || get(e, 'updated'), thumb, videoId };
+  }).filter(v => v.link);
+  return { title, items };
+}
+
+async function loadChannelFeed(ch) {
+  const listEl = document.getElementById('vlist-' + ch.id);
+  if (!listEl) return;
+  const cached = FEEDS_CACHE[ch.id];
+  if (cached && Date.now() - cached.ts < 15 * 60 * 1000) { renderVideoList(ch, cached); return; }
+  const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${ch.id}`;
+  try {
+    const raw = await fetchViaProxy(feedUrl);
+    // Log what we got so we can diagnose proxy issues
+    console.log('[Helm] Feed raw response (first 300):', typeof raw, raw?.slice?.(0,300));
+    const xml = (typeof raw === 'string') ? raw : JSON.stringify(raw);
+    const { title, items } = parseYouTubeAtom(xml, ch.id);
+    if (items.length === 0) throw new Error('No videos found — check the channel ID');
+    const cache = { title, avatar: '', link: `https://www.youtube.com/channel/${ch.id}`, items, ts: Date.now() };
+    FEEDS_CACHE[ch.id] = cache;
+    const card = document.querySelector(`[data-channel-id="${ch.id}"]`);
+    if (card) {
+      card.innerHTML = buildChannelCardHTML(ch);
+      const newList = document.getElementById('vlist-' + ch.id);
+      if (newList) renderVideoList(ch, cache);
+    } else { renderVideoList(ch, cache); }
+  } catch(err) {
+    if (listEl) listEl.innerHTML = `<div class="channel-error">
+      Could not load feed.<br>
+      <small style="display:block;margin-top:4px">${escHtml(String(err))}</small>
+      <small style="display:block;margin-top:6px;color:var(--text-dim)">
+        Make sure the channel ID starts with <strong>UC</strong>.<br>
+        Find it: YouTube channel → About → Share → Copy channel ID.
+      </small>
+    </div>`;
+  }
+}
+
+function extractVideoId(url) {
+  if (!url) return '';
+  const m = url.match(/(?:v=|youtu\.be\/|\/v\/)([\w-]{11})/);
+  return m ? m[1] : '';
+}
+
+function relativeTime(dateStr) {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d > 365 ? 'numeric' : undefined });
+}
+
+const VIDEO_CAROUSEL_MAX = 5; // videos shown per channel card
+
+// ── INVIDIOUS SUPPORT ─────────────────────────────────────────────────────────
+// Invidious is a privacy-respecting alternative front-end for YouTube.
+// When enabled, video and channel links open on the configured Invidious
+// instance instead of youtube.com. Falls back to YouTube if no instance is set.
+const DEFAULT_INVIDIOUS_INSTANCE = 'yewtu.be';
+
+function invidiousEnabled() {
+  return !!state.settings.invidiousEnabled;
+}
+
+function toggleInvidious() {
+  if (!state.settings.invidiousEnabled) {
+    // Turning on — ask for instance if none set yet
+    if (!state.settings.invidiousInstance) {
+      const instance = promptInvidiousInstance();
+      if (!instance) return; // cancelled, don't enable
+      state.settings.invidiousInstance = instance;
+    }
+    state.settings.invidiousEnabled = true;
+  } else {
+    state.settings.invidiousEnabled = false;
+  }
+  save();
+  updateInvidiousButton();
+  if (currentTab === 'feeds') renderFeeds();
+}
+
+// Reconfigure the instance regardless of current on/off state.
+// Triggered by right-click or the dedicated gear button.
+function changeInvidiousInstance() {
+  const instance = promptInvidiousInstance(state.settings.invidiousInstance);
+  if (!instance) return;
+  state.settings.invidiousInstance = instance;
+  // If it was already on, keep it on with the new instance; if off, leave off but save the new default
+  save();
+  updateInvidiousButton();
+  if (currentTab === 'feeds') renderFeeds();
+  toast(`Invidious instance set to ${instance}`);
+}
+
+function promptInvidiousInstance(current) {
+  const instance = prompt(
+    'Invidious instance domain (no https://, no trailing slash):\n\n' +
+    'Examples: yewtu.be, invidious.fdn.fr, inv.nadeko.net\n\n' +
+    'If videos fail to load, the instance may be down — try another.\n' +
+    'Full list: https://docs.invidious.io/instances/',
+    current || DEFAULT_INVIDIOUS_INSTANCE
+  );
+  if (!instance || !instance.trim()) return null;
+  return instance.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+}
+
+function updateInvidiousButton() {
+  const btn = document.getElementById('btn-invidious-toggle');
+  if (!btn) return;
+  const on = invidiousEnabled();
+  btn.textContent = on ? `Invidious: ${state.settings.invidiousInstance || DEFAULT_INVIDIOUS_INSTANCE}` : 'Invidious: Off';
+  btn.title = 'Click to toggle on/off. Right-click (or use the gear) to change instance.';
+  btn.classList.toggle('active', on);
+}
+
+// Convert a youtube.com video/channel URL to its Invidious equivalent
+function toInvidiousUrl(youtubeUrl) {
+  if (!invidiousEnabled()) return youtubeUrl;
+  const instance = state.settings.invidiousInstance || DEFAULT_INVIDIOUS_INSTANCE;
+  try {
+    const u = new URL(youtubeUrl);
+    if (u.hostname.includes('youtube.com') || u.hostname === 'youtu.be') {
+      u.hostname = instance;
+      u.protocol = 'https:';
+      return u.href;
+    }
+  } catch {}
+  return youtubeUrl;
+}
+
+// Per-channel carousel index (in memory only — always starts at 0 on page load)
+const VIDEO_CAROUSEL_IDX = {};
+
+function renderVideoList(ch, cache) {
+  const listEl = document.getElementById('vlist-' + ch.id);
+  if (!listEl) return;
+  const items = cache.items.slice(0, 5); // max 5 videos
+  if (items.length === 0) { listEl.innerHTML = '<div class="channel-empty">No videos found.</div>'; return; }
+
+  const idx = Math.min(VIDEO_CAROUSEL_IDX[ch.id] || 0, items.length - 1);
+  VIDEO_CAROUSEL_IDX[ch.id] = idx;
+  const v = items[idx];
+
+  listEl.innerHTML = `
+    <div class="vc-wrap">
+      <a class="vc-thumb-link" href="${escHtml(toInvidiousUrl(v.link))}" target="_blank" rel="noopener">
+        <img class="vc-thumb" src="${escHtml(v.thumb)}" alt="${escHtml(v.title)}" loading="lazy">
+        <div class="vc-play">▶</div>
+      </a>
+      <div class="vc-meta">
+        <a class="vc-title" href="${escHtml(toInvidiousUrl(v.link))}" target="_blank" rel="noopener">${escHtml(v.title)}</a>
+        <span class="vc-age">${relativeTime(v.pubDate)}</span>
+      </div>
+      <div class="vc-controls">
+        <button class="vc-btn" ${idx === 0 ? 'disabled' : ''} onclick="vcNav('${ch.id}',-1)">‹ Prev</button>
+        <span class="vc-counter">${idx + 1} / ${items.length}</span>
+        <button class="vc-btn" ${idx === items.length - 1 ? 'disabled' : ''} onclick="vcNav('${ch.id}',1)">Next ›</button>
+        <button class="save-bm-btn vc-save" title="Save as bookmark" onclick="saveAsBookmark('${escHtml(v.link).replace(/'/g,"\\'")}','${escHtml(v.title).replace(/'/g,"\\'")}')">🔖</button>
+      </div>
+    </div>
+  `;
+}
+
+window.vcNav = function(channelId, dir) {
+  const cache = FEEDS_CACHE[channelId];
+  if (!cache) return;
+  const max = Math.min(cache.items.length, 5) - 1;
+  VIDEO_CAROUSEL_IDX[channelId] = Math.max(0, Math.min(max, (VIDEO_CAROUSEL_IDX[channelId] || 0) + dir));
+  renderVideoList({ id: channelId }, cache);
+};
+
+window.expandChannel  = id => { const c = FEEDS_CACHE[id]; if (c) renderVideoList({id}, c); };
+window.collapseChannel = id => { const c = FEEDS_CACHE[id]; if (c) renderVideoList({id}, c); };
+
+// ════════════════════════════════════════════════════════════════════════════
+// ── NEWS FEEDS PAGE ──────────────────────────────────────────────────────────
+// Generic RSS 2.0 / Atom parser, source auto-detection, per-source cards,
+// and a combined chronological timeline view.
+// ════════════════════════════════════════════════════════════════════════════
+
+const NEWS_CACHE = {};      // sourceId → { items, title, link, ts }
+const NEWS_EXPANDED = {};   // sourceId → bool
+const NEWS_PAGE_SIZE = 3;
+let newsViewMode = 'cards'; // 'cards' | 'timeline'
+
+function ensureNewsSources() {
+  if (!state.newsSources) state.newsSources = [];
+}
+
+// ── Generic feed parser — handles both RSS 2.0 and Atom ────────────────────────
+// ── IN-APP ARTICLE READER ────────────────────────────────────────────────────
+// Fetches an article's HTML (via the local backend proxy, since this needs
+// CORS bypass the same as feeds) and extracts readable content using a
+// basic heuristic readability algorithm: scores candidate containers by
+// paragraph density and text length, picks the best one, strips scripts/
+// nav/ads/etc. Not as sophisticated as Mozilla's Readability.js, but
+// dependency-free and good enough for most blog/news article layouts.
+
+let currentReaderUrl = null;
+
+async function openReader(url, title) {
+  currentReaderUrl = url;
+  document.getElementById('reader-overlay').classList.add('open');
+  document.getElementById('reader-original-link').href = url;
+  document.getElementById('reader-loading').style.display = '';
+  document.getElementById('reader-loading').textContent = 'Loading article…';
+  document.getElementById('reader-content').style.display = 'none';
+
+  try {
+    const html = await fetchViaProxy(url);
+    const article = extractReadableContent(html, url);
+
+    document.getElementById('reader-title').textContent = article.title || title || '(untitled)';
+    document.getElementById('reader-meta').textContent = article.byline
+      ? `${article.byline} · ${new URL(url).hostname.replace('www.', '')}`
+      : new URL(url).hostname.replace('www.', '');
+    document.getElementById('reader-text').innerHTML = article.contentHtml || '<p>Could not extract article text. Try "Open original" above.</p>';
+
+    document.getElementById('reader-loading').style.display = 'none';
+    document.getElementById('reader-content').style.display = '';
+  } catch(err) {
+    document.getElementById('reader-loading').textContent =
+      `Could not load this article (${err.message}). Try "Open original" above.`;
+  }
+}
+
+function closeReader() {
+  document.getElementById('reader-overlay').classList.remove('open');
+  currentReaderUrl = null;
+}
+
+function extractReadableContent(html, baseUrl) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+
+  // Title: prefer <h1>, fall back to <title>
+  const title = doc.querySelector('h1')?.textContent?.trim()
+             || doc.querySelector('title')?.textContent?.trim()
+             || '';
+
+  // Byline: common patterns across blog platforms
+  const byline = doc.querySelector('[rel="author"], .author, .byline, [itemprop="author"]')
+    ?.textContent?.trim()?.slice(0, 100) || '';
+
+  // Strip elements that are never article content
+  doc.querySelectorAll('script, style, nav, header, footer, aside, form, iframe, noscript, .ad, .ads, .advertisement, .social-share, .comments, .related-posts, .newsletter-signup').forEach(el => el.remove());
+
+  // Score every block-level container by paragraph density + text length.
+  // This is the core of basic readability heuristics: real article bodies
+  // tend to have many <p> tags with substantial text and few links per
+  // paragraph (nav/sidebar content is link-heavy, low on actual prose).
+  const candidates = [...doc.querySelectorAll('article, main, div, section')];
+  let best = null, bestScore = 0;
+
+  for (const el of candidates) {
+    const paragraphs = el.querySelectorAll('p');
+    if (paragraphs.length < 2) continue;
+
+    let textLen = 0, linkTextLen = 0;
+    paragraphs.forEach(p => {
+      const t = p.textContent || '';
+      textLen += t.length;
+      p.querySelectorAll('a').forEach(a => { linkTextLen += (a.textContent || '').length; });
+    });
+    if (textLen === 0) continue;
+
+    const linkDensity = linkTextLen / textLen;
+    if (linkDensity > 0.5) continue; // too link-heavy to be article body (nav/sidebar)
+
+    const score = textLen * (1 - linkDensity) + paragraphs.length * 25;
+    if (score > bestScore) { bestScore = score; best = el; }
+  }
+
+  if (!best) {
+    // Fallback: just grab all <p> tags in document order
+    const allParagraphs = [...doc.querySelectorAll('p')]
+      .filter(p => (p.textContent || '').trim().length > 40);
+    if (allParagraphs.length === 0) return { title, byline, contentHtml: '' };
+    const wrapper = doc.createElement('div');
+    allParagraphs.forEach(p => wrapper.appendChild(p.cloneNode(true)));
+    best = wrapper;
+  }
+
+  // Clean up the chosen container: remove remaining nav-like noise,
+  // resolve relative image/link URLs against the article's base URL,
+  // strip inline styles/classes/ids that could leak the source site's CSS.
+  const clone = best.cloneNode(true);
+  clone.querySelectorAll('script, style, .ad, .ads, .social-share, .newsletter-signup, button').forEach(el => el.remove());
+  clone.querySelectorAll('[class]').forEach(el => el.removeAttribute('class'));
+  clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+  clone.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+
+  clone.querySelectorAll('img[src]').forEach(img => {
+    try { img.src = new URL(img.getAttribute('src'), baseUrl).href; } catch {}
+    img.removeAttribute('srcset'); // avoid broken relative srcsets
+    img.loading = 'lazy';
+  });
+  clone.querySelectorAll('a[href]').forEach(a => {
+    try { a.href = new URL(a.getAttribute('href'), baseUrl).href; } catch {}
+    a.target = '_blank';
+    a.rel = 'noopener';
+  });
+
+  return { title, byline, contentHtml: clone.innerHTML };
+}
+
+function parseGenericFeed(xml, fallbackTitle) {
+  const clean = xml.replace(/^\uFEFF/, '').trim();
+  const parser = new DOMParser();
+  let doc = parser.parseFromString(clean, 'text/xml');
+  if (doc.querySelector('parsererror')) {
+    const decoded = clean
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    doc = parser.parseFromString(decoded, 'text/xml');
+    if (doc.querySelector('parsererror')) throw new Error('XML parse failed');
+  }
+
+  const get  = (el, tag) => el.querySelector(tag)?.textContent?.trim() || '';
+  const getA = (el, tag, attr) => el.querySelector(tag)?.getAttribute(attr) || '';
+
+  const isAtom = doc.querySelector('feed') !== null;
+
+  if (isAtom) {
+    const title = get(doc, 'feed > title') || fallbackTitle;
+    const link  = getA(doc, 'feed > link[rel="alternate"]', 'href')
+               || getA(doc, 'feed > link', 'href') || '';
+    const entries = [...doc.getElementsByTagName('entry')];
+    const items = entries.map(e => {
+      const itemLink = getA(e, 'link[rel="alternate"]', 'href') || getA(e, 'link', 'href');
+      const desc = get(e, 'summary') || get(e, 'content') || '';
+      return {
+        title:   get(e, 'title') || '(no title)',
+        link:    itemLink,
+        pubDate: get(e, 'published') || get(e, 'updated'),
+        desc:    desc.replace(/<[^>]+>/g, '').slice(0, 200),
+      };
+    }).filter(v => v.link);
+    return { title, link, items };
+  } else {
+    // RSS 2.0
+    const channelTitle = get(doc, 'channel > title') || fallbackTitle;
+    const channelLink  = get(doc, 'channel > link') || '';
+    const items = [...doc.getElementsByTagName('item')].map(it => {
+      const desc = get(it, 'description') || '';
+      return {
+        title:   get(it, 'title') || '(no title)',
+        link:    get(it, 'link') || getA(it, 'guid', 'isPermaLink') ? get(it, 'guid') : get(it, 'link'),
+        pubDate: get(it, 'pubDate') || get(it, 'dc\\:date') || '',
+        desc:    desc.replace(/<[^>]+>/g, '').slice(0, 200),
+      };
+    }).filter(v => v.link);
+    return { title: channelTitle, link: channelLink, items };
+  }
+}
+
+// ── Resolve a site URL to its feed URL ──────────────────────────────────────────
+async function resolveNewsFeedUrl(input) {
+  input = input.trim();
+  // Already looks like a feed URL
+  if (/\.(xml|rss|atom)(\?|$)/i.test(input) || /\/(feed|rss|atom)\/?(\?|$)/i.test(input)) {
+    return input;
+  }
+  // Try fetching the page and look for a <link rel="alternate" type="application/rss+xml">
+  try {
+    const html = await fetchViaProxy(input);
+    const m = html.match(/<link[^>]+type=["']application\/(rss|atom)\+xml["'][^>]+href=["']([^"']+)["']/i)
+           || html.match(/<link[^>]+href=["']([^"']+)["'][^>]+type=["']application\/(rss|atom)\+xml["']/i);
+    if (m) {
+      const href = m[2] && m[2].startsWith('http') ? m[2] : (m[1] && m[1].startsWith('http') ? m[1] : null);
+      const found = href || m[2] || m[1];
+      if (found) {
+        // Resolve relative URLs against the original input
+        try { return new URL(found, input).href; } catch { return found; }
+      }
+    }
+  } catch {}
+  // Common fallback paths
+  const base = input.replace(/\/$/, '');
+  const guesses = ['/feed', '/rss', '/rss.xml', '/feed.xml', '/atom.xml', '/index.xml'];
+  for (const g of guesses) {
+    try {
+      const candidate = base + g;
+      const xml = await fetchViaProxy(candidate);
+      if (xml && (xml.includes('<rss') || xml.includes('<feed'))) return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+// ── Add a news source ─────────────────────────────────────────────────────────
+async function addNewsSource() {
+  const input = prompt(
+    'Paste an RSS/Atom feed URL, or a site URL to auto-detect its feed:\n\n' +
+    'Examples:\n' +
+    '  https://example.com/feed/        ← direct feed URL\n' +
+    '  https://example.com               ← site URL, will auto-detect'
+  );
+  if (!input || !input.trim()) return;
+  ensureNewsSources();
+  const status = document.getElementById('news-status');
+  status.textContent = 'Resolving feed…';
+
+  let feedUrl = input.trim();
+  if (!/\.(xml|rss|atom)(\?|$)/i.test(feedUrl) && !/\/(feed|rss|atom)\/?(\?|$)/i.test(feedUrl)) {
+    const resolved = await resolveNewsFeedUrl(feedUrl);
+    if (resolved) feedUrl = resolved;
+    else {
+      status.textContent = '';
+      const fallback = prompt('Could not auto-detect a feed on that page.\n\nPlease paste the direct RSS/Atom feed URL instead:');
+      if (!fallback || !fallback.trim()) return;
+      feedUrl = fallback.trim();
+    }
+  }
+
+  if (state.newsSources.find(s => s.url === feedUrl)) {
+    toast('Source already added'); status.textContent = ''; return;
+  }
+
+  const id = uid();
+  state.newsSources.push({ id, url: feedUrl, addedAt: Date.now() });
+  save();
+  status.textContent = '';
+  renderNews();
+}
+
+window.removeNewsSource = function(id) {
+  state.newsSources = state.newsSources.filter(s => s.id !== id);
+  delete NEWS_CACHE[id];
+  save(); renderNews();
+};
+
+// ── Sorting ───────────────────────────────────────────────────────────────────
+function getSortedNewsSources() {
+  const mode = state.settings.newsSortMode || 'manual';
+  const sources = [...state.newsSources];
+  if (mode === 'alpha') {
+    sources.sort((a, b) => {
+      const nameA = NEWS_CACHE[a.id]?.title || a.url;
+      const nameB = NEWS_CACHE[b.id]?.title || b.url;
+      return nameA.localeCompare(nameB);
+    });
+  } else if (mode === 'recent') {
+    sources.sort((a, b) => {
+      const latestA = NEWS_CACHE[a.id]?.items?.[0]?.pubDate || '';
+      const latestB = NEWS_CACHE[b.id]?.items?.[0]?.pubDate || '';
+      return new Date(latestB) - new Date(latestA);
+    });
+  }
+  return sources;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderNews() {
+  ensureNewsSources();
+
+  const sortSel = document.getElementById('news-sort');
+  if (sortSel) sortSel.value = state.settings.newsSortMode || 'manual';
+
+  document.querySelectorAll('.news-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === newsViewMode));
+  document.getElementById('news-grid').style.display     = newsViewMode === 'cards'    ? '' : 'none';
+  document.getElementById('news-timeline').style.display = newsViewMode === 'timeline' ? '' : 'none';
+
+  if (state.newsSources.length === 0) {
+    const empty = `<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--text-dim);font-size:13px">
+      No news sources yet.<br><br>Click <strong style="color:var(--text)">+ Add Source</strong> and paste an RSS feed URL or a site URL.
+    </div>`;
+    document.getElementById('news-grid').innerHTML = empty;
+    document.getElementById('news-timeline').innerHTML = empty;
+    return;
+  }
+
+  if (newsViewMode === 'cards') {
+    renderNewsCards();
+  } else {
+    renderNewsTimeline();
+  }
+}
+
+function renderNewsCards() {
+  const grid = document.getElementById('news-grid');
+  grid.innerHTML = '';
+  const sorted = getSortedNewsSources();
+  const manualMode = (state.settings.newsSortMode || 'manual') === 'manual';
+
+  sorted.forEach(src => {
+    const card = document.createElement('div');
+    card.className = 'channel-card news-source-card';
+    card.dataset.sourceId = src.id;
+    card.draggable = manualMode;
+    card.innerHTML = buildNewsCardHTML(src);
+    grid.appendChild(card);
+    loadNewsSource(src);
+  });
+
+  if (manualMode) setupNewsDrag();
+}
+
+function buildNewsCardHTML(src) {
+  const cached = NEWS_CACHE[src.id];
+  const name = cached?.title || new URL(src.url, location.href).hostname.replace('www.', '');
+  return `
+    <div class="channel-header">
+      <div class="channel-avatar-fallback" style="background:var(--accent);border-radius:6px">📰</div>
+      <span class="channel-name">${escHtml(name)}</span>
+      <div class="channel-actions">
+        <a class="icon-btn" href="${escHtml(cached?.link || src.url)}" target="_blank" rel="noopener" title="Open site">↗</a>
+        <button class="icon-btn danger" title="Remove source" onclick="removeNewsSource('${src.id}')">✕</button>
+      </div>
+    </div>
+    <div class="video-list" id="nlist-${src.id}">
+      <div class="channel-loading">Loading…</div>
+    </div>
+  `;
+}
+
+async function loadNewsSource(src) {
+  const listEl = document.getElementById('nlist-' + src.id);
+  if (!listEl) return;
+  const cached = NEWS_CACHE[src.id];
+  if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+    renderNewsItemList(src, cached);
+    return;
+  }
+  try {
+    const raw = await fetchViaProxy(src.url);
+    const xml = (typeof raw === 'string') ? raw : JSON.stringify(raw);
+    const fallbackName = (() => { try { return new URL(src.url).hostname; } catch { return src.url; } })();
+    const { title, link, items } = parseGenericFeed(xml, fallbackName);
+    if (items.length === 0) throw new Error('No articles found in this feed');
+    const cache = { title, link, items, ts: Date.now() };
+    NEWS_CACHE[src.id] = cache;
+    const card = document.querySelector(`[data-source-id="${src.id}"]`);
+    if (card) {
+      card.innerHTML = buildNewsCardHTML(src);
+      const newList = document.getElementById('nlist-' + src.id);
+      if (newList) renderNewsItemList(src, cache);
+    } else {
+      renderNewsItemList(src, cache);
+    }
+  } catch(err) {
+    if (listEl) listEl.innerHTML = `<div class="channel-error">
+      Could not load feed.<br>
+      <small style="display:block;margin-top:4px">${escHtml(String(err))}</small>
+    </div>`;
+  }
+}
+
+function renderNewsItemList(src, cache) {
+  const listEl = document.getElementById('nlist-' + src.id);
+  if (!listEl) return;
+  const expanded = NEWS_EXPANDED[src.id];
+  const items = expanded ? cache.items : cache.items.slice(0, NEWS_PAGE_SIZE);
+  const hiddenCount = cache.items.length - items.length;
+
+  listEl.innerHTML = items.map(a => `
+    <div class="video-item-wrap">
+      <a class="video-item news-item" href="${escHtml(a.link)}" onclick="event.preventDefault();openReader('${escHtml(a.link).replace(/'/g,"\\'")}','${escHtml(a.title).replace(/'/g,"\\'")}')">
+        <div class="video-info">
+          <div class="video-title">${escHtml(a.title)}</div>
+          <div class="video-age">${relativeTime(a.pubDate)}</div>
+        </div>
+      </a>
+      <button class="save-bm-btn" title="Save as bookmark" onclick="event.stopPropagation();event.preventDefault();saveAsBookmark('${escHtml(a.link).replace(/'/g,"\\'")}','${escHtml(a.title).replace(/'/g,"\\'")}')">🔖</button>
+    </div>
+  `).join('') + (hiddenCount > 0
+    ? `<button class="channel-show-more" onclick="expandNewsSource('${src.id}')">Show ${hiddenCount} more ▾</button>`
+    : (expanded && cache.items.length > NEWS_PAGE_SIZE
+        ? `<button class="channel-show-more" onclick="collapseNewsSource('${src.id}')">Show less ▴</button>`
+        : ''));
+}
+
+window.expandNewsSource   = id => { NEWS_EXPANDED[id] = true;  const c = NEWS_CACHE[id]; if (c) renderNewsItemList({id}, c); };
+window.collapseNewsSource = id => { NEWS_EXPANDED[id] = false; const c = NEWS_CACHE[id]; if (c) renderNewsItemList({id}, c); };
+
+// ── Combined timeline view ───────────────────────────────────────────────────
+function renderNewsTimeline() {
+  const el = document.getElementById('news-timeline');
+
+  // Make sure all sources are loaded into cache first
+  const unloaded = state.newsSources.filter(s => !NEWS_CACHE[s.id]);
+  if (unloaded.length > 0) {
+    el.innerHTML = `<div class="channel-loading" style="padding:40px 20px;text-align:center">Loading sources for timeline…</div>`;
+    Promise.all(unloaded.map(s => loadNewsSource(s))).then(() => {
+      if (newsViewMode === 'timeline') renderNewsTimeline();
+    });
+    return;
+  }
+
+  // Merge all items with their source info, sort by date desc
+  const allItems = [];
+  state.newsSources.forEach(src => {
+    const cache = NEWS_CACHE[src.id];
+    if (!cache) return;
+    cache.items.forEach(item => {
+      allItems.push({ ...item, sourceTitle: cache.title, sourceId: src.id });
+    });
+  });
+  allItems.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+
+  if (allItems.length === 0) {
+    el.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-dim);font-size:13px">No articles found across your sources yet.</div>`;
+    return;
+  }
+
+  el.innerHTML = `<div class="timeline-list">` + allItems.slice(0, 100).map(item => `
+    <div class="timeline-item-wrap">
+      <a class="timeline-item" href="${escHtml(item.link)}" onclick="event.preventDefault();openReader('${escHtml(item.link).replace(/'/g,"\\'")}','${escHtml(item.title).replace(/'/g,"\\'")}')">
+        <div class="timeline-source">${escHtml(item.sourceTitle)}</div>
+        <div class="timeline-title">${escHtml(item.title)}</div>
+        <div class="timeline-age">${relativeTime(item.pubDate)}</div>
+      </a>
+      <button class="save-bm-btn timeline-save-btn" title="Save as bookmark" onclick="event.stopPropagation();event.preventDefault();saveAsBookmark('${escHtml(item.link).replace(/'/g,"\\'")}','${escHtml(item.title).replace(/'/g,"\\'")}')">🔖</button>
+    </div>
+  `).join('') + `</div>`;
+}
+
+// ── Drag-to-reorder news sources (manual mode only) ──────────────────────────
+function setupNewsDrag() {
+  let dragSourceId = null;
+
+  document.querySelectorAll('.news-source-card').forEach(card => {
+    card.ondragstart = (e) => {
+      if (e.target.closest('a, button, input, textarea')) { e.preventDefault(); return; }
+      dragSourceId = card.dataset.sourceId;
+      card.classList.add('channel-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    };
+    card.ondragend = () => {
+      card.classList.remove('channel-dragging');
+      document.querySelectorAll('.channel-drag-over').forEach(el => el.classList.remove('channel-drag-over'));
+      dragSourceId = null;
+    };
+    card.ondragover = (e) => {
+      if (!dragSourceId || dragSourceId === card.dataset.sourceId) return;
+      e.preventDefault();
+      card.classList.add('channel-drag-over');
+    };
+    card.ondragleave = () => card.classList.remove('channel-drag-over');
+    card.ondrop = (e) => {
+      e.preventDefault();
+      card.classList.remove('channel-drag-over');
+      if (!dragSourceId || dragSourceId === card.dataset.sourceId) return;
+      const fromIdx = state.newsSources.findIndex(s => s.id === dragSourceId);
+      const toIdx   = state.newsSources.findIndex(s => s.id === card.dataset.sourceId);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const [moved] = state.newsSources.splice(fromIdx, 1);
+      state.newsSources.splice(toIdx, 0, moved);
+      save(); renderNews();
+    };
+  });
+}
+
+
+</script>
+</body>
+</html>
