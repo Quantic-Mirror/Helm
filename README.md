@@ -31,7 +31,7 @@ A self-hosted personal dashboard — bookmarks, YouTube feeds, news feeds, widge
 ```
 helm/
 ├── index.html          # The entire frontend — one file
-├── marks_server.py     # Python backend: static files, feed proxy, state sync
+├── helm_server.py     # Python backend: static files, feed proxy, state sync
 ├── manifest.json       # PWA manifest
 ├── sw.js               # Service worker (offline app shell cache)
 ├── icon-192.png        # PWA icon
@@ -44,7 +44,7 @@ helm/
 │   └── icons/
 ├── cert.pem            # TLS certificate (not committed — generate locally)
 ├── key.pem             # TLS private key (not committed — generate locally)
-└── marks_state.json    # Live state database (not committed — created at runtime)
+└── helm_state.json    # Live state database (not committed — created at runtime)
 ```
 
 ---
@@ -54,7 +54,7 @@ helm/
 ```bash
 git clone git@github.com:quantic-mirror/helm.git
 cd helm
-python3 marks_server.py 8080
+python3 helm_server.py 8080
 ```
 
 Open `http://localhost:8080` in your browser.
@@ -89,7 +89,7 @@ openssl x509 -req -in helm.csr \
   -out cert.pem -days 365 -sha256 -extfile /tmp/helm-ext.cnf
 ```
 
-Place `cert.pem` and `key.pem` next to `marks_server.py`. The server detects them automatically and starts in HTTPS mode.
+Place `cert.pem` and `key.pem` next to `helm_server.py`. The server detects them automatically and starts in HTTPS mode.
 
 Import `helm-ca.crt` into your browser on each device:
 - **Firefox / Waterfox desktop**: Settings → Search "cert" → View Certificates → Authorities → Import → check "Trust this CA to identify websites"
@@ -108,7 +108,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/youruser/helm
-ExecStart=/usr/bin/python3 marks_server.py 8080
+ExecStart=/usr/bin/python3 helm_server.py 8080
 Restart=on-failure
 RestartSec=5
 StartLimitIntervalSec=60
@@ -154,7 +154,7 @@ The backend exposes several endpoints alongside serving the static files:
 
 ## Multi-Device Sync
 
-The server holds the canonical state in `marks_state.json`. Every device pulls the server state on page load and pushes any local changes within 600 ms of a save. The polling interval is 5 seconds. Sync is silent — no dialogs, no conflict prompts. Last write wins.
+The server holds the canonical state in `helm_state.json`. Every device pulls the server state on page load and pushes any local changes within 600 ms of a save. The polling interval is 5 seconds. Sync is silent — no dialogs, no conflict prompts. Last write wins.
 
 ---
 
