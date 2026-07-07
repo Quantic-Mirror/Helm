@@ -566,35 +566,18 @@ body {
 .cal-cell {
   aspect-ratio: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   font-size: 11px;
   color: var(--text);
   border-radius: 6px;
-  position: relative;
-  transition: background 0.1s;
 }
-.cal-cell:not(.cal-cell-empty):hover { background: var(--surface-2); }
 .cal-cell-empty { visibility: hidden; }
 .cal-today {
   background: var(--accent);
   color: #0D1117;
   font-weight: 700;
 }
-.cal-has-events { font-weight: 600; }
-.cal-dot {
-  display: block;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  position: absolute;
-  bottom: 3px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-.cal-today .cal-dot { background: #0D1117; }
 
 .cal-today-btn {
   width: 100%;
@@ -614,59 +597,16 @@ body {
 .cal-agenda-list { display: flex; flex-direction: column; gap: 1px; }
 .cal-agenda-row {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
   padding: 6px 4px;
   border-bottom: 1px solid var(--border);
-  cursor: pointer;
 }
 .cal-agenda-row:last-child { border-bottom: none; }
-.cal-agenda-row:hover { background: var(--surface-2); border-radius: 6px; }
 .cal-agenda-row.cal-agenda-today { color: var(--accent); }
-.cal-agenda-left { display: flex; flex-direction: column; gap: 1px; flex-shrink: 0; min-width: 40px; }
 .cal-agenda-weekday { font-size: 12px; font-weight: 500; }
-.cal-agenda-date { font-size: 10px; color: var(--text-dim); }
+.cal-agenda-date { font-size: 11px; color: var(--text-dim); }
 .cal-agenda-today .cal-agenda-date { color: var(--accent); }
-.cal-agenda-events {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-  min-height: 20px;
-}
-.cal-event-chip {
-  font-size: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 2px 7px;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 120px;
-  transition: border-color 0.12s;
-}
-.cal-event-chip:hover { border-color: var(--accent); color: var(--accent); }
-.cal-add-event-btn {
-  font-size: 14px;
-  line-height: 1;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: border-color 0.12s, color 0.12s;
-}
-.cal-add-event-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Clock widget */
 .clock-body {
@@ -687,90 +627,6 @@ body {
   color: var(--text-muted);
   margin-top: 6px;
 }
-
-/* To Do widget */
-.todo-body { padding: 8px 14px 12px; }
-.todo-list {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-.todo-empty { font-size: 11px; color: var(--text-dim); padding: 4px 2px; }
-.todo-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 2px;
-  border-bottom: 1px solid var(--border);
-}
-.todo-item:last-child { border-bottom: none; }
-.todo-item.todo-done .todo-text {
-  text-decoration: line-through;
-  color: var(--text-dim);
-}
-.todo-check {
-  flex-shrink: 0;
-  width: 18px; height: 18px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: none;
-  color: var(--green);
-  font-size: 11px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: border-color 0.12s, background 0.12s;
-}
-.todo-check:hover { border-color: var(--green); background: rgba(63,185,80,0.1); }
-.todo-done .todo-check { background: rgba(63,185,80,0.15); border-color: var(--green); }
-.todo-text {
-  flex: 1;
-  font-size: 12px;
-  color: var(--text);
-  cursor: pointer;
-  line-height: 1.4;
-  word-break: break-word;
-}
-.todo-text:hover { color: var(--accent); }
-.todo-delete {
-  opacity: 0;
-  flex-shrink: 0;
-  transition: opacity 0.12s;
-}
-.todo-item:hover .todo-delete { opacity: 1; }
-.todo-add-form {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-.todo-input {
-  flex: 1;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-family: var(--font-body);
-  font-size: 12px;
-  padding: 5px 8px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.todo-input:focus { border-color: var(--accent); }
-.todo-add-btn {
-  flex-shrink: 0;
-  width: 26px; height: 26px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: none;
-  color: var(--text);
-  font-size: 16px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: border-color 0.12s, color 0.12s;
-}
-.todo-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* System Stats widget */
 .sysstats-body { padding: 12px 14px 14px; }
@@ -1234,164 +1090,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 }
 .backup-restore-btn { padding: 4px 10px; font-size: 11px; }
 
-/* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
-#upcoming-events-strip {
-  margin: 0 0 12px;
-}
-.upcoming-strip-inner {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px;
-  background: rgba(88,166,255,0.08);
-  border: 1px solid rgba(88,166,255,0.25);
-  border-radius: 10px;
-}
-.upcoming-strip-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  flex-shrink: 0;
-  margin-right: 4px;
-}
-.upcoming-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 3px 9px;
-  font-size: 11px;
-}
-.upcoming-when {
-  font-weight: 600;
-  color: var(--accent);
-  white-space: nowrap;
-}
-.upcoming-text { color: var(--text); }
-.upcoming-strip-close {
-  margin-left: auto;
-  background: none; border: none;
-  color: var(--text-dim); cursor: pointer;
-  font-size: 12px; padding: 2px 4px;
-  border-radius: 4px; flex-shrink: 0;
-}
-.upcoming-strip-close:hover { color: var(--text); background: var(--surface-2); }
-
-/* Calendar page view toggle — same visual style as news-view-btn but separate class
-   so the news tab's click handler doesn't intercept calendar button clicks */
-.cal-view-btn {
-  padding: 4px 12px;
-  border-radius: 6px;
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  font-family: var(--font-body);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  white-space: nowrap;
-}
-.cal-view-btn:hover { color: var(--text); }
-.cal-view-btn.active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-}
-
-/* ── CALENDAR PAGE ───────────────────────────────────────────────────────────── */
-#calendar-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
-#calendar-topbar {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 20px; flex-wrap: wrap;
-}
-#cal-view-toggle {
-  display: flex; gap: 2px;
-  background: var(--surface-2); border-radius: 8px; padding: 3px;
-}
-
-.calp-weekday-row {
-  display: grid; grid-template-columns: repeat(7, 1fr);
-  margin-bottom: 4px;
-}
-.calp-weekday {
-  text-align: center; font-size: 11px;
-  color: var(--text-dim); font-weight: 500; padding: 4px 0;
-}
-
-.calp-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  margin-bottom: 16px;
-}
-.calp-cell {
-  min-height: 90px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 8px;
-  cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
-  overflow: hidden;
-}
-.calp-cell:not(.calp-cell-empty):hover { border-color: var(--accent); background: var(--surface-2); }
-.calp-cell-empty { visibility: hidden; border: none; background: none; cursor: default; }
-.calp-today {
-  border-color: var(--accent);
-  background: rgba(88,166,255,0.08);
-}
-.calp-day-num {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-.calp-today .calp-day-num {
-  color: var(--accent);
-}
-.calp-cell-events { display: flex; flex-direction: column; gap: 2px; }
-.calp-event-pill {
-  display: block;
-  font-size: 10px;
-  background: var(--accent);
-  color: #0D1117;
-  border-radius: 4px;
-  padding: 2px 5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  font-weight: 500;
-}
-.calp-event-pill:hover { opacity: 0.85; }
-
-/* Agenda view */
-.calp-agenda-list { max-width: 720px; display: flex; flex-direction: column; gap: 1px; }
-.calp-agenda-row {
-  display: flex; align-items: flex-start; gap: 16px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  border-radius: 8px;
-  transition: background 0.12s;
-}
-.calp-agenda-row:hover { background: var(--surface-2); }
-.calp-agenda-row.calp-agenda-today { background: rgba(88,166,255,0.06); }
-.calp-agenda-left { flex-shrink: 0; min-width: 100px; }
-.calp-agenda-weekday { font-size: 13px; font-weight: 600; color: var(--text); }
-.calp-agenda-today .calp-agenda-weekday { color: var(--accent); }
-.calp-agenda-date { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-.calp-agenda-events {
-  flex: 1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
-}
-.calp-add-btn { opacity: 0; transition: opacity 0.12s; }
-.calp-agenda-row:hover .calp-add-btn { opacity: 1; }
-
 /* ── NEWS PAGE ──────────────────────────────────────────────────────────────── */
 #news-page {
   padding: 20px 24px;
@@ -1738,7 +1436,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn active" data-tab="bookmarks">Bookmarks</button>
     <button class="tab-btn" data-tab="feeds">YouTube Feeds</button>
     <button class="tab-btn" data-tab="news">News</button>
-    <button class="tab-btn" data-tab="calendar">Calendar</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -1772,7 +1469,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-add-notes">Notes</button>
           <button class="dropdown-item" id="btn-add-clock">Clock</button>
           <button class="dropdown-item" id="btn-add-sysstats">Sys Stats</button>
-          <button class="dropdown-item" id="btn-add-todo">To Do</button>
+          <button class="dropdown-item" id="btn-add-calendar">Calendar</button>
         </div>
       </div>
       <div class="dropdown" id="dd-tools">
@@ -1792,7 +1489,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 </div>
 
 <div id="main">
-  <div id="upcoming-events-strip" style="display:none"></div>
   <div id="grid">
     <!-- folder cards injected here -->
   </div>
@@ -1830,32 +1526,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   </div>
   <div id="news-grid"></div>
   <div id="news-timeline" style="display:none"></div>
-</div>
-
-<!-- CALENDAR PAGE -->
-<div id="calendar-page" style="display:none">
-  <div id="calendar-topbar">
-    <button class="icon-btn" id="cal-prev" title="Previous month">‹</button>
-    <span id="cal-page-label" style="font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--text);min-width:160px;text-align:center"></span>
-    <button class="icon-btn" id="cal-next" title="Next month">›</button>
-    <button class="btn" id="cal-today-page">Today</button>
-    <div id="cal-view-toggle">
-      <button class="cal-view-btn active" data-calpage-view="month">Month</button>
-      <button class="cal-view-btn" data-calpage-view="agenda">Agenda</button>
-    </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-      <label style="font-size:11px;color:var(--text-dim)">Remind</label>
-      <select id="cal-reminder-select" class="btn" style="cursor:pointer;font-size:11px;padding:4px 8px">
-        <option value="0">On the day</option>
-        <option value="1">1 day before</option>
-        <option value="2">2 days before</option>
-        <option value="3">3 days before</option>
-        <option value="7" selected>1 week before</option>
-        <option value="14">2 weeks before</option>
-      </select>
-    </div>
-  </div>
-  <div id="cal-page-body"></div>
 </div>
 
 <!-- MODAL -->
@@ -2169,7 +1839,6 @@ async function pollForRemoteChanges() {
       if (!state.newsSources) state.newsSources = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       render(); // silent — no toast, no dialog
-      renderUpcomingEvents();
     }
   } catch(e) { /* polling is best-effort */ }
 }
@@ -2184,22 +1853,6 @@ function load() {
   if (!state.settings) state.settings = {};
   if (!state.feeds) state.feeds = [];
   if (!state.newsSources) state.newsSources = [];
-  if (!state.calendarEvents) {
-    // Initialise calendar events store; migrate any events from old calendar widgets
-    state.calendarEvents = {};
-    if (state.widgets) {
-      state.widgets.forEach(w => {
-        if (w.type === 'calendar' && w.events) {
-          Object.entries(w.events).forEach(([date, evs]) => {
-            if (!state.calendarEvents[date]) state.calendarEvents[date] = [];
-            state.calendarEvents[date].push(...evs);
-          });
-          delete w.events;
-        }
-      });
-    }
-  }
-  if (!state.settings.reminderDays && state.settings.reminderDays !== 0) state.settings.reminderDays = 7;
   if (!state.widgets || state.widgets.length === 0) {
     state.widgets = [
       { id: uid(), type: 'search', engine: 'startpage' },
@@ -2304,7 +1957,7 @@ function render() {
     weather: renderWeatherWidget,
     clock: renderClockWidget,
     sysstats: renderSysStatsWidget,
-    todo: renderTodoWidget,
+    calendar: renderCalendarWidget,
   };
   state.widgets.forEach(w => {
     const renderer = WIDGET_RENDERERS[w.type] || renderWeatherWidget;
@@ -2312,18 +1965,15 @@ function render() {
     cols3[1].appendChild(el);
   });
 
-  // Favorites card — moveable, defaults to right column (col 2)
+  // Favorites card — top of col 2 (right), only if at least one pinned bookmark
   if (!searchQ) {
     const pinned = state.bookmarks.filter(b => b.pinned);
     if (pinned.length) {
-      if (state.settings.favoritesCol === undefined) state.settings.favoritesCol = 2;
       const fc = document.createElement('div');
       fc.className = 'folder-card favorites-card';
-      fc.draggable = true;
-      fc.dataset.specialId = 'favorites';
       fc.innerHTML = `
         <div class="folder-header">
-          <span class="col-dot drag-handle" style="background:#F0C419" title="Drag to move"></span>
+          <span class="col-dot" style="background:#F0C419"></span>
           <span class="column-title" style="cursor:default">★ Favorites</span>
           <span class="col-count">${pinned.length}</span>
         </div>
@@ -2331,26 +1981,22 @@ function render() {
           ${pinned.map(bm => renderBmCard(bm)).join('')}
         </div>
       `;
-      const gc = Math.min(Math.max(state.settings.favoritesCol, 0), 2);
-      cols3[gc].appendChild(fc);
+      cols3[2].appendChild(fc);
     }
   }
 
-  // Recently Added card — moveable, defaults to right column (col 2)
+  // Recently Added card — top of col 2 (right), always visible if bookmarks exist
   if (!searchQ && state.bookmarks.length > 0) {
     const recent = [...state.bookmarks]
       .filter(b => b.addedAt) // dismissed items have addedAt cleared to 0/falsy — exclude them
       .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
       .slice(0, 10);
     if (recent.length) {
-      if (state.settings.recentCol === undefined) state.settings.recentCol = 2;
       const rc = document.createElement('div');
       rc.className = 'folder-card recent-card';
-      rc.draggable = true;
-      rc.dataset.specialId = 'recent';
       rc.innerHTML = `
         <div class="folder-header">
-          <span class="col-dot drag-handle" style="background:var(--amber)" title="Drag to move"></span>
+          <span class="col-dot" style="background:var(--amber)"></span>
           <span class="column-title" style="cursor:default">Recently Added</span>
           <span class="col-count">${recent.length}</span>
         </div>
@@ -2358,8 +2004,7 @@ function render() {
           ${recent.map(bm => renderBmCard(bm, 'recent')).join('')}
         </div>
       `;
-      const gc = Math.min(Math.max(state.settings.recentCol, 0), 2);
-      cols3[gc].appendChild(rc);
+      cols3[2].appendChild(rc);
     }
   }
 
@@ -2600,196 +2245,6 @@ function renderStatBar(label, pct, valueText) {
 // agenda-style list of the next ~14 days. No event data — purely a date
 // reference/navigator, since Helm doesn't pull from any calendar feed.
 
-// ── CALENDAR PAGE ─────────────────────────────────────────────────────────────
-// Events stored in state.calendarEvents: { "YYYY-MM-DD": ["event text", …] }
-// This is a top-level state key so events sync across devices automatically.
-
-let calPageView = 'month';
-let calPageYear = new Date().getFullYear();
-let calPageMonth = new Date().getMonth(); // 0-indexed
-
-const WEEKDAY_LABELS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
-const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-function renderCalendarPage() {
-  if (!state.calendarEvents) state.calendarEvents = {};
-  const label = document.getElementById('cal-page-label');
-  if (label) label.textContent = MONTH_LABELS[calPageMonth] + ' ' + calPageYear;
-
-  // Sync view toggle buttons
-  document.querySelectorAll('[data-calpage-view]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.calpageView === calPageView);
-  });
-
-  // Sync reminder select
-  const remSel = document.getElementById('cal-reminder-select');
-  if (remSel) remSel.value = String(state.settings.reminderDays ?? 7);
-
-  const body = document.getElementById('cal-page-body');
-  if (!body) return;
-  body.innerHTML = calPageView === 'month' ? buildMonthPageHTML() : buildAgendaPageHTML();
-  wireCalendarPage(body);
-}
-
-function buildMonthPageHTML() {
-  const today = new Date();
-  const isCurrentMonth = today.getFullYear() === calPageYear && today.getMonth() === calPageMonth;
-  const todayDate = today.getDate();
-  const firstWeekday = new Date(calPageYear, calPageMonth, 1).getDay();
-  const daysInMonth = new Date(calPageYear, calPageMonth + 1, 0).getDate();
-  const events = state.calendarEvents || {};
-
-  let cells = '';
-  for (let i = 0; i < firstWeekday; i++) cells += '<div class="calp-cell calp-cell-empty"></div>';
-  for (let d = 1; d <= daysInMonth; d++) {
-    const isToday = isCurrentMonth && d === todayDate;
-    const dateKey = calPageYear + '-' + String(calPageMonth + 1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-    const dayEvents = events[dateKey] || [];
-    cells += `
-      <div class="calp-cell${isToday ? ' calp-today' : ''}" data-calp-date="${dateKey}">
-        <span class="calp-day-num">${d}</span>
-        <div class="calp-cell-events">
-          ${dayEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev)}</span>`).join('')}
-        </div>
-      </div>`;
-  }
-  return `
-    <div class="calp-weekday-row">${WEEKDAY_LABELS.map(d => `<div class="calp-weekday">${d}</div>`).join('')}</div>
-    <div class="calp-grid">${cells}</div>
-  `;
-}
-
-function buildAgendaPageHTML() {
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const events = state.calendarEvents || {};
-  // Show 60 days from today
-  const rows = [];
-  for (let i = 0; i < 60; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
-    const dateKey = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-    const dayEvents = events[dateKey] || [];
-    const isToday = i === 0;
-    const weekday = d.toLocaleDateString([], { weekday: 'long' });
-    const monthDay = d.toLocaleDateString([], { month: 'long', day: 'numeric' });
-    rows.push(`
-      <div class="calp-agenda-row${isToday ? ' calp-agenda-today' : ''}" data-calp-date="${dateKey}">
-        <div class="calp-agenda-left">
-          <div class="calp-agenda-weekday">${isToday ? 'Today' : weekday}</div>
-          <div class="calp-agenda-date">${monthDay}</div>
-        </div>
-        <div class="calp-agenda-events">
-          ${dayEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev)}</span>`).join('')}
-          <button class="cal-add-event-btn calp-add-btn" data-calp-date="${dateKey}" title="Add event">+</button>
-        </div>
-      </div>`);
-  }
-  return `<div class="calp-agenda-list">${rows.join('')}</div>`;
-}
-
-function wireCalendarPage(body) {
-  // Month grid cells — click empty area to add event
-  body.querySelectorAll('.calp-cell[data-calp-date]').forEach(cell => {
-    cell.onclick = (e) => {
-      if (e.target.closest('.calp-event-pill')) return;
-      calPageAddEvent(cell.dataset.calpDate);
-    };
-  });
-  // Event pills — click to edit/delete
-  body.querySelectorAll('.calp-event-pill').forEach(pill => {
-    pill.onclick = (e) => {
-      e.stopPropagation();
-      calPageEditEvent(pill.dataset.calpDate, parseInt(pill.dataset.eventIdx));
-    };
-  });
-  // Agenda + button
-  body.querySelectorAll('.calp-add-btn').forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); calPageAddEvent(btn.dataset.calpDate); };
-  });
-}
-
-function calPageAddEvent(dateKey) {
-  const d = new Date(dateKey + 'T00:00:00');
-  const label = d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-  const text = prompt('New event — ' + label + ':');
-  if (!text || !text.trim()) return;
-  if (!state.calendarEvents) state.calendarEvents = {};
-  if (!state.calendarEvents[dateKey]) state.calendarEvents[dateKey] = [];
-  state.calendarEvents[dateKey].push(text.trim());
-  save();
-  renderCalendarPage();
-  renderUpcomingEvents();
-}
-
-function calPageEditEvent(dateKey, idx) {
-  const events = (state.calendarEvents && state.calendarEvents[dateKey]) || [];
-  const existing = events[idx] || '';
-  const d = new Date(dateKey + 'T00:00:00');
-  const label = d.toLocaleDateString([], { month: 'long', day: 'numeric' });
-  const action = prompt('Edit event — ' + label + ':\n(Clear to delete)', existing);
-  if (action === null) return;
-  if (!action.trim()) {
-    state.calendarEvents[dateKey].splice(idx, 1);
-    if (state.calendarEvents[dateKey].length === 0) delete state.calendarEvents[dateKey];
-  } else {
-    state.calendarEvents[dateKey][idx] = action.trim();
-  }
-  save();
-  renderCalendarPage();
-  renderUpcomingEvents();
-}
-
-// ── UPCOMING EVENTS ALERT STRIP ───────────────────────────────────────────────
-// Shown on the bookmarks page; checks events within reminderDays of today.
-// Per MDN, Date.prototype.setHours(0,0,0,0) normalises a date to midnight
-// local time for reliable day-boundary arithmetic. [MDN Web Docs]
-
-function renderUpcomingEvents() {
-  const strip = document.getElementById('upcoming-events-strip');
-  if (!strip) return;
-  if (!state.calendarEvents || Object.keys(state.calendarEvents).length === 0) {
-    strip.style.display = 'none'; return;
-  }
-
-  const reminderDays = state.settings.reminderDays ?? 7;
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() + reminderDays);
-
-  // Collect all events within the reminder window, sorted by date
-  const upcoming = [];
-  Object.entries(state.calendarEvents).forEach(([dateKey, evs]) => {
-    const d = new Date(dateKey + 'T00:00:00');
-    if (d >= today && d <= cutoff && evs.length > 0) {
-      const daysAway = Math.round((d - today) / 86400000);
-      evs.forEach(ev => upcoming.push({ dateKey, date: d, daysAway, text: ev }));
-    }
-  });
-  upcoming.sort((a, b) => a.date - b.date);
-
-  if (upcoming.length === 0) { strip.style.display = 'none'; return; }
-
-  strip.style.display = '';
-  strip.innerHTML = `
-    <div class="upcoming-strip-inner">
-      <span class="upcoming-strip-label">📅 Upcoming</span>
-      ${upcoming.map(ev => {
-        const when = ev.daysAway === 0 ? 'Today'
-                   : ev.daysAway === 1 ? 'Tomorrow'
-                   : 'In ' + ev.daysAway + ' days';
-        return `<span class="upcoming-chip" title="${escHtml(ev.dateKey)}">
-          <span class="upcoming-when">${when}</span>
-          <span class="upcoming-text">${escHtml(ev.text)}</span>
-        </span>`;
-      }).join('')}
-      <button class="upcoming-strip-close" title="Dismiss">✕</button>
-    </div>
-  `;
-  strip.querySelector('.upcoming-strip-close').onclick = () => { strip.style.display = 'none'; };
-}
-
 function renderCalendarWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card calendar-widget';
@@ -2830,26 +2285,26 @@ function renderCalendarBody(w) {
   wireCalendarBody(w, body);
 }
 
+const WEEKDAY_LABELS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
 function buildMonthGridHTML(w) {
   const [yearStr, monthStr] = w.viewMonth.split('-');
-  const year = parseInt(yearStr, 10), month = parseInt(monthStr, 10) - 1;
+  const year = parseInt(yearStr, 10), month = parseInt(monthStr, 10) - 1; // 0-indexed
 
   const today = new Date();
   const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
   const todayDate = today.getDate();
 
   const firstOfMonth = new Date(year, month, 1);
-  const startWeekday = firstOfMonth.getDay();
+  const startWeekday = firstOfMonth.getDay(); // 0 = Sunday
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const events = w.events || {};
 
   let cells = '';
   for (let i = 0; i < startWeekday; i++) cells += `<div class="cal-cell cal-cell-empty"></div>`;
   for (let d = 1; d <= daysInMonth; d++) {
     const isToday = isCurrentMonth && d === todayDate;
-    const dateKey = year + '-' + String(month + 1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-    const hasEvents = events[dateKey] && events[dateKey].length > 0;
-    cells += `<div class="cal-cell${isToday ? ' cal-today' : ''}${hasEvents ? ' cal-has-events' : ''}" data-cal-date="${dateKey}" data-widget-id="${w.id}">${d}${hasEvents ? '<span class="cal-dot"></span>' : ''}</div>`;
+    cells += `<div class="cal-cell${isToday ? ' cal-today' : ''}">${d}</div>`;
   }
 
   return `
@@ -2875,7 +2330,6 @@ function buildAgendaHTML(w) {
     d.setDate(d.getDate() + i);
     days.push(d);
   }
-  const events = w.events || {};
 
   return `
     <div class="cal-agenda-list">
@@ -2883,18 +2337,10 @@ function buildAgendaHTML(w) {
         const isToday = d.getTime() === today.getTime();
         const weekday = d.toLocaleDateString([], { weekday: 'short' });
         const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-        const dateKey = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-        const dayEvents = events[dateKey] || [];
         return `
-          <div class="cal-agenda-row${isToday ? ' cal-agenda-today' : ''}" data-cal-date="${dateKey}" data-widget-id="${w.id}">
-            <div class="cal-agenda-left">
-              <span class="cal-agenda-weekday">${isToday ? 'Today' : weekday}</span>
-              <span class="cal-agenda-date">${monthDay}</span>
-            </div>
-            <div class="cal-agenda-events">
-              ${dayEvents.map((ev, i) => `<span class="cal-event-chip" data-cal-date="${dateKey}" data-event-idx="${i}" data-widget-id="${w.id}">${escHtml(ev)}</span>`).join('')}
-              <button class="cal-add-event-btn" data-cal-date="${dateKey}" data-widget-id="${w.id}" title="Add event">+</button>
-            </div>
+          <div class="cal-agenda-row${isToday ? ' cal-agenda-today' : ''}">
+            <span class="cal-agenda-weekday">${isToday ? 'Today' : weekday}</span>
+            <span class="cal-agenda-date">${monthDay}</span>
           </div>
         `;
       }).join('')}
@@ -2915,7 +2361,6 @@ function wireCalendarBody(w, body) {
       renderCalendarBody(w);
     };
   });
-
   const todayBtn = body.querySelector('[data-cal-today]');
   if (todayBtn) {
     todayBtn.onclick = () => {
@@ -2925,48 +2370,6 @@ function wireCalendarBody(w, body) {
       renderCalendarBody(w);
     };
   }
-
-  // Month grid: click a day cell to add an event
-  body.querySelectorAll('.cal-cell[data-cal-date]').forEach(cell => {
-    cell.style.cursor = 'pointer';
-    cell.onclick = () => calAddEvent(w, cell.dataset.calDate);
-  });
-
-  // Agenda: + button adds event, chip click edits/deletes
-  body.querySelectorAll('.cal-add-event-btn').forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); calAddEvent(w, btn.dataset.calDate); };
-  });
-  body.querySelectorAll('.cal-event-chip').forEach(chip => {
-    chip.onclick = (e) => { e.stopPropagation(); calEditEvent(w, chip.dataset.calDate, parseInt(chip.dataset.eventIdx)); };
-  });
-}
-
-function calAddEvent(w, dateKey) {
-  const label = new Date(dateKey + 'T00:00:00').toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-  const text = prompt('New event on ' + label + ':');
-  if (!text || !text.trim()) return;
-  if (!w.events) w.events = {};
-  if (!w.events[dateKey]) w.events[dateKey] = [];
-  w.events[dateKey].push(text.trim());
-  save();
-  renderCalendarBody(w);
-}
-
-function calEditEvent(w, dateKey, idx) {
-  const events = (w.events && w.events[dateKey]) || [];
-  const existing = events[idx] || '';
-  const label = new Date(dateKey + 'T00:00:00').toLocaleDateString([], { month: 'long', day: 'numeric' });
-  const action = prompt(`Event on ${label}:\n"${existing}"\n\nEdit the text below, or clear it to delete:`, existing);
-  if (action === null) return; // cancelled
-  if (!action.trim()) {
-    // Delete
-    w.events[dateKey].splice(idx, 1);
-    if (w.events[dateKey].length === 0) delete w.events[dateKey];
-  } else {
-    w.events[dateKey][idx] = action.trim();
-  }
-  save();
-  renderCalendarBody(w);
 }
 
 function renderSearchWidget(w) {
@@ -3383,11 +2786,7 @@ function setupDrag() {
     card.ondragstart = (e) => {
       if (dragBm) return; // bookmark drag in progress
       if (e.target.closest('textarea, input, select, [contenteditable]')) { e.preventDefault(); return; }
-      if (card.dataset.specialId) {
-        dragCol = 'special:' + card.dataset.specialId;
-      } else {
-        dragCol = 'col:' + card.dataset.colId;
-      }
+      dragCol = 'col:' + card.dataset.colId;
       card.classList.add('col-dragging');
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', dragCol);
@@ -3452,8 +2851,7 @@ function setupDrag() {
 
   function cardKey(card) {
     if (!card) return null;
-    return card.dataset.specialId ? 'special:' + card.dataset.specialId
-         : card.dataset.colId    ? 'col:' + card.dataset.colId
+    return card.dataset.colId ? 'col:' + card.dataset.colId
          : card.dataset.widgetId ? 'widget:' + card.dataset.widgetId
          : null;
   }
@@ -3521,15 +2919,6 @@ function setupDrag() {
 // or appended to the end of that column if no anchor (empty column / past last card).
 // This performs a true insert (array splice), never a swap.
 function moveItemToVisualColumn(fromKey, visualColIdx, toKey, insertAfter) {
-  // Special cards (Favorites, Recently Added) — just persist their column
-  if (fromKey.startsWith('special:')) {
-    const specialId = fromKey.split(':')[1];
-    if (specialId === 'favorites') state.settings.favoritesCol = visualColIdx;
-    if (specialId === 'recent')    state.settings.recentCol    = visualColIdx;
-    save(); render();
-    return;
-  }
-
   const isWidget = fromKey.startsWith('widget:');
   const fromId = fromKey.split(':')[1];
 
@@ -4327,158 +3716,6 @@ function toggleDensity() {
 }
 
 // ── NOTES WIDGET ──────────────────────────────────────────────────────────────
-// ── TODO WIDGET ───────────────────────────────────────────────────────────────
-// Items stored as w.todos = [{id, text, done}, …] on the widget object,
-// so they persist and sync alongside all other state automatically.
-
-function renderTodoWidget(w) {
-  if (!w.todos) w.todos = [];
-  const el = document.createElement('div');
-  el.className = 'folder-card widget-card todo-widget';
-  el.dataset.widgetId = w.id;
-  el.draggable = false;
-
-  const done  = w.todos.filter(t => t.done).length;
-  const total = w.todos.length;
-
-  el.innerHTML = `
-    <div class="folder-header widget-header">
-      <span class="col-dot" style="background:#A371F7"></span>
-      <span class="column-title" style="cursor:default">To Do</span>
-      <span class="col-count">${total > 0 ? done + '/' + total : ''}</span>
-      <div class="col-actions" style="opacity:1">
-        <button class="icon-btn" title="Clear completed" data-todo-clear="${w.id}">✓✕</button>
-        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
-      </div>
-    </div>
-    <div class="todo-body" id="todo-body-${w.id}">
-      <ul class="todo-list" id="todo-list-${w.id}">
-        ${buildTodoListHTML(w)}
-      </ul>
-      <form class="todo-add-form" id="todo-form-${w.id}" autocomplete="off">
-        <input class="todo-input" id="todo-input-${w.id}" type="text"
-          placeholder="Add a task…" draggable="false" autocomplete="off" spellcheck="false">
-        <button class="todo-add-btn" type="submit" title="Add">+</button>
-      </form>
-    </div>
-  `;
-
-  setTimeout(() => {
-    // Drag via header only
-    const header = el.querySelector('.widget-header');
-    if (header) header.onmousedown = () => { el.draggable = true; };
-    el.addEventListener('dragend', () => { el.draggable = false; });
-    document.addEventListener('mouseup', () => { el.draggable = false; });
-
-    wireTodoWidget(w, el);
-  }, 0);
-
-  return el;
-}
-
-function buildTodoListHTML(w) {
-  if (!w.todos || w.todos.length === 0) return '<li class="todo-empty">No tasks yet</li>';
-  return w.todos.map(t => `
-    <li class="todo-item${t.done ? ' todo-done' : ''}" data-todo-id="${escHtml(t.id)}">
-      <button class="todo-check" data-todo-toggle="${escHtml(t.id)}" data-widget-id="${w.id}"
-        title="${t.done ? 'Mark incomplete' : 'Mark complete'}">${t.done ? '✓' : ''}</button>
-      <span class="todo-text" data-todo-edit="${escHtml(t.id)}" data-widget-id="${w.id}"
-        title="Click to edit">${escHtml(t.text)}</span>
-      <button class="icon-btn todo-delete" data-todo-delete="${escHtml(t.id)}" data-widget-id="${w.id}"
-        title="Delete">✕</button>
-    </li>
-  `).join('');
-}
-
-function refreshTodoList(w) {
-  const list = document.getElementById('todo-list-' + w.id);
-  if (list) list.innerHTML = buildTodoListHTML(w);
-  // Refresh the count in the header
-  const card = document.querySelector(`[data-widget-id="${w.id}"].todo-widget`);
-  if (card) {
-    const count = card.querySelector('.col-count');
-    if (count) {
-      const done = w.todos.filter(t => t.done).length;
-      const total = w.todos.length;
-      count.textContent = total > 0 ? done + '/' + total : '';
-    }
-  }
-  wireTodoListEvents(w);
-}
-
-function wireTodoWidget(w, el) {
-  // Add form submit
-  const form = document.getElementById('todo-form-' + w.id);
-  const input = document.getElementById('todo-input-' + w.id);
-  if (form && input) {
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      const text = input.value.trim();
-      if (!text) return;
-      if (!w.todos) w.todos = [];
-      w.todos.push({ id: uid(), text, done: false });
-      input.value = '';
-      save();
-      refreshTodoList(w);
-    };
-    // Prevent the form input from triggering card drag
-    input.addEventListener('mousedown', (e) => e.stopPropagation());
-  }
-
-  // Clear completed button
-  const clearBtn = el.querySelector('[data-todo-clear]');
-  if (clearBtn) {
-    clearBtn.onclick = () => {
-      if (!w.todos) return;
-      w.todos = w.todos.filter(t => !t.done);
-      save();
-      refreshTodoList(w);
-    };
-  }
-
-  wireTodoListEvents(w);
-}
-
-function wireTodoListEvents(w) {
-  // Toggle done
-  document.querySelectorAll(`[data-todo-toggle][data-widget-id="${w.id}"]`).forEach(btn => {
-    btn.onclick = () => {
-      const item = w.todos && w.todos.find(t => t.id === btn.dataset.todoToggle);
-      if (!item) return;
-      item.done = !item.done;
-      save();
-      refreshTodoList(w);
-    };
-  });
-
-  // Inline edit — click the text to edit it
-  document.querySelectorAll(`[data-todo-edit][data-widget-id="${w.id}"]`).forEach(span => {
-    span.onclick = () => {
-      const item = w.todos && w.todos.find(t => t.id === span.dataset.todoEdit);
-      if (!item) return;
-      const newText = prompt('Edit task:', item.text);
-      if (newText === null) return;  // cancelled
-      if (!newText.trim()) {
-        // Empty — delete it
-        w.todos = w.todos.filter(t => t.id !== item.id);
-      } else {
-        item.text = newText.trim();
-      }
-      save();
-      refreshTodoList(w);
-    };
-  });
-
-  // Delete
-  document.querySelectorAll(`[data-todo-delete][data-widget-id="${w.id}"]`).forEach(btn => {
-    btn.onclick = () => {
-      w.todos = w.todos ? w.todos.filter(t => t.id !== btn.dataset.todoDelete) : [];
-      save();
-      refreshTodoList(w);
-    };
-  });
-}
-
 function renderNotesWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card notes-widget';
@@ -4660,8 +3897,9 @@ document.getElementById('btn-add-sysstats').onclick = () => {
   state.widgets.push({ id: uid(), type: 'sysstats' });
   save(); render();
 };
-document.getElementById('btn-add-todo').onclick = () => {
-  state.widgets.push({ id: uid(), type: 'todo', todos: [] });
+document.getElementById('btn-add-calendar').onclick = () => {
+  const t = new Date();
+  state.widgets.push({ id: uid(), type: 'calendar', calView: 'month', viewMonth: t.getFullYear() + '-' + (t.getMonth() + 1) });
   save(); render();
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
@@ -4749,34 +3987,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ── Calendar page controls ────────────────────────────────────────────────────
-document.getElementById('cal-prev').onclick = () => {
-  calPageMonth--;
-  if (calPageMonth < 0) { calPageMonth = 11; calPageYear--; }
-  renderCalendarPage();
-};
-document.getElementById('cal-next').onclick = () => {
-  calPageMonth++;
-  if (calPageMonth > 11) { calPageMonth = 0; calPageYear++; }
-  renderCalendarPage();
-};
-document.getElementById('cal-today-page').onclick = () => {
-  const t = new Date();
-  calPageYear = t.getFullYear();
-  calPageMonth = t.getMonth();
-  renderCalendarPage();
-};
-document.querySelectorAll('[data-calpage-view]').forEach(btn => {
-  btn.onclick = () => { calPageView = btn.dataset.calpageView; renderCalendarPage(); };
-});
-document.getElementById('cal-reminder-select').onchange = (e) => {
-  state.settings.reminderDays = parseInt(e.target.value);
-  save();
-  renderUpcomingEvents();
-};
-
 initSync();
-renderUpcomingEvents();
 
 // Register service worker for PWA installability and offline app-shell caching.
 // Only works over http(s) — service workers are not available on file:// origins.
@@ -4842,17 +4053,14 @@ document.title = 'Helm — Bookmarks';
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.getElementById('main').style.display          = tab === 'bookmarks' ? '' : 'none';
-  document.getElementById('feeds-page').style.display    = tab === 'feeds'     ? '' : 'none';
-  document.getElementById('news-page').style.display     = tab === 'news'      ? '' : 'none';
-  document.getElementById('calendar-page').style.display = tab === 'calendar'  ? '' : 'none';
-  document.getElementById('search-wrap').style.display   = tab === 'bookmarks' ? '' : 'none';
+  document.getElementById('main').style.display        = tab === 'bookmarks' ? '' : 'none';
+  document.getElementById('feeds-page').style.display  = tab === 'feeds'     ? '' : 'none';
+  document.getElementById('news-page').style.display   = tab === 'news'      ? '' : 'none';
+  document.getElementById('search-wrap').style.display = tab === 'bookmarks' ? '' : 'none';
   document.getElementById('topbar-actions').style.display = tab === 'bookmarks' ? '' : 'none';
-  const titles = { bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar' };
-  document.title = titles[tab] || 'Helm';
-  if (tab === 'feeds')    renderFeeds();
-  if (tab === 'news')     renderNews();
-  if (tab === 'calendar') renderCalendarPage();
+  document.title = tab === 'feeds' ? 'Helm — YouTube Feeds' : tab === 'news' ? 'Helm — News' : 'Helm — Bookmarks';
+  if (tab === 'feeds') renderFeeds();
+  if (tab === 'news') renderNews();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {

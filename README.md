@@ -1,28 +1,29 @@
 # Helm
 
-A self-hosted personal dashboard — bookmarks, YouTube feeds, news feeds, widgets, and multi-device sync — served by a lightweight Python backend.
+A self-hosted personal dashboard. Bookmarks, YouTube feeds, calendar, news feeds, widgets, and multi-device sync — served by a lightweight Python backend.
 
 ---
 
 ## Features
 
-- **Bookmarks** — folders, drag-and-drop reordering, favorites, recently added, search, import/export (Netscape HTML and JSON), pin to favorites
-- **YouTube Feeds** — add channels by ID or handle, video carousel per channel, Invidious support, sort by manual/alphabetical/recently active
-- **News Feeds** — RSS 2.0 and Atom sources, per-source cards and a combined chronological timeline, auto-detection of feed URL from a site URL
-- **Widgets** — search (Startpage, priv.au, YouTube), weather (Open-Meteo, no API key), notes, digital clock, system resource monitor, calendar
-- **Multi-device sync** — the Python backend is the canonical store; changes push and pull silently across all devices on the network
-- **Rolling backups** — the server automatically snapshots state on every save, keeping the 10 most recent
-- **Encrypted config export** — AES-256-GCM via the browser's Web Crypto API; no external library
-- **In-app article reader** — click any news headline to open a clean reader pane without leaving the page
-- **HTTPS** — auto-detected from `cert.pem` / `key.pem` next to the server script
-- **Browser extension** — save any page to Helm from the toolbar, with folder selection and already-bookmarked indicator
+- **Bookmarks**  folders, drag-and-drop reordering, favorites, recently added, search, import/export (Netscape HTML and JSON), pin to favorites
+- **YouTube Feeds**  add channels by ID or handle, video carousel per channel, Invidious support, sort by manual/alphabetical/recently active
+- **News Feeds**  RSS 2.0 and Atom sources, per-source cards and a combined chronological timeline, auto-detection of feed URL from a site URL
+- **Calendar** calendar page with event scheduler and configurable reminder
+- **Widgets**  search (Startpage, priv.au, YouTube), weather (Open-Meteo, no API key), notes, digital clock, system resource monitor
+- **Multi-device sync**  the Python backend is the canonical store; changes push and pull silently across all devices on the network
+- **Rolling backups**  the server automatically snapshots state on every save, keeping the 10 most recent
+- **Encrypted config export**  AES-256-GCM via the browser's Web Crypto API; no external library
+- **In-app article reader**  click any news headline to open a clean reader pane without leaving the page
+- **HTTPS**  auto-detected from `cert.pem` / `key.pem` next to the server script
+- **Browser extension**  save any page to Helm from the toolbar, with folder selection and already-bookmarked indicator
 
 ---
 
 ## Requirements
 
 - Python 3.8 or later (standard library only — no pip dependencies)
-- A modern browser (Firefox, Chrome, Edge, or any Chromium-based browser)
+- A modern browser (tested only on Waterfox)
 
 ---
 
@@ -77,7 +78,7 @@ openssl req -new -key key.pem -out helm.csr -subj "/CN=popcorn"
 
 # Write the extension config (replace IP and hostname to match your server)
 cat > /tmp/helm-ext.cnf << 'EXTEOF'
-subjectAltName=IP:192.168.1.168,DNS:popcorn,DNS:localhost
+subjectAltName=IP:IP_ADDRESS_OF_SERVER,DNS:HOSTNAME_OF_SERVER,DNS:localhost
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
