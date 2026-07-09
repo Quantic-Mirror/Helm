@@ -29,8 +29,6 @@ Rolling backups:
   GET  /api/backups        -> list of available snapshots (newest first)
   GET  /api/backups/<name> -> download a specific snapshot as JSON
 
-State is persisted to marks_state.json next to this script, so it survives
-server restarts.
 
 HTTPS:
   If cert.pem and key.pem exist next to this script, the server starts in
