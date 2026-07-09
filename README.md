@@ -4,19 +4,28 @@ A self-hosted personal dashboard. Bookmarks, YouTube feeds, calendar, news feeds
 
 ---
 
+## Screenshots
+![Main Page](screenshots/helm_main.png)
+![YouTube Feeds](screenshots/helm_youtube.png)
+![News Feeds](screenshots/helm_news.png)
+![Calendar](screenshots/helm_calendar.png)
+
+
+---
+
 ## Features
 
-- **Bookmarks**  folders, drag-and-drop reordering, favorites, recently added, search, import/export (Netscape HTML and JSON), pin to favorites
-- **YouTube Feeds**  add channels by ID or handle, video carousel per channel, Invidious support, sort by manual/alphabetical/recently active
-- **News Feeds**  RSS 2.0 and Atom sources, per-source cards and a combined chronological timeline, auto-detection of feed URL from a site URL
-- **Calendar** calendar page with event scheduler and configurable reminder
-- **Widgets**  search (Startpage, priv.au, YouTube), weather (Open-Meteo, no API key), notes, digital clock, system resource monitor
-- **Multi-device sync**  the Python backend is the canonical store; changes push and pull silently across all devices on the network
-- **Rolling backups**  the server automatically snapshots state on every save, keeping the 10 most recent
-- **Encrypted config export**  AES-256-GCM via the browser's Web Crypto API; no external library
-- **In-app article reader**  click any news headline to open a clean reader pane without leaving the page
-- **HTTPS**  auto-detected from `cert.pem` / `key.pem` next to the server script
-- **Browser extension**  save any page to Helm from the toolbar, with folder selection and already-bookmarked indicator
+- **Bookmarks** - folders, drag-and-drop reordering, favorites, recently added, search, import/export (Netscape HTML and JSON), pin to favorites
+- **YouTube Feeds** - add channels by ID or handle, video carousel per channel, Invidious support, sort by manual/alphabetical/recently active
+- **News Feeds** - RSS 2.0 and Atom sources, per-source cards and a combined chronological timeline, auto-detection of feed URL from a site URL
+- **Calendar** - calendar page with event scheduler and configurable reminder
+- **Widgets** - search (Startpage, priv.au, YouTube), weather (Open-Meteo, no API key), notes, digital clock, system resource monitor
+- **Multi-device sync** - the Python backend is the canonical store; changes push and pull silently across all devices on the network
+- **Rolling backups** - the server automatically snapshots state on every save, keeping the 10 most recent
+- **Encrypted config export** - AES-256-GCM via the browser's Web Crypto API; no external library
+- **In-app article reader** - click any news headline to open a clean reader pane without leaving the page
+- **HTTPS** - auto-detected from `cert.pem` / `key.pem` next to the server script
+- **Browser extension** - save any page to Helm from the toolbar, with folder selection and already-bookmarked indicator
 
 ---
 
@@ -77,12 +86,12 @@ openssl genrsa -out key.pem 2048
 openssl req -new -key key.pem -out helm.csr -subj "/CN=popcorn"
 
 # Write the extension config (replace IP and hostname to match your server)
-cat > /tmp/helm-ext.cnf << 'EXTEOF'
+cat > /tmp/helm-ext.cnf << 'EOF'
 subjectAltName=IP:IP_ADDRESS_OF_SERVER,DNS:HOSTNAME_OF_SERVER,DNS:localhost
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-EXTEOF
+EOF
 
 # Sign with your CA
 openssl x509 -req -in helm.csr \
@@ -156,6 +165,14 @@ The backend exposes several endpoints alongside serving the static files:
 ## Multi-Device Sync
 
 The server holds the canonical state in `helm_state.json`. Every device pulls the server state on page load and pushes any local changes within 600 ms of a save. The polling interval is 5 seconds. Sync is silent — no dialogs, no conflict prompts. Last write wins.
+
+---
+
+## To-Do
+
+Make Calendar Events Alert per-event rather than for all events
+Fix config restore not restoring News Feeds
+
 
 ---
 
