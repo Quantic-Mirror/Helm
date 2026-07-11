@@ -1,5 +1,6 @@
 cert.pem
 key.pem
+index.html.bak
 helm-ca.crt
 helm-ca.key
 helm-ca.srl

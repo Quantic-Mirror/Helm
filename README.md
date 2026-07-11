@@ -170,7 +170,6 @@ The server holds the canonical state in `helm_state.json`. Every device pulls th
 
 ## To-Do
 
-Make Calendar Events Alert per-event rather than for all events
 Fix config restore not restoring News Feeds
 
 
