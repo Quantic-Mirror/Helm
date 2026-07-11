@@ -1843,17 +1843,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
       <button class="cal-view-btn active" data-calpage-view="month">Month</button>
       <button class="cal-view-btn" data-calpage-view="agenda">Agenda</button>
     </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-      <label style="font-size:11px;color:var(--text-dim)">Remind</label>
-      <select id="cal-reminder-select" class="btn" style="cursor:pointer;font-size:11px;padding:4px 8px">
-        <option value="0">On the day</option>
-        <option value="1">1 day before</option>
-        <option value="2">2 days before</option>
-        <option value="3">3 days before</option>
-        <option value="7" selected>1 week before</option>
-        <option value="14">2 weeks before</option>
-      </select>
-    </div>
   </div>
   <div id="cal-page-body"></div>
 </div>
@@ -2198,6 +2187,14 @@ function load() {
         }
       });
     }
+  }
+  // Migrate old plain-string events to {text, reminderDays} objects
+  if (state.calendarEvents) {
+    Object.keys(state.calendarEvents).forEach(date => {
+      state.calendarEvents[date] = state.calendarEvents[date].map(ev =>
+        typeof ev === 'string' ? { text: ev, reminderDays: 7 } : ev
+      );
+    });
   }
   if (!state.settings.reminderDays && state.settings.reminderDays !== 0) state.settings.reminderDays = 7;
   if (!state.widgets || state.widgets.length === 0) {
@@ -2621,10 +2618,6 @@ function renderCalendarPage() {
     btn.classList.toggle('active', btn.dataset.calpageView === calPageView);
   });
 
-  // Sync reminder select
-  const remSel = document.getElementById('cal-reminder-select');
-  if (remSel) remSel.value = String(state.settings.reminderDays ?? 7);
-
   const body = document.getElementById('cal-page-body');
   if (!body) return;
   body.innerHTML = calPageView === 'month' ? buildMonthPageHTML() : buildAgendaPageHTML();
@@ -2649,7 +2642,7 @@ function buildMonthPageHTML() {
       <div class="calp-cell${isToday ? ' calp-today' : ''}" data-calp-date="${dateKey}">
         <span class="calp-day-num">${d}</span>
         <div class="calp-cell-events">
-          ${dayEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev)}</span>`).join('')}
+          ${dayEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev.text || ev)}</span>`).join('')}
         </div>
       </div>`;
   }
@@ -2680,7 +2673,7 @@ function buildAgendaPageHTML() {
           <div class="calp-agenda-date">${monthDay}</div>
         </div>
         <div class="calp-agenda-events">
-          ${dayEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev)}</span>`).join('')}
+          ${dayEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev.text || ev)}</span>`).join('')}
           <button class="cal-add-event-btn calp-add-btn" data-calp-date="${dateKey}" title="Add event">+</button>
         </div>
       </div>`);
@@ -2709,14 +2702,37 @@ function wireCalendarPage(body) {
   });
 }
 
+const REMINDER_OPTIONS = [
+  { value: 0,  label: 'On the day' },
+  { value: 1,  label: '1 day before' },
+  { value: 2,  label: '2 days before' },
+  { value: 3,  label: '3 days before' },
+  { value: 7,  label: '1 week before' },
+  { value: 14, label: '2 weeks before' },
+  { value: 30, label: '1 month before' },
+];
+
+function promptReminderDays(current) {
+  const opts = REMINDER_OPTIONS.map((o, i) => `${i + 1}. ${o.label}${o.value === current ? ' ✓' : ''}`).join('\n');
+  const answer = prompt('Reminder:\n\n' + opts + '\n\nEnter a number (1–' + REMINDER_OPTIONS.length + '):', '');
+  if (!answer) return null;
+  const idx = parseInt(answer.trim()) - 1;
+  if (idx < 0 || idx >= REMINDER_OPTIONS.length || isNaN(idx)) return null;
+  return REMINDER_OPTIONS[idx].value;
+}
+
 function calPageAddEvent(dateKey) {
   const d = new Date(dateKey + 'T00:00:00');
   const label = d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const text = prompt('New event — ' + label + ':');
   if (!text || !text.trim()) return;
+
+  const reminderDays = promptReminderDays(state.settings.reminderDays ?? 7);
+  if (reminderDays === null) return; // cancelled at reminder step
+
   if (!state.calendarEvents) state.calendarEvents = {};
   if (!state.calendarEvents[dateKey]) state.calendarEvents[dateKey] = [];
-  state.calendarEvents[dateKey].push(text.trim());
+  state.calendarEvents[dateKey].push({ text: text.trim(), reminderDays });
   save();
   renderCalendarPage();
   renderUpcomingEvents();
@@ -2724,16 +2740,31 @@ function calPageAddEvent(dateKey) {
 
 function calPageEditEvent(dateKey, idx) {
   const events = (state.calendarEvents && state.calendarEvents[dateKey]) || [];
-  const existing = events[idx] || '';
+  const existing = events[idx];
+  if (!existing) return;
+  const existingText = existing.text || existing;
+  const existingReminder = existing.reminderDays ?? (state.settings.reminderDays ?? 7);
+
   const d = new Date(dateKey + 'T00:00:00');
   const label = d.toLocaleDateString([], { month: 'long', day: 'numeric' });
-  const action = prompt('Edit event — ' + label + ':\n(Clear to delete)', existing);
-  if (action === null) return;
+
+  const currentRemLabel = REMINDER_OPTIONS.find(o => o.value === existingReminder)?.label || existingReminder + ' days before';
+  const action = prompt(
+    'Edit event — ' + label + '\nReminder: ' + currentRemLabel + '\n\n(Clear to delete, or edit text below)',
+    existingText
+  );
+  if (action === null) return; // cancelled
   if (!action.trim()) {
+    // Delete
     state.calendarEvents[dateKey].splice(idx, 1);
     if (state.calendarEvents[dateKey].length === 0) delete state.calendarEvents[dateKey];
   } else {
-    state.calendarEvents[dateKey][idx] = action.trim();
+    // Update text; optionally change reminder
+    const newReminder = promptReminderDays(existingReminder);
+    state.calendarEvents[dateKey][idx] = {
+      text: action.trim(),
+      reminderDays: newReminder !== null ? newReminder : existingReminder,
+    };
   }
   save();
   renderCalendarPage();
@@ -2741,9 +2772,9 @@ function calPageEditEvent(dateKey, idx) {
 }
 
 // ── UPCOMING EVENTS ALERT STRIP ───────────────────────────────────────────────
-// Shown on the bookmarks page; checks events within reminderDays of today.
-// Per MDN, Date.prototype.setHours(0,0,0,0) normalises a date to midnight
-// local time for reliable day-boundary arithmetic. [MDN Web Docs]
+// Shown on the bookmarks page. Each event is checked against its own
+// reminderDays setting — an event with a 7-day reminder appears in the strip
+// starting 7 days before its date, regardless of the global setting.
 
 function renderUpcomingEvents() {
   const strip = document.getElementById('upcoming-events-strip');
@@ -2752,20 +2783,22 @@ function renderUpcomingEvents() {
     strip.style.display = 'none'; return;
   }
 
-  const reminderDays = state.settings.reminderDays ?? 7;
   const today = new Date();
   today.setHours(0,0,0,0);
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() + reminderDays);
 
-  // Collect all events within the reminder window, sorted by date
+  // Collect events whose own reminder window includes today
   const upcoming = [];
   Object.entries(state.calendarEvents).forEach(([dateKey, evs]) => {
-    const d = new Date(dateKey + 'T00:00:00');
-    if (d >= today && d <= cutoff && evs.length > 0) {
-      const daysAway = Math.round((d - today) / 86400000);
-      evs.forEach(ev => upcoming.push({ dateKey, date: d, daysAway, text: ev }));
-    }
+    const eventDate = new Date(dateKey + 'T00:00:00');
+    if (eventDate < today) return; // past events never shown
+    const daysAway = Math.round((eventDate - today) / 86400000);
+    evs.forEach(ev => {
+      const evText    = ev.text || ev;
+      const remDays   = ev.reminderDays ?? (state.settings.reminderDays ?? 7);
+      if (daysAway <= remDays) {
+        upcoming.push({ dateKey, date: eventDate, daysAway, text: evText });
+      }
+    });
   });
   upcoming.sort((a, b) => a.date - b.date);
 
@@ -4769,11 +4802,6 @@ document.getElementById('cal-today-page').onclick = () => {
 document.querySelectorAll('[data-calpage-view]').forEach(btn => {
   btn.onclick = () => { calPageView = btn.dataset.calpageView; renderCalendarPage(); };
 });
-document.getElementById('cal-reminder-select').onchange = (e) => {
-  state.settings.reminderDays = parseInt(e.target.value);
-  save();
-  renderUpcomingEvents();
-};
 
 initSync();
 renderUpcomingEvents();
