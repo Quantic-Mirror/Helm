@@ -668,7 +668,7 @@ body {
 }
 .cal-add-event-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-/* Clock widget */
+/* Clock + Timer widget */
 .clock-body {
   padding: 18px 16px 20px;
   text-align: center;
@@ -687,6 +687,119 @@ body {
   color: var(--text-muted);
   margin-top: 6px;
 }
+
+/* Clock/Timer tab strip in widget header */
+.clock-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-3);
+  border-radius: 6px;
+  padding: 2px;
+  flex: 1;
+  margin: 0 6px;
+}
+.clock-tab-btn {
+  flex: 1;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.clock-tab-btn:hover { color: var(--text); }
+.clock-tab-btn.active { background: var(--surface); color: var(--text); }
+
+/* Timer view */
+.timer-body {
+  padding: 12px 14px 16px;
+  text-align: center;
+  transition: background 0.3s;
+}
+.timer-body.timer-done {
+  animation: timer-flash 0.5s ease-in-out 3;
+}
+@keyframes timer-flash {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(248,81,73,0.2); }
+}
+
+.timer-display {
+  font-family: var(--font-display);
+  font-size: 48px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.timer-done .timer-display { color: var(--red); }
+
+.timer-presets {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.timer-preset-btn {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.timer-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.timer-custom-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.timer-custom-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+  text-align: center;
+  transition: border-color 0.15s;
+}
+.timer-custom-input:focus { border-color: var(--accent); }
+
+.timer-controls {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.timer-ctrl-btn {
+  flex: 1;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.timer-ctrl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.timer-ctrl-btn:disabled { opacity: 0.4; cursor: default; }
 
 /* To Do widget */
 .todo-body { padding: 8px 14px 12px; }
@@ -2437,41 +2550,73 @@ const ENGINES = {
 };
 
 // ── CLOCK WIDGET ──────────────────────────────────────────────────────────────
-const CLOCK_TIMERS = {}; // widgetId → interval id, so re-renders don't pile up timers
+const CLOCK_TIMERS = {};   // widgetId → clock interval id
+const TIMER_STATE  = {};   // widgetId → { remaining, total, running, interval, done }
 
 function renderClockWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card clock-widget';
   el.dataset.widgetId = w.id;
-  el.draggable = false; // same drag-via-header-only pattern as notes, see setup below
+  el.draggable = false;
   const format = w.format || '24h';
+  const clockView = w.clockView || 'clock'; // 'clock' or 'timer'
+
   el.innerHTML = `
     <div class="folder-header widget-header">
       <span class="col-dot" style="background:#BC71FF"></span>
-      <span class="column-title" style="cursor:default">Clock</span>
+      <div class="clock-tabs">
+        <button class="clock-tab-btn${clockView === 'clock' ? ' active' : ''}" data-clock-tab="clock" data-widget-id="${w.id}">Clock</button>
+        <button class="clock-tab-btn${clockView === 'timer' ? ' active' : ''}" data-clock-tab="timer" data-widget-id="${w.id}">Timer</button>
+      </div>
       <div class="col-actions" style="opacity:1">
-        <button class="icon-btn" title="Toggle 12h/24h" data-toggle-clock-format="${w.id}">${format === '24h' ? '24h' : '12h'}</button>
+        ${clockView === 'clock' ? `<button class="icon-btn" title="Toggle 12h/24h" data-toggle-clock-format="${w.id}">${format === '24h' ? '24h' : '12h'}</button>` : ''}
         <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
       </div>
     </div>
-    <div class="clock-body">
-      <div class="clock-time" id="clock-time-${w.id}">--:--</div>
-      <div class="clock-date" id="clock-date-${w.id}">…</div>
-    </div>
+    ${clockView === 'clock' ? `
+      <div class="clock-body">
+        <div class="clock-time" id="clock-time-${w.id}">--:--</div>
+        <div class="clock-date" id="clock-date-${w.id}">…</div>
+      </div>
+    ` : `
+      <div class="timer-body" id="timer-body-${w.id}">
+        <div class="timer-display" id="timer-display-${w.id}">0:00</div>
+        <div class="timer-presets">
+          <button class="timer-preset-btn" data-timer-preset="60"  data-widget-id="${w.id}">1m</button>
+          <button class="timer-preset-btn" data-timer-preset="120" data-widget-id="${w.id}">2m</button>
+          <button class="timer-preset-btn" data-timer-preset="180" data-widget-id="${w.id}">3m</button>
+          <button class="timer-preset-btn" data-timer-preset="300" data-widget-id="${w.id}">5m</button>
+          <button class="timer-preset-btn" data-timer-preset="600" data-widget-id="${w.id}">10m</button>
+        </div>
+        <div class="timer-custom-row">
+          <input class="timer-custom-input" id="timer-custom-${w.id}" type="text"
+            placeholder="mm:ss or minutes" draggable="false" autocomplete="off">
+          <button class="timer-preset-btn" id="timer-custom-set-${w.id}" data-widget-id="${w.id}">Set</button>
+        </div>
+        <div class="timer-controls">
+          <button class="timer-ctrl-btn" id="timer-start-${w.id}" data-widget-id="${w.id}">▶ Start</button>
+          <button class="timer-ctrl-btn" id="timer-reset-${w.id}" data-widget-id="${w.id}">↺ Reset</button>
+        </div>
+      </div>
+    `}
   `;
 
-  // Header-only drag, same rationale as the notes widget: keeps the rest of
-  // the card free of native drag interference (not that a clock has inputs
-  // to type into, but consistency keeps the codebase predictable).
   setTimeout(() => {
     const header = el.querySelector('.widget-header');
-    if (header) header.onmousedown = () => { el.draggable = true; };
+    if (header) header.onmousedown = (e) => {
+      if (e.target.closest('button, input')) return;
+      el.draggable = true;
+    };
     el.addEventListener('dragend', () => { el.draggable = false; });
     document.addEventListener('mouseup', () => { el.draggable = false; });
 
-    tickClock(w);
-    clearInterval(CLOCK_TIMERS[w.id]);
-    CLOCK_TIMERS[w.id] = setInterval(() => tickClock(w), 1000);
+    if (clockView === 'clock') {
+      tickClock(w);
+      clearInterval(CLOCK_TIMERS[w.id]);
+      CLOCK_TIMERS[w.id] = setInterval(() => tickClock(w), 1000);
+    } else {
+      wireTimerWidget(w);
+    }
   }, 0);
 
   return el;
@@ -2480,8 +2625,7 @@ function renderClockWidget(w) {
 function tickClock(w) {
   const timeEl = document.getElementById('clock-time-' + w.id);
   const dateEl = document.getElementById('clock-date-' + w.id);
-  if (!timeEl || !dateEl) { clearInterval(CLOCK_TIMERS[w.id]); return; } // widget removed/re-rendered away
-
+  if (!timeEl || !dateEl) { clearInterval(CLOCK_TIMERS[w.id]); return; }
   const now = new Date();
   const format = w.format || '24h';
   const opts = format === '24h'
@@ -2489,6 +2633,161 @@ function tickClock(w) {
     : { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true };
   timeEl.textContent = now.toLocaleTimeString([], opts);
   dateEl.textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+// ── Timer ──────────────────────────────────────────────────────────────────────
+
+function wireTimerWidget(w) {
+  if (!TIMER_STATE[w.id]) {
+    TIMER_STATE[w.id] = { remaining: 0, total: 0, running: false, interval: null, done: false };
+  }
+  const ts = TIMER_STATE[w.id];
+
+  updateTimerDisplay(w.id);
+
+  // Presets
+  document.querySelectorAll(`[data-timer-preset][data-widget-id="${w.id}"]`).forEach(btn => {
+    if (btn.id === 'timer-custom-set-' + w.id) return; // skip the Set button
+    btn.onclick = () => {
+      setTimer(w.id, parseInt(btn.dataset.timerPreset));
+    };
+  });
+
+  // Custom set
+  const customInput = document.getElementById('timer-custom-' + w.id);
+  const customSetBtn = document.getElementById('timer-custom-set-' + w.id);
+  if (customSetBtn && customInput) {
+    customSetBtn.onclick = () => parseAndSetTimer(w.id, customInput.value);
+    customInput.onkeydown = (e) => { if (e.key === 'Enter') parseAndSetTimer(w.id, customInput.value); };
+  }
+
+  // Start/pause
+  const startBtn = document.getElementById('timer-start-' + w.id);
+  if (startBtn) {
+    startBtn.onclick = () => toggleTimer(w.id);
+  }
+
+  // Reset
+  const resetBtn = document.getElementById('timer-reset-' + w.id);
+  if (resetBtn) {
+    resetBtn.onclick = () => resetTimer(w.id);
+  }
+
+  // Resume display if timer was running before a re-render
+  if (ts.running) updateTimerStartBtn(w.id);
+}
+
+function parseAndSetTimer(wid, val) {
+  val = val.trim();
+  let seconds = 0;
+  if (val.includes(':')) {
+    const parts = val.split(':');
+    seconds = parseInt(parts[0] || 0) * 60 + parseInt(parts[1] || 0);
+  } else {
+    seconds = Math.round(parseFloat(val) * 60);
+  }
+  if (!isNaN(seconds) && seconds > 0) {
+    setTimer(wid, seconds);
+    const input = document.getElementById('timer-custom-' + wid);
+    if (input) input.value = '';
+  }
+}
+
+function setTimer(wid, seconds) {
+  const ts = TIMER_STATE[wid] || (TIMER_STATE[wid] = {});
+  clearInterval(ts.interval);
+  ts.remaining = seconds;
+  ts.total = seconds;
+  ts.running = false;
+  ts.done = false;
+  updateTimerDisplay(wid);
+  updateTimerStartBtn(wid);
+  const body = document.getElementById('timer-body-' + wid);
+  if (body) body.classList.remove('timer-done');
+}
+
+function toggleTimer(wid) {
+  const ts = TIMER_STATE[wid];
+  if (!ts || ts.remaining <= 0) return;
+  if (ts.running) {
+    // Pause
+    clearInterval(ts.interval);
+    ts.running = false;
+  } else {
+    // Start / resume
+    ts.done = false;
+    ts.running = true;
+    ts.interval = setInterval(() => tickTimer(wid), 1000);
+  }
+  updateTimerStartBtn(wid);
+}
+
+function tickTimer(wid) {
+  const ts = TIMER_STATE[wid];
+  if (!ts) return;
+  ts.remaining = Math.max(0, ts.remaining - 1);
+  updateTimerDisplay(wid);
+  if (ts.remaining === 0) {
+    clearInterval(ts.interval);
+    ts.running = false;
+    ts.done = true;
+    // Flash the display and play a beep
+    const body = document.getElementById('timer-body-' + wid);
+    if (body) body.classList.add('timer-done');
+    updateTimerStartBtn(wid);
+    playTimerBeep();
+  }
+}
+
+function resetTimer(wid) {
+  const ts = TIMER_STATE[wid];
+  if (!ts) return;
+  clearInterval(ts.interval);
+  ts.remaining = ts.total || 0;
+  ts.running = false;
+  ts.done = false;
+  const body = document.getElementById('timer-body-' + wid);
+  if (body) body.classList.remove('timer-done');
+  updateTimerDisplay(wid);
+  updateTimerStartBtn(wid);
+}
+
+function updateTimerDisplay(wid) {
+  const el = document.getElementById('timer-display-' + wid);
+  if (!el) return;
+  const ts = TIMER_STATE[wid];
+  const secs = ts ? ts.remaining : 0;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  el.textContent = m + ':' + String(s).padStart(2, '0');
+}
+
+function updateTimerStartBtn(wid) {
+  const btn = document.getElementById('timer-start-' + wid);
+  if (!btn) return;
+  const ts = TIMER_STATE[wid];
+  if (!ts || ts.remaining <= 0) { btn.textContent = '▶ Start'; btn.disabled = true; return; }
+  btn.disabled = false;
+  btn.textContent = ts.running ? '⏸ Pause' : (ts.done ? '▶ Restart' : '▶ Start');
+}
+
+function playTimerBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Three short ascending beeps
+    [0, 0.25, 0.5].forEach((delay, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 440 + i * 220; // 440Hz, 660Hz, 880Hz
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.2);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + 0.25);
+    });
+  } catch(e) { /* audio not available in this context */ }
 }
 
 // ── SYSTEM STATS WIDGET ───────────────────────────────────────────────────────
@@ -3309,6 +3608,22 @@ function attachEvents() {
       const idx = state.collapsedCols.indexOf(id);
       if (idx === -1) state.collapsedCols.push(id);
       else state.collapsedCols.splice(idx, 1);
+      save(); render();
+    };
+  });
+
+  // Clock tab switching (Clock / Timer)
+  document.querySelectorAll('[data-clock-tab]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const w = state.widgets.find(x => x.id === btn.dataset.widgetId);
+      if (!w) return;
+      w.clockView = btn.dataset.clockTab;
+      // Clear running timer interval if leaving timer tab
+      if (w.clockView === 'clock' && TIMER_STATE[w.id]?.running) {
+        clearInterval(TIMER_STATE[w.id].interval);
+        TIMER_STATE[w.id].running = false;
+      }
       save(); render();
     };
   });
