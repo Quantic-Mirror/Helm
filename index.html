@@ -95,9 +95,11 @@ body {
   color: var(--text);
   font-family: var(--font-body);
   font-size: 13px;
-  padding: 7px 12px 7px 34px;
+  padding: 7px 30px 7px 34px;
   outline: none;
   transition: border-color 0.15s;
+  user-select: text;
+  -webkit-user-select: text;
 }
 #search:focus { border-color: var(--accent); }
 #search-icon {
@@ -468,7 +470,10 @@ body {
   background: none; border: none;
   color: var(--text-muted); cursor: pointer; font-size: 14px;
   display: none;
+  padding: 2px 4px;
+  border-radius: 4px;
 }
+#search-clear:hover { color: var(--text); background: var(--surface-2); }
 #search-clear.show { display: block; }
 
 /* SCROLLBAR */
@@ -516,11 +521,34 @@ body {
   color: var(--text);
   font-family: var(--font-body);
   font-size: 13px;
-  padding: 6px 10px;
+  padding: 6px 28px 6px 10px;
   outline: none;
   transition: border-color 0.15s;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .search-input:focus { border-color: var(--accent); }
+.search-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.search-input-clear {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 3px;
+  border-radius: 3px;
+  display: none;
+  line-height: 1;
+}
+.search-input-clear:hover { color: var(--text); background: var(--surface-3); }
+.search-input-clear.show { display: block; }
 .search-go {
   padding: 6px 10px;
   background: var(--accent);
@@ -2166,13 +2194,25 @@ function save() {
 
 // ── MULTI-DEVICE LIVE SYNC ───────────────────────────────────────────────────
 //
-// Architecture: the server (marks_server.py) is the single source of truth.
-// Last-write-wins — no conflict dialogs, no user decisions, no rejected writes.
+// Architecture: the server is the single source of truth. Simple rules:
 //
-// On open:  pull from server; if server is newer, adopt silently.
-//           If server has nothing yet, push local state to seed it.
-// On save:  push to server (debounced 600ms to absorb rapid edits like typing).
-// Polling:  every 5s, if server version advanced, pull silently.
+// On startup:  ALWAYS pull from server and replace local state entirely.
+//              Server wins unconditionally on page load — no merging,
+//              no version comparison, no "we might be newer" logic.
+//              Exception: if server is empty (version 0), push local to seed it.
+//
+// On save:     Push local state to server (debounced 600ms).
+//              Before pushing, re-fetch the server to check if another device
+//              saved while we were editing. If so, take the server's version
+//              of any key we haven't changed locally since our last pull,
+//              and keep our version of keys we have changed.
+//
+// Polling:     Every 5s, if server version advanced, pull and replace silently.
+//
+// The _last_pulled snapshot (stored in localStorage) lets pushStateToBackend
+// detect which top-level keys changed locally vs came from the server.
+// It is always reset on every startup pull so stale cross-session snapshots
+// never interfere.
 
 async function initSync() {
   const indicator = document.getElementById('sync-indicator');
@@ -2183,9 +2223,28 @@ async function initSync() {
   }
   if (indicator) { indicator.textContent = '↻ Syncing…'; indicator.className = 'syncing'; }
   try {
-    const pulled = await pullFromServer();
-    if (!pulled) {
-      // Server has no data yet — push local state to seed it
+    const resp = await fetch('/api/state', { signal: AbortSignal.timeout(8000) });
+    const data = await resp.json();
+    const serverVersion = data.version || 0;
+
+    if (serverVersion > 0 && data.state) {
+      // Server has data — always adopt it unconditionally on startup.
+      // This is the key fix: we don't check versions or try to merge.
+      // The server is the authority; whatever it has is what this device gets.
+      SYNC_VERSION = serverVersion;
+      state = data.state;
+      if (!state.collapsedCols) state.collapsedCols = [];
+      if (!state.settings) state.settings = {};
+      if (!state.feeds) state.feeds = [];
+      if (!state.newsSources) state.newsSources = [];
+      localStorage.setItem(LS_KEY, JSON.stringify(state));
+      // Reset the last-pulled snapshot so mid-session merge logic has a
+      // fresh baseline from this startup, not from a stale previous session.
+      localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
+      render();
+      renderUpcomingEvents();
+    } else {
+      // Server is empty — push our local state to seed it
       await pushStateToBackend();
     }
   } catch(e) {
@@ -2193,28 +2252,6 @@ async function initSync() {
   }
   if (indicator) { indicator.textContent = '● Synced'; indicator.className = 'synced'; }
   syncPollTimer = setInterval(pollForRemoteChanges, 5000);
-}
-
-// Pull state from server. Returns true if we adopted server state, false if
-// server had nothing or we were already current.
-async function pullFromServer() {
-  const resp = await fetch('/api/state', { signal: AbortSignal.timeout(8000) });
-  const data = await resp.json();
-  const serverVersion = data.version || 0;
-  if (serverVersion === 0 || !data.state) return false;
-  if (serverVersion > SYNC_VERSION) {
-    SYNC_VERSION = serverVersion;
-    state = data.state;
-    if (!state.collapsedCols) state.collapsedCols = [];
-    if (!state.settings) state.settings = {};
-    if (!state.feeds) state.feeds = [];
-    if (!state.newsSources) state.newsSources = [];
-    localStorage.setItem(LS_KEY, JSON.stringify(state));
-    render();
-    return true;
-  }
-  SYNC_VERSION = serverVersion;
-  return false;
 }
 
 function scheduleSyncPush() {
@@ -2229,6 +2266,48 @@ async function pushStateToBackend() {
   const hasBackend = await checkLocalBackend();
   if (!hasBackend) return;
   try {
+    // Always fetch the current server state before pushing.
+    // If the server has advanced since our last pull (i.e. another device saved),
+    // merge their changes into our state before we push — this prevents a stale
+    // client from overwriting changes made on another device since the last poll.
+    const checkResp = await fetch('/api/state', { signal: AbortSignal.timeout(5000) });
+    const serverData = await checkResp.json();
+    const serverVersion = serverData.version || 0;
+
+    if (serverVersion > SYNC_VERSION && serverData.state) {
+      // Server is ahead — merge their state with ours.
+      // Strategy: server wins on any top-level key that our local state
+      // hasn't changed since our last pull. We detect "local change" by
+      // comparing the local value against the last-pulled server snapshot
+      // stored in localStorage under a separate key.
+      const serverState = serverData.state;
+      const lastPulledRaw = localStorage.getItem(LS_KEY + '_last_pulled');
+      const lastPulled = lastPulledRaw ? JSON.parse(lastPulledRaw) : null;
+
+      // For each top-level key, if our local value is identical to what the
+      // server sent us last time we pulled (i.e. we haven't touched it locally),
+      // then take the server's newer version. Otherwise keep ours.
+      if (lastPulled) {
+        const merged = { ...state };
+        const topLevelKeys = Object.keys(serverState);
+        for (const key of topLevelKeys) {
+          const localJson  = JSON.stringify(state[key]);
+          const pulledJson = JSON.stringify(lastPulled[key]);
+          if (localJson === pulledJson) {
+            // We haven't changed this key since the last pull — take server's version
+            merged[key] = serverState[key];
+          }
+          // else: we changed it locally — keep ours
+        }
+        state = merged;
+        localStorage.setItem(LS_KEY, JSON.stringify(state));
+        render();
+        renderUpcomingEvents();
+      }
+      SYNC_VERSION = serverVersion;
+    }
+
+    // Now push our (possibly merged) state
     const resp = await fetch('/api/state', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -2270,6 +2349,7 @@ async function pollForRemoteChanges() {
       if (!state.feeds) state.feeds = [];
       if (!state.newsSources) state.newsSources = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
+      localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       render(); // silent — no toast, no dialog
       renderUpcomingEvents();
     }
@@ -2312,7 +2392,7 @@ function load() {
   if (!state.settings.reminderDays && state.settings.reminderDays !== 0) state.settings.reminderDays = 7;
   if (!state.widgets || state.widgets.length === 0) {
     state.widgets = [
-      { id: uid(), type: 'search', engine: 'startpage' },
+      { id: uid(), type: 'search', engine: 'searx' },
       { id: uid(), type: 'weather', city: 'Athens, GA', unit: 'f' }
     ];
     save();
@@ -2336,7 +2416,7 @@ function seedDefaults() {
     { id: uid(), colId: cols[2].id, url: 'https://readwise.io', title: 'Readwise', tag: 'read', order: 1 },
   ];
   state = { columns: cols, bookmarks: bms, settings: {}, widgets: [
-    { id: uid(), type: 'search', engine: 'startpage' },
+    { id: uid(), type: 'search', engine: 'searx' },
     { id: uid(), type: 'weather', city: 'Athens, GA', unit: 'f' }
   ], collapsedCols: [] };
   save();
@@ -2544,9 +2624,10 @@ function render() {
 
 // ── SEARCH WIDGET ────────────────────────────────────────────────────────────
 const ENGINES = {
-  startpage: { label: 'Startpage', url: 'https://www.startpage.com/search?q=',                icon: '🌐' },
-  privau:    { label: 'priv.au',   url: 'https://priv.au/search?q=',                          icon: '🔒' },
-  youtube:   { label: 'YouTube',   url: 'https://www.youtube.com/results?search_query=',       icon: '▶' },
+  searx:     { label: 'Searx',     url: 'http://popcorn:8080/search?q=',                        icon: '🔍' },
+  startpage: { label: 'Startpage', url: 'https://www.startpage.com/search?q=',                  icon: '🌐' },
+  privau:    { label: 'priv.au',   url: 'https://priv.au/search?q=',                            icon: '🔒' },
+  youtube:   { label: 'YouTube',   url: 'https://www.youtube.com/results?search_query=',         icon: '▶' },
 };
 
 // ── CLOCK WIDGET ──────────────────────────────────────────────────────────────
@@ -3302,7 +3383,7 @@ function calEditEvent(w, dateKey, idx) {
 }
 
 function renderSearchWidget(w) {
-  const eng = ENGINES[w.engine] || ENGINES.startpage;
+  const eng = ENGINES[w.engine] || ENGINES.searx;
   const el = document.createElement('div');
   el.className = 'folder-card widget-card search-widget';
   el.dataset.widgetId = w.id;
@@ -3322,7 +3403,10 @@ function renderSearchWidget(w) {
         ).join('')}
       </div>
       <form class="search-form" onsubmit="doWidgetSearch(event,'${w.id}')">
-        <input class="search-input" type="text" placeholder="Search ${eng.label}…" id="sinput-${w.id}" autocomplete="off" spellcheck="false" draggable="false">
+        <div class="search-input-wrap">
+          <input class="search-input" type="text" placeholder="Search ${eng.label}…" id="sinput-${w.id}" autocomplete="off" spellcheck="false" draggable="false">
+          <button type="button" class="search-input-clear" id="sinput-clear-${w.id}" tabindex="-1" title="Clear">✕</button>
+        </div>
         <button class="search-go" type="submit">${eng.icon}</button>
       </form>
     </div>
@@ -3334,7 +3418,7 @@ window.doWidgetSearch = function(e, wid) {
   e.preventDefault();
   const w = state.widgets.find(x => x.id === wid);
   if (!w) return;
-  const eng = ENGINES[w.engine] || ENGINES.startpage;
+  const eng = ENGINES[w.engine] || ENGINES.searx;
   const q = document.getElementById('sinput-' + wid).value.trim();
   if (q) window.open(eng.url + encodeURIComponent(q), '_blank', 'noopener');
 };
@@ -3437,6 +3521,35 @@ function convertTemp(c, unit) {
   return unit === 'f' ? Math.round(c * 9/5 + 32) + '°F' : Math.round(c) + '°C';
 }
 
+// Reverse map: state name → 2-letter abbreviation, for US Wunderground URLs
+const STATE_ABBR = {
+  'Alabama':'al','Alaska':'ak','Arizona':'az','Arkansas':'ar','California':'ca',
+  'Colorado':'co','Connecticut':'ct','Delaware':'de','Florida':'fl','Georgia':'ga',
+  'Hawaii':'hi','Idaho':'id','Illinois':'il','Indiana':'in','Iowa':'ia','Kansas':'ks',
+  'Kentucky':'ky','Louisiana':'la','Maine':'me','Maryland':'md','Massachusetts':'ma',
+  'Michigan':'mi','Minnesota':'mn','Mississippi':'ms','Missouri':'mo','Montana':'mt',
+  'Nebraska':'ne','Nevada':'nv','New Hampshire':'nh','New Jersey':'nj','New Mexico':'nm',
+  'New York':'ny','North Carolina':'nc','North Dakota':'nd','Ohio':'oh','Oklahoma':'ok',
+  'Oregon':'or','Pennsylvania':'pa','Rhode Island':'ri','South Carolina':'sc',
+  'South Dakota':'sd','Tennessee':'tn','Texas':'tx','Utah':'ut','Vermont':'vt',
+  'Virginia':'va','Washington':'wa','West Virginia':'wv','Wisconsin':'wi','Wyoming':'wy',
+  'District of Columbia':'dc',
+};
+
+function buildWundergroundUrl(data) {
+  // Wunderground URL format: /weather/<country_code_lower>/<state_abbr>/<city-hyphenated>
+  // e.g. https://www.wunderground.com/weather/us/ga/athens
+  const country = (data.country_code || 'us').toLowerCase();
+  const city = (data.name || '').toLowerCase().replace(/\s+/g, '-');
+
+  if (country === 'us' && data.admin1) {
+    const stateAbbr = STATE_ABBR[data.admin1];
+    if (stateAbbr) return `https://www.wunderground.com/weather/us/${stateAbbr}/${city}`;
+  }
+  // Non-US or unknown state: use country + city
+  return `https://www.wunderground.com/weather/${country}/${city}`;
+}
+
 function renderWxHtml(data, w) {
   const cur = data.current;
   const d = data.daily;
@@ -3449,7 +3562,7 @@ function renderWxHtml(data, w) {
       <div class="wx-day-temps"><span class="wx-hi">${convertTemp(d.temperature_2m_max[i], w.unit)}</span> <span class="wx-lo">${convertTemp(d.temperature_2m_min[i], w.unit)}</span></div>
     </div>`;
   }).join('');
-  const forecastUrl = `https://wttr.in/${encodeURIComponent((data.name + (data.admin1 ? ', ' + data.admin1 : '')).trim())}`;
+  const forecastUrl = buildWundergroundUrl(data);
   return `
     <a class="wx-current" href="${escHtml(forecastUrl)}" target="_blank" rel="noopener" title="Open full forecast">
       <div class="wx-main-icon">${wmoIcon(cur.weathercode)}</div>
@@ -3659,9 +3772,25 @@ function attachEvents() {
       if (!w) return;
       w.engine = btn.dataset.engine;
       save(); render();
-      // re-focus the input after re-render
       setTimeout(() => { const inp = document.getElementById('sinput-' + wid); if (inp) inp.focus(); }, 20);
     };
+  });
+
+  // Search widget input: show/hide clear button, Escape to clear
+  document.querySelectorAll('.search-input').forEach(inp => {
+    const wid = inp.id.replace('sinput-', '');
+    const clearBtn = document.getElementById('sinput-clear-' + wid);
+    const updateClear = () => {
+      if (clearBtn) clearBtn.classList.toggle('show', inp.value.length > 0);
+    };
+    inp.addEventListener('input', updateClear);
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { inp.value = ''; updateClear(); inp.blur(); }
+    });
+    if (clearBtn) {
+      clearBtn.onclick = (e) => { e.stopPropagation(); inp.value = ''; updateClear(); inp.focus(); };
+    }
+    updateClear(); // init state
   });
 
   // Widget config
@@ -4928,30 +5057,6 @@ function openBookmarkletModal() {
   document.getElementById('bml-modal').classList.add('open');
 }
 
-// ── AUTO BACKUP ───────────────────────────────────────────────────────────────
-const BACKUP_INTERVAL_DAYS = 7;
-const BACKUP_KEY = 'marks_last_backup';
-
-function checkAutoBackup() {
-  const last = parseInt(localStorage.getItem(BACKUP_KEY) || '0', 10);
-  const daysSince = (Date.now() - last) / (1000 * 60 * 60 * 24);
-  if (daysSince >= BACKUP_INTERVAL_DAYS) {
-    // Show a gentle reminder rather than auto-downloading unexpectedly
-    setTimeout(() => {
-      toast('Auto-backup reminder: download a backup now?');
-      // Give them 5 seconds to see the toast, then offer download
-      setTimeout(() => {
-        if (confirm('It\'s been ' + Math.floor(daysSince) + ' days since your last backup.\nDownload one now?')) {
-          exportData();
-          localStorage.setItem(BACKUP_KEY, Date.now().toString());
-        } else {
-          // Snooze for 1 day
-          localStorage.setItem(BACKUP_KEY, (Date.now() - (BACKUP_INTERVAL_DAYS - 1) * 86400000).toString());
-        }
-      }, 3000);
-    }, 2000);
-  }
-}
 
 /* INIT EVENTS */
 // add-col-btn onclick set inline in render()
@@ -4982,7 +5087,7 @@ document.getElementById('reader-save-bm').onclick = () => {
 };
 document.getElementById('btn-import').onclick = () => document.getElementById('import-input').click();
 document.getElementById('btn-add-search').onclick = () => {
-  state.widgets.push({ id: uid(), type: 'search', engine: 'startpage' });
+  state.widgets.push({ id: uid(), type: 'search', engine: 'searx' });
   save(); render();
 };
 document.getElementById('btn-sort').onclick = openSortModal;
@@ -5014,6 +5119,12 @@ document.getElementById('btn-add-todo').onclick = () => {
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
 document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);
+document.getElementById('search').onkeydown = (e) => {
+  if (e.key === 'Escape') {
+    document.getElementById('search').value = '';
+    filterBookmarks('');
+  }
+};
 document.getElementById('search-clear').onclick = () => {
   document.getElementById('search').value = '';
   filterBookmarks('');
@@ -5046,7 +5157,6 @@ document.getElementById('bm-title-input').oninput = function() {
 
 load();
 render();
-checkAutoBackup();
 updateInvidiousButton();
 // ── Topbar dropdown menus (Data / Widgets / Tools) ──────────────────────────
 document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
