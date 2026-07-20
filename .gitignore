@@ -9,3 +9,4 @@ helm-backups/
 marks_state.json
 *.tmp
 __pycache__/
+*.bak

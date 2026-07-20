@@ -249,6 +249,183 @@ def gather_system_stats():
     }
 
 
+import subprocess
+
+
+# ── SERVICE MONITORING ────────────────────────────────────────────────────────
+MONITORED_SERVICES = [
+    {
+        "id":    "helm",
+        "label": "Helm",
+        "type":  "systemd-user",
+        "unit":  "bookmarks.service",
+        "controllable": True,
+    },
+    {
+        "id":    "searxng-core",
+        "label": "SearXNG",
+        "type":  "docker",
+        "container": "searxng-core",
+        "controllable": True,
+    },
+    {
+        "id":    "searxng-valkey",
+        "label": "SearXNG Cache",
+        "type":  "docker",
+        "container": "searxng-valkey",
+        "controllable": True,
+    },
+    {
+        "id":    "r2-sync",
+        "label": "Cloudflare R2 Sync",
+        "type":  "systemd-timer",
+        "unit":  "popcorn-r2-sync.timer",
+        "service_unit": "popcorn-r2-sync.service",
+        "controllable": False,
+    },
+]
+
+
+def _run(cmd, timeout=10):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip(), r.stderr.strip(), r.returncode
+    except subprocess.TimeoutExpired:
+        return "", "timeout", 1
+    except Exception as e:
+        return "", str(e), 1
+
+
+def _format_duration(seconds):
+    seconds = int(seconds)
+    if seconds < 0:
+        return "0s"
+    days    = seconds // 86400
+    hours   = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    secs    = seconds % 60
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m"
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    if minutes > 0:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _get_systemd_user_status(unit):
+    stdout, _, _ = _run(["systemctl", "--user", "show", unit,
+                         "--property=ActiveState,SubState,ExecMainStartTimestamp"])
+    props = {}
+    for line in stdout.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            props[k] = v
+    active  = props.get("ActiveState", "unknown")
+    sub     = props.get("SubState", "unknown")
+    running = active == "active" and sub == "running"
+    uptime_str = ""
+    started_at = props.get("ExecMainStartTimestamp", "")
+    if started_at and started_at != "n/a":
+        try:
+            from datetime import datetime
+            parts  = started_at.split()
+            dt_str = " ".join(parts[1:4])
+            started = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+            uptime_str = _format_duration((datetime.now() - started).total_seconds())
+        except Exception:
+            uptime_str = started_at
+    logs_out, _, _ = _run(
+        ["journalctl", "--user", "-u", unit, "-n", "20", "--no-pager", "--output=short-iso"]
+    )
+    return {"running": running, "status": f"{active} ({sub})", "uptime": uptime_str, "logs": logs_out}
+
+
+def _get_docker_status(container):
+    stdout, _, rc = _run(
+        ["docker", "inspect", "--format",
+         "{{.State.Status}}|{{.State.StartedAt}}|{{.State.Running}}", container]
+    )
+    if rc != 0 or not stdout:
+        return {"running": False, "status": "not found", "uptime": "", "logs": ""}
+    parts      = stdout.split("|")
+    status_str = parts[0] if len(parts) > 0 else "unknown"
+    started_at = parts[1] if len(parts) > 1 else ""
+    is_running = parts[2].lower() == "true" if len(parts) > 2 else False
+    uptime_str = ""
+    if is_running and started_at:
+        try:
+            from datetime import datetime, timezone
+            started = datetime.strptime(started_at[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+            uptime_str = _format_duration((datetime.now(timezone.utc) - started).total_seconds())
+        except Exception:
+            uptime_str = started_at
+    logs_out, _, _ = _run(["docker", "logs", "--tail", "20", "--timestamps", container])
+    return {"running": is_running, "status": status_str, "uptime": uptime_str, "logs": logs_out}
+
+
+def _get_timer_status(timer_unit, service_unit):
+    stdout, _, _ = _run(["systemctl", "--user", "show", timer_unit,
+                         "--property=ActiveState"])
+    props = {}
+    for line in stdout.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            props[k] = v
+    active  = props.get("ActiveState", "unknown")
+    running = active == "active"
+    next_out, _, _ = _run(["systemctl", "--user", "list-timers", timer_unit, "--no-pager"])
+    next_str = ""
+    last_str = ""
+    for line in next_out.splitlines():
+        if timer_unit in line:
+            cols = line.split()
+            if len(cols) >= 6:
+                next_str = " ".join(cols[:2])
+                last_str = " ".join(cols[4:6])
+            break
+    logs_out, _, _ = _run(
+        ["journalctl", "--user", "-u", service_unit, "-n", "20", "--no-pager", "--output=short-iso"]
+    )
+    return {"running": running, "status": active, "uptime": "", "next_run": next_str, "last_run": last_str, "logs": logs_out}
+
+
+def gather_services_status():
+    results = []
+    for svc in MONITORED_SERVICES:
+        try:
+            if svc["type"] == "systemd-user":
+                info = _get_systemd_user_status(svc["unit"])
+            elif svc["type"] == "docker":
+                info = _get_docker_status(svc["container"])
+            elif svc["type"] == "systemd-timer":
+                info = _get_timer_status(svc["unit"], svc["service_unit"])
+            else:
+                info = {"running": False, "status": "unknown type", "uptime": "", "logs": ""}
+        except Exception as e:
+            info = {"running": False, "status": f"error: {e}", "uptime": "", "logs": ""}
+        results.append({"id": svc["id"], "label": svc["label"], "type": svc["type"],
+                        "controllable": svc.get("controllable", False), **info})
+    return results
+
+
+def control_service(service_id, action):
+    svc = next((s for s in MONITORED_SERVICES if s["id"] == service_id), None)
+    if not svc:
+        return False, "Unknown service"
+    if not svc.get("controllable", False):
+        return False, "This service cannot be controlled"
+    if action not in ("start", "stop", "restart"):
+        return False, "Invalid action"
+    if svc["type"] == "systemd-user":
+        _, err, rc = _run(["systemctl", "--user", action, svc["unit"]], timeout=15)
+        return rc == 0, err if rc != 0 else f"{action} successful"
+    elif svc["type"] == "docker":
+        _, err, rc = _run(["docker", action, svc["container"]], timeout=20)
+        return rc == 0, err if rc != 0 else f"{action} successful"
+    return False, "Unsupported service type"
+
+
 class HelmHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         path = args[0] if args else ""
@@ -305,6 +482,10 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
 
+        if parsed.path == "/api/services":
+            self.send_json(200, {"services": gather_services_status()})
+            return
+
         if parsed.path == "/api/state":
             with _state_lock:
                 self.send_json(200, dict(_state_cache))
@@ -346,11 +527,26 @@ class HelmHandler(SimpleHTTPRequestHandler):
             _maybe_write_backup()
             self.send_json(200, {"version": new_version, "updatedAt": _state_cache["updatedAt"]})
 
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        parts  = parsed.path.strip("/").split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "services":
+            service_id = parts[2]
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            action = body.get("action", "")
+            ok, msg = control_service(service_id, action)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+        self.send_json(404, {"error": "Not found"})
+
     def do_OPTIONS(self):
-        # CORS preflight for the PUT request
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
