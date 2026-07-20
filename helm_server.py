@@ -262,6 +262,13 @@ MONITORED_SERVICES = [
         "controllable": True,
     },
     {
+        "id":    "thelounge",
+        "label": "The Lounge (IRC)",
+        "type":  "systemd",
+        "unit":  "thelounge.service",
+        "controllable": True,
+    },
+    {
         "id":    "searxng-core",
         "label": "SearXNG",
         "type":  "docker",
@@ -345,8 +352,10 @@ def _format_duration(seconds):
     return f"{secs}s"
 
 
-def _get_systemd_user_status(unit):
-    stdout, _, _ = _run(["systemctl", "--user", "show", unit,
+def _get_systemd_status(unit, user=False):
+    """Return status dict for a systemd unit (system or user)."""
+    cmd_prefix = ["systemctl", "--user"] if user else ["systemctl"]
+    stdout, _, _ = _run(cmd_prefix + ["show", unit,
                          "--property=ActiveState,SubState,ExecMainStartTimestamp"])
     props = {}
     for line in stdout.splitlines():
@@ -367,10 +376,13 @@ def _get_systemd_user_status(unit):
             uptime_str = _format_duration((datetime.now() - started).total_seconds())
         except Exception:
             uptime_str = started_at
-    logs_out, _, _ = _run(
-        ["journalctl", "--user", "-u", unit, "-n", "20", "--no-pager", "--output=short-iso"]
-    )
+    journal_cmd = ["journalctl"] + (["--user"] if user else []) + ["-u", unit, "-n", "20", "--no-pager", "--output=short-iso"]
+    logs_out, _, _ = _run(journal_cmd)
     return {"running": running, "status": f"{active} ({sub})", "uptime": uptime_str, "logs": logs_out}
+
+
+def _get_systemd_user_status(unit):
+    return _get_systemd_status(unit, user=True)
 
 
 def _get_docker_status(container):
@@ -461,7 +473,9 @@ def gather_services_status():
     for svc in MONITORED_SERVICES:
         try:
             if svc["type"] == "systemd-user":
-                info = _get_systemd_user_status(svc["unit"])
+                info = _get_systemd_status(svc["unit"], user=True)
+            elif svc["type"] == "systemd":
+                info = _get_systemd_status(svc["unit"], user=False)
             elif svc["type"] == "docker":
                 info = _get_docker_status(svc["container"])
             elif svc["type"] == "systemd-timer":
@@ -488,9 +502,12 @@ def control_service(service_id, action):
         _, err, rc = _run(["systemctl", "--user", action, svc["unit"]], timeout=15)
         return rc == 0, err if rc != 0 else f"{action} successful"
 
+    elif svc["type"] == "systemd":
+        _, err, rc = _run(["sudo", "systemctl", action, svc["unit"]], timeout=15)
+        return rc == 0, err if rc != 0 else f"{action} successful"
+
     elif svc["type"] == "docker":
         container = svc["container"]
-        # Docker API: POST /containers/{name}/start|stop|restart
         _, err = _docker_api(f"/containers/{container}/{action}", method="POST", body="")
         if err:
             return False, err
