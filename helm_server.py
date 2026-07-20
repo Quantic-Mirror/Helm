@@ -258,7 +258,7 @@ MONITORED_SERVICES = [
         "id":    "helm",
         "label": "Helm",
         "type":  "systemd-user",
-        "unit":  "bookmarks.service",
+        "unit":  "helm.service",
         "controllable": True,
     },
     {
