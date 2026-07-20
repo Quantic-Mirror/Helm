@@ -258,7 +258,7 @@ MONITORED_SERVICES = [
         "id":    "helm",
         "label": "Helm",
         "type":  "systemd-user",
-        "unit":  "bookmarks.service",
+        "unit":  "helm.service",
         "controllable": True,
     },
     {
@@ -277,6 +277,45 @@ MONITORED_SERVICES = [
         "controllable": False,
     },
 ]
+
+# ── Docker socket helpers ─────────────────────────────────────────────────────
+# Talk to the Docker daemon directly over its Unix socket rather than shelling
+# out to the docker CLI. This works as long as the socket is readable by the
+# process owner (i.e. carl is in the docker group at the OS level), without
+# needing SupplementaryGroups in the systemd unit file.
+
+import socket as _socket
+import http.client as _http_client
+
+
+class _UnixSocketHTTPConnection(_http_client.HTTPConnection):
+    """HTTPConnection that connects over a Unix domain socket."""
+    def __init__(self, socket_path):
+        super().__init__("localhost")
+        self._socket_path = socket_path
+
+    def connect(self):
+        sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        sock.connect(self._socket_path)
+        self.sock = sock
+
+
+def _docker_api(path, method="GET", body=None, socket_path="/var/run/docker.sock"):
+    """Make a request to the Docker API via Unix socket. Returns (data_dict, error_str)."""
+    try:
+        conn = _UnixSocketHTTPConnection(socket_path)
+        headers = {"Content-Type": "application/json", "Host": "localhost"}
+        conn.request(method, path, body=body, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8", errors="replace")
+        conn.close()
+        return json.loads(raw) if raw else {}, None
+    except PermissionError:
+        return None, "permission denied on /var/run/docker.sock — is carl in the docker group?"
+    except FileNotFoundError:
+        return None, "Docker socket not found at /var/run/docker.sock"
+    except Exception as e:
+        return None, str(e)
 
 
 def _run(cmd, timeout=10):
@@ -335,17 +374,17 @@ def _get_systemd_user_status(unit):
 
 
 def _get_docker_status(container):
-    stdout, stderr, rc = _run(
-        ["docker", "inspect", "--format",
-         "{{.State.Status}}|{{.State.StartedAt}}|{{.State.Running}}", container]
-    )
-    if rc != 0 or not stdout:
-        err_msg = stderr if stderr else "not found or docker not accessible"
-        return {"running": False, "status": err_msg, "uptime": "", "logs": stderr}
-    parts      = stdout.split("|")
-    status_str = parts[0] if len(parts) > 0 else "unknown"
-    started_at = parts[1] if len(parts) > 1 else ""
-    is_running = parts[2].lower() == "true" if len(parts) > 2 else False
+    data, err = _docker_api(f"/containers/{container}/json")
+    if err:
+        return {"running": False, "status": err, "uptime": "", "logs": ""}
+    if data is None or "State" not in data:
+        return {"running": False, "status": "container not found", "uptime": "", "logs": ""}
+
+    state      = data["State"]
+    is_running = state.get("Running", False)
+    status_str = state.get("Status", "unknown")
+    started_at = state.get("StartedAt", "")
+
     uptime_str = ""
     if is_running and started_at:
         try:
@@ -354,10 +393,41 @@ def _get_docker_status(container):
             uptime_str = _format_duration((datetime.now(timezone.utc) - started).total_seconds())
         except Exception:
             uptime_str = started_at
-    # Docker writes container logs to stderr; capture both stdout+stderr
-    log_stdout, log_stderr, _ = _run(["docker", "logs", "--tail", "20", "--timestamps", container])
-    logs_out = (log_stdout + "\n" + log_stderr).strip()
-    return {"running": is_running, "status": status_str, "uptime": uptime_str, "logs": logs_out}
+
+    # Fetch last 20 log lines via Docker API (stdout+stderr, timestamps)
+    logs_data, log_err = _docker_api(
+        f"/containers/{container}/logs?stdout=1&stderr=1&tail=20&timestamps=1"
+    )
+    # Docker log endpoint returns raw multiplexed stream, not JSON
+    # We get it as a string via our basic client
+    logs_str = ""
+    if log_err:
+        logs_str = f"(could not fetch logs: {log_err})"
+    else:
+        # _docker_api tries to json.loads — for logs endpoint we need raw text
+        # Retry with raw fetch
+        try:
+            conn = _UnixSocketHTTPConnection("/var/run/docker.sock")
+            conn.request("GET", f"/containers/{container}/logs?stdout=1&stderr=1&tail=20&timestamps=1",
+                         headers={"Host": "localhost"})
+            resp = conn.getresponse()
+            raw = resp.read()
+            conn.close()
+            # Docker multiplexed stream: each frame has an 8-byte header; strip it
+            lines = []
+            i = 0
+            while i < len(raw):
+                if i + 8 > len(raw):
+                    break
+                size = int.from_bytes(raw[i+4:i+8], "big")
+                chunk = raw[i+8:i+8+size].decode("utf-8", errors="replace")
+                lines.append(chunk)
+                i += 8 + size
+            logs_str = "".join(lines).strip()
+        except Exception as e:
+            logs_str = f"(log fetch error: {e})"
+
+    return {"running": is_running, "status": status_str, "uptime": uptime_str, "logs": logs_str}
 
 
 def _get_timer_status(timer_unit, service_unit):
@@ -413,12 +483,19 @@ def control_service(service_id, action):
         return False, "This service cannot be controlled"
     if action not in ("start", "stop", "restart"):
         return False, "Invalid action"
+
     if svc["type"] == "systemd-user":
         _, err, rc = _run(["systemctl", "--user", action, svc["unit"]], timeout=15)
         return rc == 0, err if rc != 0 else f"{action} successful"
+
     elif svc["type"] == "docker":
-        _, err, rc = _run(["docker", action, svc["container"]], timeout=20)
-        return rc == 0, err if rc != 0 else f"{action} successful"
+        container = svc["container"]
+        # Docker API: POST /containers/{name}/start|stop|restart
+        _, err = _docker_api(f"/containers/{container}/{action}", method="POST", body="")
+        if err:
+            return False, err
+        return True, f"{action} successful"
+
     return False, "Unsupported service type"
 
 
