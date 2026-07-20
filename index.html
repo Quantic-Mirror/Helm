@@ -1375,6 +1375,18 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 }
 .backup-restore-btn { padding: 4px 10px; font-size: 11px; }
 
+/* ── IRC PAGE ─────────────────────────────────────────────────────────────────── */
+#irc-page {
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+#irc-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
 /* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
 #upcoming-events-strip {
   margin: 0 0 12px;
@@ -1978,6 +1990,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn" data-tab="news">News</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="services">Services</button>
+    <button class="tab-btn" data-tab="irc">IRC</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -2093,6 +2106,11 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="btn" id="btn-refresh-services">↺ Refresh</button>
   </div>
   <div id="services-grid"></div>
+</div>
+
+<!-- IRC PAGE -->
+<div id="irc-page" style="display:none">
+  <iframe id="irc-frame" src="http://popcorn:9000" allow="fullscreen"></iframe>
 </div>
 
 <!-- MODAL -->
@@ -5407,9 +5425,10 @@ function switchTab(tab) {
   document.getElementById('news-page').style.display     = tab === 'news'      ? '' : 'none';
   document.getElementById('calendar-page').style.display = tab === 'calendar'  ? '' : 'none';
   document.getElementById('services-page').style.display = tab === 'services'  ? '' : 'none';
+  document.getElementById('irc-page').style.display      = tab === 'irc'       ? '' : 'none';
   document.getElementById('search-wrap').style.display   = tab === 'bookmarks' ? '' : 'none';
   document.getElementById('topbar-actions').style.display = tab === 'bookmarks' ? '' : 'none';
-  const titles = { bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services' };
+  const titles = { bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC' };
   document.title = titles[tab] || 'Helm';
   if (tab === 'feeds')    renderFeeds();
   if (tab === 'news')     renderNews();
