@@ -258,7 +258,7 @@ MONITORED_SERVICES = [
         "id":    "helm",
         "label": "Helm",
         "type":  "systemd-user",
-        "unit":  "helm.service",
+        "unit":  "bookmarks.service",
         "controllable": True,
     },
     {
@@ -266,13 +266,6 @@ MONITORED_SERVICES = [
         "label": "SearXNG",
         "type":  "docker",
         "container": "searxng-core",
-        "controllable": True,
-    },
-    {
-        "id":    "searxng-valkey",
-        "label": "SearXNG Cache",
-        "type":  "docker",
-        "container": "searxng-valkey",
         "controllable": True,
     },
     {
@@ -342,12 +335,13 @@ def _get_systemd_user_status(unit):
 
 
 def _get_docker_status(container):
-    stdout, _, rc = _run(
+    stdout, stderr, rc = _run(
         ["docker", "inspect", "--format",
          "{{.State.Status}}|{{.State.StartedAt}}|{{.State.Running}}", container]
     )
     if rc != 0 or not stdout:
-        return {"running": False, "status": "not found", "uptime": "", "logs": ""}
+        err_msg = stderr if stderr else "not found or docker not accessible"
+        return {"running": False, "status": err_msg, "uptime": "", "logs": stderr}
     parts      = stdout.split("|")
     status_str = parts[0] if len(parts) > 0 else "unknown"
     started_at = parts[1] if len(parts) > 1 else ""
@@ -360,7 +354,9 @@ def _get_docker_status(container):
             uptime_str = _format_duration((datetime.now(timezone.utc) - started).total_seconds())
         except Exception:
             uptime_str = started_at
-    logs_out, _, _ = _run(["docker", "logs", "--tail", "20", "--timestamps", container])
+    # Docker writes container logs to stderr; capture both stdout+stderr
+    log_stdout, log_stderr, _ = _run(["docker", "logs", "--tail", "20", "--timestamps", container])
+    logs_out = (log_stdout + "\n" + log_stderr).strip()
     return {"running": is_running, "status": status_str, "uptime": uptime_str, "logs": logs_out}
 
 
@@ -585,7 +581,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
