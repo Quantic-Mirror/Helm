@@ -1533,6 +1533,103 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 .calp-add-btn { opacity: 0; transition: opacity 0.12s; }
 .calp-agenda-row:hover .calp-add-btn { opacity: 1; }
 
+/* ── SERVICES PAGE ───────────────────────────────────────────────────────────── */
+#services-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+#services-topbar {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 20px;
+}
+#services-last-updated { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+
+#services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.svc-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.svc-card-ok  { border-color: rgba(63,185,80,0.3); }
+.svc-card-err { border-color: rgba(248,81,73,0.3); }
+
+.svc-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 16px 10px;
+}
+.svc-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+.svc-dot-ok  { background: var(--green); color: var(--green); }
+.svc-dot-err { background: var(--red);   color: var(--red); }
+
+.svc-name {
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 600; color: var(--text); flex: 1;
+}
+.svc-type-badge {
+  font-size: 9px; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 5px;
+}
+
+.svc-status {
+  padding: 0 16px 8px;
+  font-size: 12px; color: var(--text-muted);
+}
+.svc-meta {
+  padding: 0 16px 4px;
+  font-size: 11px; color: var(--text-dim);
+}
+
+.svc-controls {
+  display: flex; gap: 6px; padding: 8px 16px 10px;
+  border-top: 1px solid var(--border);
+}
+.svc-btn {
+  flex: 1; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: none; color: var(--text);
+  font-family: var(--font-body); font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.svc-btn:hover:not(:disabled) { background: var(--surface-2); }
+.svc-btn:disabled { opacity: 0.35; cursor: default; }
+.svc-btn-start:hover:not(:disabled)   { border-color: var(--green); color: var(--green); }
+.svc-btn-stop:hover:not(:disabled)    { border-color: var(--red);   color: var(--red); }
+.svc-btn-restart:hover:not(:disabled) { border-color: var(--amber); color: var(--amber); }
+
+.svc-logs-section { border-top: 1px solid var(--border); }
+.svc-logs-toggle {
+  width: 100%; padding: 7px 16px; text-align: left;
+  border: none; background: none;
+  color: var(--text-dim); font-family: var(--font-body); font-size: 11px;
+  cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.svc-logs-toggle:hover { background: var(--surface-2); color: var(--text); }
+.svc-logs-body { border-top: 1px solid var(--border); }
+.svc-logs {
+  display: block; margin: 0; padding: 10px 14px;
+  font-family: monospace; font-size: 10px; line-height: 1.55;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  max-height: 220px; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-all;
+  scrollbar-width: thin;
+}
+.svc-no-logs { padding: 10px 14px; font-size: 11px; color: var(--text-dim); }
+.svc-error, .svc-loading {
+  padding: 40px 20px; text-align: center;
+  font-size: 13px; color: var(--text-dim);
+}
+
 /* ── NEWS PAGE ──────────────────────────────────────────────────────────────── */
 #news-page {
   padding: 20px 24px;
@@ -1880,6 +1977,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn" data-tab="feeds">YouTube Feeds</button>
     <button class="tab-btn" data-tab="news">News</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
+    <button class="tab-btn" data-tab="services">Services</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -1986,6 +2084,15 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     </div>
   </div>
   <div id="cal-page-body"></div>
+</div>
+
+<!-- SERVICES PAGE -->
+<div id="services-page" style="display:none">
+  <div id="services-topbar">
+    <span id="services-last-updated"></span>
+    <button class="btn" id="btn-refresh-services">↺ Refresh</button>
+  </div>
+  <div id="services-grid"></div>
 </div>
 
 <!-- MODAL -->
@@ -5299,13 +5406,16 @@ function switchTab(tab) {
   document.getElementById('feeds-page').style.display    = tab === 'feeds'     ? '' : 'none';
   document.getElementById('news-page').style.display     = tab === 'news'      ? '' : 'none';
   document.getElementById('calendar-page').style.display = tab === 'calendar'  ? '' : 'none';
+  document.getElementById('services-page').style.display = tab === 'services'  ? '' : 'none';
   document.getElementById('search-wrap').style.display   = tab === 'bookmarks' ? '' : 'none';
   document.getElementById('topbar-actions').style.display = tab === 'bookmarks' ? '' : 'none';
-  const titles = { bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar' };
+  const titles = { bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services' };
   document.title = titles[tab] || 'Helm';
   if (tab === 'feeds')    renderFeeds();
   if (tab === 'news')     renderNews();
   if (tab === 'calendar') renderCalendarPage();
+  if (tab === 'services') { renderServicesPage(); startServicesPolling(); }
+  else stopServicesPolling();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -5327,6 +5437,7 @@ document.getElementById('btn-invidious-toggle').onclick = toggleInvidious;
 document.getElementById('btn-invidious-toggle').oncontextmenu = (e) => { e.preventDefault(); changeInvidiousInstance(); };
 document.getElementById('btn-invidious-config').onclick = changeInvidiousInstance;
 document.getElementById('btn-add-news-source').onclick = addNewsSource;
+document.getElementById('btn-refresh-services').onclick = fetchServices;
 document.getElementById('btn-refresh-news').onclick = () => {
   Object.keys(NEWS_CACHE).forEach(k => delete NEWS_CACHE[k]);
   renderNews();
@@ -6092,6 +6203,152 @@ window.removeNewsSource = function(id) {
 };
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// ── SERVICES MONITORING PAGE ─────────────────────────────────────════════════
+// Polls /api/services every 2 minutes while the tab is active.
+// Shows status, uptime/next-run, controls (start/stop/restart), and logs.
+// ════════════════════════════════════════════════════════════════════════════
+
+let servicesData      = [];
+let servicesPollTimer = null;
+const SERVICES_POLL_MS = 2 * 60 * 1000; // 2 minutes
+
+async function fetchServices() {
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) {
+    document.getElementById('services-grid').innerHTML =
+      '<div class="svc-error">Services monitoring requires the local backend (marks_server.py). Not reachable.</div>';
+    return;
+  }
+  try {
+    const resp = await fetch('/api/services', { signal: AbortSignal.timeout(30000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    servicesData = data.services || [];
+    renderServicesPage();
+    const el = document.getElementById('services-last-updated');
+    if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch(e) {
+    document.getElementById('services-grid').innerHTML =
+      `<div class="svc-error">Could not fetch service status: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderServicesPage() {
+  const grid = document.getElementById('services-grid');
+  if (!grid) return;
+  if (!servicesData.length) {
+    grid.innerHTML = '<div class="svc-loading">Loading services…</div>';
+    fetchServices();
+    return;
+  }
+  grid.innerHTML = servicesData.map(svc => buildServiceCardHTML(svc)).join('');
+  wireServiceCards();
+}
+
+function buildServiceCardHTML(svc) {
+  const isRunning = svc.running;
+  const dot = `<span class="svc-dot ${isRunning ? 'svc-dot-ok' : 'svc-dot-err'}"></span>`;
+  const statusText = isRunning
+    ? (svc.uptime ? `Running — up ${svc.uptime}` : 'Running')
+    : (svc.status || 'Stopped');
+
+  // Timer-specific info
+  let extraInfo = '';
+  if (svc.type === 'systemd-timer') {
+    if (svc.last_run) extraInfo += `<div class="svc-meta">Last run: ${escHtml(svc.last_run)}</div>`;
+    if (svc.next_run) extraInfo += `<div class="svc-meta">Next run: ${escHtml(svc.next_run)}</div>`;
+  }
+
+  // Control buttons
+  let controls = '';
+  if (svc.controllable) {
+    controls = `
+      <div class="svc-controls">
+        <button class="svc-btn svc-btn-start"  data-svc-id="${svc.id}" data-svc-action="start"   ${isRunning  ? 'disabled' : ''}>▶ Start</button>
+        <button class="svc-btn svc-btn-stop"   data-svc-id="${svc.id}" data-svc-action="stop"    ${!isRunning ? 'disabled' : ''}>■ Stop</button>
+        <button class="svc-btn svc-btn-restart" data-svc-id="${svc.id}" data-svc-action="restart" ${!isRunning ? 'disabled' : ''}>↺ Restart</button>
+      </div>`;
+  }
+
+  // Logs
+  const logs = svc.logs
+    ? `<pre class="svc-logs" id="svc-logs-${svc.id}">${escHtml(svc.logs)}</pre>`
+    : `<div class="svc-no-logs">No logs available</div>`;
+
+  const logsSection = `
+    <div class="svc-logs-section">
+      <button class="svc-logs-toggle" data-svc-logs="${svc.id}">▸ Logs</button>
+      <div class="svc-logs-body" id="svc-logs-body-${svc.id}" style="display:none">${logs}</div>
+    </div>`;
+
+  return `
+    <div class="svc-card ${isRunning ? 'svc-card-ok' : 'svc-card-err'}">
+      <div class="svc-header">
+        ${dot}
+        <span class="svc-name">${escHtml(svc.label)}</span>
+        <span class="svc-type-badge">${escHtml(svc.type)}</span>
+      </div>
+      <div class="svc-status">${escHtml(statusText)}</div>
+      ${extraInfo}
+      ${controls}
+      ${logsSection}
+    </div>`;
+}
+
+function wireServiceCards() {
+  // Control buttons
+  document.querySelectorAll('[data-svc-action]').forEach(btn => {
+    btn.onclick = async () => {
+      const id     = btn.dataset.svcId;
+      const action = btn.dataset.svcAction;
+      btn.disabled = true;
+      btn.textContent = action === 'start' ? '▶ Starting…' : action === 'stop' ? '■ Stopping…' : '↺ Restarting…';
+      try {
+        const resp = await fetch(`/api/services/${encodeURIComponent(id)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+          signal: AbortSignal.timeout(25000),
+        });
+        const result = await resp.json();
+        toast(result.ok ? `${action} — ${result.message}` : `Failed: ${result.message}`);
+      } catch(e) {
+        toast('Control request failed: ' + e.message);
+      }
+      // Re-fetch after a short delay to let the service settle
+      setTimeout(fetchServices, 1500);
+    };
+  });
+
+  // Log toggles
+  document.querySelectorAll('[data-svc-logs]').forEach(btn => {
+    btn.onclick = () => {
+      const body = document.getElementById('svc-logs-body-' + btn.dataset.svcLogs);
+      if (!body) return;
+      const open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : '';
+      btn.textContent = open ? '▸ Logs' : '▾ Logs';
+      if (!open) {
+        // Scroll logs to bottom so most recent lines are visible
+        const pre = body.querySelector('pre');
+        if (pre) pre.scrollTop = pre.scrollHeight;
+      }
+    };
+  });
+}
+
+function startServicesPolling() {
+  if (!servicesPollTimer) {
+    servicesPollTimer = setInterval(fetchServices, SERVICES_POLL_MS);
+  }
+}
+
+function stopServicesPolling() {
+  clearInterval(servicesPollTimer);
+  servicesPollTimer = null;
+}
+
 function getSortedNewsSources() {
   const mode = state.settings.newsSortMode || 'manual';
   const sources = [...state.newsSources];
