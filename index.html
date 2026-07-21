@@ -3820,8 +3820,7 @@ window.openBm = function(e, id) {
 // YouTube video cards and news article cards. Switches to the Bookmarks tab
 // and opens the add-bookmark modal pre-filled, same flow as the bookmarklet.
 window.saveAsBookmark = function(url, title) {
-  switchTab('dashboard');
-  document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
+  switchTab('bookmarks');
   const firstCol = state.columns[0];
   setTimeout(() => {
     openModal(null, firstCol ? firstCol.id : null, { url, title });
@@ -5358,6 +5357,8 @@ document.getElementById('bm-title-input').oninput = function() {
 load();
 render();
 updateInvidiousButton();
+switchTab('dashboard');
+document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
 // ── Topbar dropdown menus (Data / Widgets / Tools) ──────────────────────────
 document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
   trigger.onclick = (e) => {
