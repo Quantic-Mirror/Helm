@@ -5225,7 +5225,7 @@ function renderNotesWidget(w) {
       </div>
     </div>
     <div class="notes-body">
-      <textarea class="notes-textarea" id="notes-${w.id}" placeholder="Type a note…" spellcheck="true" draggable="false">${escHtml(w.content || '')}</textarea>
+      <textarea class="notes-textarea" id="notes-${w.id}" placeholder="Type a note…" spellcheck="true" draggable="false" style="${w.notesHeight ? `height:${w.notesHeight}px` : ''}">${escHtml(w.content || '')}</textarea>
     </div>
     <div class="notes-footer" id="notes-footer-${w.id}"></div>
   `;
@@ -5255,6 +5255,21 @@ function renderNotesWidget(w) {
       }, 800);
     };
     if (footer && w.content) footer.textContent = '';
+
+    // Persist the textarea's height whenever it's manually resized (the
+    // native resize: vertical drag handle), so it survives a page reload.
+    let resizeSaveTimer;
+    const resizeObserver = new ResizeObserver(() => {
+      clearTimeout(resizeSaveTimer);
+      resizeSaveTimer = setTimeout(() => {
+        const newHeight = Math.round(ta.getBoundingClientRect().height);
+        if (newHeight && newHeight !== w.notesHeight) {
+          w.notesHeight = newHeight;
+          save();
+        }
+      }, 400);
+    });
+    resizeObserver.observe(ta);
   }, 0);
   return el;
 }
