@@ -5244,12 +5244,21 @@ function renderNotesWidget(w) {
     const ta = document.getElementById('notes-' + w.id);
     const footer = document.getElementById('notes-footer-' + w.id);
     if (!ta) return;
+    const widgetId = w.id; // capture the id only — never the object itself.
+    // A sync poll can replace the whole state.widgets array with fresh
+    // objects at any time (last-write-wins architecture). If we held onto
+    // the original `w` reference, mutations after a poll would silently
+    // land on an orphaned copy that's no longer part of the live array,
+    // and would never be persisted. Looking the widget up by id at the
+    // moment of each save guarantees we always mutate the current object.
     let saveTimer;
     ta.oninput = () => {
       if (footer) footer.textContent = 'Unsaved…';
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
-        w.content = ta.value;
+        const liveWidget = state.widgets.find(x => x.id === widgetId);
+        if (!liveWidget) return; // widget was removed since typing started
+        liveWidget.content = ta.value;
         save();
         if (footer) footer.textContent = 'Saved ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
       }, 800);
@@ -5259,20 +5268,15 @@ function renderNotesWidget(w) {
     // Persist the textarea's height whenever it's manually resized (the
     // native resize: vertical drag handle), so it survives a page reload.
     let resizeSaveTimer;
-    console.log('[Helm Notes Debug] Attaching ResizeObserver to', ta, 'for widget id', w.id);
-    const resizeObserver = new ResizeObserver((entries) => {
-      console.log('[Helm Notes Debug] ResizeObserver fired', entries);
+    const resizeObserver = new ResizeObserver(() => {
       clearTimeout(resizeSaveTimer);
       resizeSaveTimer = setTimeout(() => {
+        const liveWidget = state.widgets.find(x => x.id === widgetId);
+        if (!liveWidget) return;
         const newHeight = Math.round(ta.getBoundingClientRect().height);
-        console.log('[Helm Notes Debug] Computed newHeight:', newHeight, 'current w.notesHeight:', w.notesHeight, 'widget id:', w.id);
-        if (newHeight && newHeight !== w.notesHeight) {
-          w.notesHeight = newHeight;
-          console.log('[Helm Notes Debug] Set w.notesHeight to', w.notesHeight, '— calling save()');
+        if (newHeight && newHeight !== liveWidget.notesHeight) {
+          liveWidget.notesHeight = newHeight;
           save();
-          console.log('[Helm Notes Debug] After save(), state.widgets:', JSON.stringify(state.widgets.find(x => x.id === w.id)));
-        } else {
-          console.log('[Helm Notes Debug] Skipped save — newHeight falsy or unchanged');
         }
       }, 400);
     });
