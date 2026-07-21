@@ -88,16 +88,15 @@ body {
   font-size: 12px; line-height: 1;
 }
 
-/* Dashboard page */
+/* Dashboard page — same 3-column flex layout as the bookmarks grid */
 #dashboard-page {
   padding: 20px 24px;
   min-height: calc(100vh - 56px);
 }
 #dashboard-grid {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: 280px;
+  gap: 16px;
+  align-items: flex-start;
 }
 
 #search-wrap {
@@ -167,6 +166,7 @@ body {
 .grid-col {
   flex: 1;
   min-width: 0;
+  min-height: 80px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2682,6 +2682,7 @@ function renderDashboard() {
   const grid = document.getElementById('dashboard-grid');
   if (!grid) return;
   grid.innerHTML = '';
+
   const WIDGET_RENDERERS = {
     search: renderSearchWidget,
     notes: renderNotesWidget,
@@ -2690,11 +2691,27 @@ function renderDashboard() {
     sysstats: renderSysStatsWidget,
     todo: renderTodoWidget,
   };
+
+  // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
+  // the center column (1) so the dashboard doesn't start left-heavy.
+  state.widgets.forEach(w => {
+    if (w.gridCol === undefined) w.gridCol = 1;
+  });
+
+  const cols3 = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
+  cols3.forEach(c => { c.className = 'grid-col'; });
+
   state.widgets.forEach(w => {
     const renderer = WIDGET_RENDERERS[w.type];
-    if (renderer) grid.appendChild(renderer(w));
+    if (!renderer) return;
+    const gc = Math.min(Math.max(w.gridCol || 0, 0), 2);
+    cols3[gc].appendChild(renderer(w));
   });
+
+  cols3.forEach(c => grid.appendChild(c));
+
   attachEvents();
+  setupDrag();
   loadWeather();
 }
 
@@ -4159,7 +4176,17 @@ function setupDrag() {
     return { nearest, insertAfter };
   }
 
-  document.querySelectorAll('.grid-col').forEach((col, visualColIdx) => {
+  // Grid-col drop zones must be scoped per container. #grid (bookmarks) and
+  // #dashboard-grid (widgets) both exist in the DOM at the same time (just
+  // hidden via display:none when inactive), so a single global
+  // querySelectorAll('.grid-col') would combine both sets of 3 columns into
+  // one flat list of 6, corrupting the 0/1/2 visualColIdx each page relies on.
+  wireGridColumns('#grid');
+  wireGridColumns('#dashboard-grid');
+}
+
+function wireGridColumns(containerSelector) {
+  document.querySelectorAll(containerSelector + ' > .grid-col').forEach((col, visualColIdx) => {
     col.ondragover = (e) => {
       if (!dragCol) return;
       e.preventDefault();
@@ -4215,19 +4242,37 @@ function moveItemToVisualColumn(fromKey, visualColIdx, toKey, insertAfter) {
   const fromId = fromKey.split(':')[1];
 
   if (isWidget) {
-    // Widgets always live in the center column conceptually; just reorder within state.widgets
-    const items = allGridItems();
-    const fromIdx = items.findIndex(x => x.key === fromKey);
-    if (fromIdx === -1) return;
-    const [moved] = items.splice(fromIdx, 1);
-    if (toKey) {
-      let toIdx = items.findIndex(x => x.key === toKey);
-      if (toIdx === -1) { items.push(moved); }
-      else { items.splice(insertAfter ? toIdx + 1 : toIdx, 0, moved); }
+    const widget = state.widgets.find(w => w.id === fromId);
+    if (!widget) return;
+
+    widget.gridCol = visualColIdx;
+
+    // Remove from its current array position
+    const fromArrIdx = state.widgets.indexOf(widget);
+    state.widgets.splice(fromArrIdx, 1);
+
+    if (toKey && toKey.startsWith('widget:')) {
+      const targetId = toKey.split(':')[1];
+      const targetIdx = state.widgets.findIndex(w => w.id === targetId);
+      if (targetIdx === -1) {
+        state.widgets.push(widget);
+      } else {
+        state.widgets.splice(insertAfter ? targetIdx + 1 : targetIdx, 0, widget);
+      }
     } else {
-      items.push(moved);
+      // No anchor — dropped on empty column or past the last widget.
+      // Insert after the last widget currently assigned to this visual column.
+      let lastIdxInCol = -1;
+      state.widgets.forEach((w, i) => { if (w.gridCol === visualColIdx) lastIdxInCol = i; });
+      if (lastIdxInCol === -1) {
+        state.widgets.push(widget);
+      } else {
+        state.widgets.splice(lastIdxInCol + 1, 0, widget);
+      }
     }
-    applyGridOrder(items);
+
+    save();
+    renderDashboard();
     return;
   }
 
