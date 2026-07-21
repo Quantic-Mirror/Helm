@@ -2383,6 +2383,13 @@ let syncPollTimer = null;
 let syncPushPending = false; // true while a push is queued or in flight
 let LOCAL_BACKEND_AVAILABLE = null; // null = unchecked, true/false once confirmed
 let currentTab = 'dashboard';       // active tab — declared here to avoid TDZ errors
+let calPageView = 'month';
+let calPageYear = new Date().getFullYear();
+let calPageMonth = new Date().getMonth();
+let newsViewMode = 'cards';
+let servicesData = [];
+let servicesPollTimer = null;
+const SERVICES_POLL_MS = 2 * 60 * 1000;
 
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
@@ -3181,9 +3188,6 @@ function renderStatBar(label, pct, valueText) {
 // Events stored in state.calendarEvents: { "YYYY-MM-DD": ["event text", …] }
 // This is a top-level state key so events sync across devices automatically.
 
-let calPageView = 'month';
-let calPageYear = new Date().getFullYear();
-let calPageMonth = new Date().getMonth(); // 0-indexed
 
 const WEEKDAY_LABELS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -6060,7 +6064,6 @@ window.collapseChannel = id => { const c = FEEDS_CACHE[id]; if (c) renderVideoLi
 const NEWS_CACHE = {};      // sourceId → { items, title, link, ts }
 const NEWS_EXPANDED = {};   // sourceId → bool
 const NEWS_PAGE_SIZE = 3;
-let newsViewMode = 'cards'; // 'cards' | 'timeline'
 
 function ensureNewsSources() {
   if (!state.newsSources) state.newsSources = [];
@@ -6316,9 +6319,6 @@ window.removeNewsSource = function(id) {
 // Shows status, uptime/next-run, controls (start/stop/restart), and logs.
 // ════════════════════════════════════════════════════════════════════════════
 
-let servicesData      = [];
-let servicesPollTimer = null;
-const SERVICES_POLL_MS = 2 * 60 * 1000; // 2 minutes
 
 async function fetchServices() {
   const hasBackend = await checkLocalBackend();
