@@ -2687,6 +2687,7 @@ function renderDashboard() {
     if (renderer) grid.appendChild(renderer(w));
   });
   attachEvents();
+  loadWeather();
 }
 
 function render() {
@@ -2818,7 +2819,6 @@ function render() {
 
   attachEvents();
   setupDrag();
-  loadWeather();
 }
 
 
@@ -5496,20 +5496,23 @@ document.title = 'Helm — Bookmarks';
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  // Logo has no data-tab so clear its active state separately
   const logo = document.getElementById('helm-logo');
   if (logo) logo.classList.toggle('logo-active', tab === 'dashboard');
 
-  document.getElementById('dashboard-page').style.display = tab === 'dashboard' ? '' : 'none';
-  document.getElementById('main').style.display          = tab === 'bookmarks' ? '' : 'none';
-  document.getElementById('feeds-page').style.display    = tab === 'feeds'     ? '' : 'none';
-  document.getElementById('news-page').style.display     = tab === 'news'      ? '' : 'none';
-  document.getElementById('calendar-page').style.display = tab === 'calendar'  ? '' : 'none';
-  document.getElementById('services-page').style.display = tab === 'services'  ? '' : 'none';
-  document.getElementById('irc-page').style.display      = tab === 'irc'       ? '' : 'none';
+  const show = (id, condition) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = condition ? '' : 'none';
+  };
 
-  document.getElementById('search-wrap').style.display    = tab === 'bookmarks' ? '' : 'none';
-  document.getElementById('topbar-actions').style.display = tab === 'bookmarks' ? '' : 'none';
+  show('dashboard-page', tab === 'dashboard');
+  show('main',           tab === 'bookmarks');
+  show('feeds-page',     tab === 'feeds');
+  show('news-page',      tab === 'news');
+  show('calendar-page',  tab === 'calendar');
+  show('services-page',  tab === 'services');
+  show('irc-page',       tab === 'irc');
+  show('search-wrap',    tab === 'bookmarks');
+  show('topbar-actions', tab === 'bookmarks');
 
   const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC' };
   document.title = titles[tab] || 'Helm';
