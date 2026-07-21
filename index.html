@@ -3804,7 +3804,9 @@ window.openWidgetCfg = function(wid) {
     if (city === null) return;
     w.city = city.trim() || w.city;
     delete WX_CACHE[wid];
-    save(); render();
+    save();
+    render();
+    renderDashboard();
   }
 };
 
@@ -3969,7 +3971,9 @@ function attachEvents() {
       const w = state.widgets.find(x => x.id === btn.dataset.toggleClockFormat);
       if (!w) return;
       w.format = w.format === '24h' ? '12h' : '24h';
-      save(); render();
+      save();
+      render();
+      renderDashboard();
     };
   });
 
@@ -3992,7 +3996,9 @@ function attachEvents() {
       const w = state.widgets.find(x => x.id === wid);
       if (!w) return;
       w.engine = btn.dataset.engine;
-      save(); render();
+      save();
+      render();
+      renderDashboard();
       setTimeout(() => { const inp = document.getElementById('sinput-' + wid); if (inp) inp.focus(); }, 20);
     };
   });
@@ -4024,7 +4030,9 @@ function attachEvents() {
     btn.onclick = (e) => {
       e.stopPropagation();
       state.widgets = state.widgets.filter(w => w.id !== btn.dataset.delWidget);
-      save(); render();
+      save();
+      render();
+      renderDashboard(); // widgets live on the Dashboard page — keep it in sync too
     };
   });
 
@@ -5098,7 +5106,11 @@ function renderTodoWidget(w) {
     el.addEventListener('dragend', () => { el.draggable = false; });
     document.addEventListener('mouseup', () => { el.draggable = false; });
 
-    wireTodoWidget(w, el);
+    // Pass only the id, never the object — a sync poll can replace the whole
+    // state.widgets array with fresh objects at any time. Every handler below
+    // looks up the live widget fresh from state.widgets at the moment it acts,
+    // so it never mutates an orphaned copy that silently fails to persist.
+    wireTodoWidget(w.id, el);
   }, 0);
 
   return el;
@@ -5118,11 +5130,13 @@ function buildTodoListHTML(w) {
   `).join('');
 }
 
-function refreshTodoList(w) {
-  const list = document.getElementById('todo-list-' + w.id);
+function refreshTodoList(widgetId) {
+  const w = state.widgets.find(x => x.id === widgetId);
+  if (!w) return;
+  const list = document.getElementById('todo-list-' + widgetId);
   if (list) list.innerHTML = buildTodoListHTML(w);
   // Refresh the count in the header
-  const card = document.querySelector(`[data-widget-id="${w.id}"].todo-widget`);
+  const card = document.querySelector(`[data-widget-id="${widgetId}"].todo-widget`);
   if (card) {
     const count = card.querySelector('.col-count');
     if (count) {
@@ -5131,23 +5145,25 @@ function refreshTodoList(w) {
       count.textContent = total > 0 ? done + '/' + total : '';
     }
   }
-  wireTodoListEvents(w);
+  wireTodoListEvents(widgetId);
 }
 
-function wireTodoWidget(w, el) {
+function wireTodoWidget(widgetId, el) {
   // Add form submit
-  const form = document.getElementById('todo-form-' + w.id);
-  const input = document.getElementById('todo-input-' + w.id);
+  const form = document.getElementById('todo-form-' + widgetId);
+  const input = document.getElementById('todo-input-' + widgetId);
   if (form && input) {
     form.onsubmit = (e) => {
       e.preventDefault();
       const text = input.value.trim();
       if (!text) return;
+      const w = state.widgets.find(x => x.id === widgetId);
+      if (!w) return;
       if (!w.todos) w.todos = [];
       w.todos.push({ id: uid(), text, done: false });
       input.value = '';
       save();
-      refreshTodoList(w);
+      refreshTodoList(widgetId);
     };
     // Prevent the form input from triggering card drag
     input.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -5157,31 +5173,36 @@ function wireTodoWidget(w, el) {
   const clearBtn = el.querySelector('[data-todo-clear]');
   if (clearBtn) {
     clearBtn.onclick = () => {
-      if (!w.todos) return;
+      const w = state.widgets.find(x => x.id === widgetId);
+      if (!w || !w.todos) return;
       w.todos = w.todos.filter(t => !t.done);
       save();
-      refreshTodoList(w);
+      refreshTodoList(widgetId);
     };
   }
 
-  wireTodoListEvents(w);
+  wireTodoListEvents(widgetId);
 }
 
-function wireTodoListEvents(w) {
+function wireTodoListEvents(widgetId) {
   // Toggle done
-  document.querySelectorAll(`[data-todo-toggle][data-widget-id="${w.id}"]`).forEach(btn => {
+  document.querySelectorAll(`[data-todo-toggle][data-widget-id="${widgetId}"]`).forEach(btn => {
     btn.onclick = () => {
+      const w = state.widgets.find(x => x.id === widgetId);
+      if (!w) return;
       const item = w.todos && w.todos.find(t => t.id === btn.dataset.todoToggle);
       if (!item) return;
       item.done = !item.done;
       save();
-      refreshTodoList(w);
+      refreshTodoList(widgetId);
     };
   });
 
   // Inline edit — click the text to edit it
-  document.querySelectorAll(`[data-todo-edit][data-widget-id="${w.id}"]`).forEach(span => {
+  document.querySelectorAll(`[data-todo-edit][data-widget-id="${widgetId}"]`).forEach(span => {
     span.onclick = () => {
+      const w = state.widgets.find(x => x.id === widgetId);
+      if (!w) return;
       const item = w.todos && w.todos.find(t => t.id === span.dataset.todoEdit);
       if (!item) return;
       const newText = prompt('Edit task:', item.text);
@@ -5193,16 +5214,18 @@ function wireTodoListEvents(w) {
         item.text = newText.trim();
       }
       save();
-      refreshTodoList(w);
+      refreshTodoList(widgetId);
     };
   });
 
   // Delete
-  document.querySelectorAll(`[data-todo-delete][data-widget-id="${w.id}"]`).forEach(btn => {
+  document.querySelectorAll(`[data-todo-delete][data-widget-id="${widgetId}"]`).forEach(btn => {
     btn.onclick = () => {
+      const w = state.widgets.find(x => x.id === widgetId);
+      if (!w) return;
       w.todos = w.todos ? w.todos.filter(t => t.id !== btn.dataset.todoDelete) : [];
       save();
-      refreshTodoList(w);
+      refreshTodoList(widgetId);
     };
   });
 }
