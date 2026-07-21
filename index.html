@@ -2382,6 +2382,7 @@ let syncDebounceTimer = null;
 let syncPollTimer = null;
 let syncPushPending = false; // true while a push is queued or in flight
 let LOCAL_BACKEND_AVAILABLE = null; // null = unchecked, true/false once confirmed
+let currentTab = 'dashboard';       // active tab — declared here to avoid TDZ errors
 
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
@@ -5490,8 +5491,7 @@ function ensureFeeds() {
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
-let currentTab = 'bookmarks';
-document.title = 'Helm — Bookmarks';
+document.title = 'Helm';
 
 function switchTab(tab) {
   currentTab = tab;
