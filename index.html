@@ -70,7 +70,15 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  transition: color 0.15s, background 0.15s;
+  user-select: none;
 }
+#topbar h1:hover { color: var(--accent); }
+#topbar h1.logo-active { color: var(--accent); }
 
 #topbar h1 span {
   width: 22px; height: 22px;
@@ -78,6 +86,18 @@ body {
   border-radius: 5px;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 12px; line-height: 1;
+}
+
+/* Dashboard page */
+#dashboard-page {
+  padding: 20px 24px;
+  min-height: calc(100vh - 56px);
+}
+#dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 280px;
 }
 
 #search-wrap {
@@ -2025,12 +2045,12 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 <body>
 
 <div id="topbar">
-  <h1>
+  <h1 id="helm-logo" title="Dashboard" style="cursor:pointer">
     <span>⚑</span>
     Helm
   </h1>
   <nav id="tab-nav">
-    <button class="tab-btn active" data-tab="bookmarks">Bookmarks</button>
+    <button class="tab-btn" data-tab="bookmarks">Bookmarks</button>
     <button class="tab-btn" data-tab="feeds">YouTube Feeds</button>
     <button class="tab-btn" data-tab="news">News</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
@@ -2088,7 +2108,12 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   </div>
 </div>
 
-<div id="main">
+<!-- DASHBOARD PAGE (widgets) -->
+<div id="dashboard-page" style="display:none">
+  <div id="dashboard-grid"></div>
+</div>
+
+<div id="main" style="display:none">
   <div id="upcoming-events-strip" style="display:none"></div>
   <div id="grid">
     <!-- folder cards injected here -->
@@ -2645,20 +2670,10 @@ function toast(msg) {
 }
 
 /* RENDER */
-function render() {
-  // Apply background setting
-  applyBackground();
-  // Apply density
-  document.body.classList.toggle('compact', !!state.settings.compact);
-
-  const grid = document.getElementById('grid');
+function renderDashboard() {
+  const grid = document.getElementById('dashboard-grid');
+  if (!grid) return;
   grid.innerHTML = '';
-
-  // Build 3 explicit flex columns; widgets always go in the middle (index 1)
-  const cols3 = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
-  cols3.forEach(c => { c.className = 'grid-col'; });
-
-  // Widgets into middle column
   const WIDGET_RENDERERS = {
     search: renderSearchWidget,
     notes: renderNotesWidget,
@@ -2668,10 +2683,24 @@ function render() {
     todo: renderTodoWidget,
   };
   state.widgets.forEach(w => {
-    const renderer = WIDGET_RENDERERS[w.type] || renderWeatherWidget;
-    const el = renderer(w);
-    cols3[1].appendChild(el);
+    const renderer = WIDGET_RENDERERS[w.type];
+    if (renderer) grid.appendChild(renderer(w));
   });
+  attachEvents();
+}
+
+function render() {
+  // Apply background setting
+  applyBackground();
+  // Apply density
+  document.body.classList.toggle('compact', !!state.settings.compact);
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  // Build 3 explicit flex columns (no widgets — they live on the Dashboard page)
+  const cols3 = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
+  cols3.forEach(c => { c.className = 'grid-col'; });
 
   // Favorites card — moveable, defaults to right column (col 2)
   if (!searchQ) {
@@ -3791,7 +3820,8 @@ window.openBm = function(e, id) {
 // YouTube video cards and news article cards. Switches to the Bookmarks tab
 // and opens the add-bookmark modal pre-filled, same flow as the bookmarklet.
 window.saveAsBookmark = function(url, title) {
-  switchTab('bookmarks');
+  switchTab('dashboard');
+  document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
   const firstCol = state.columns[0];
   setTimeout(() => {
     openModal(null, firstCol ? firstCol.id : null, { url, title });
@@ -5465,20 +5495,29 @@ document.title = 'Helm — Bookmarks';
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  // Logo has no data-tab so clear its active state separately
+  const logo = document.getElementById('helm-logo');
+  if (logo) logo.classList.toggle('logo-active', tab === 'dashboard');
+
+  document.getElementById('dashboard-page').style.display = tab === 'dashboard' ? '' : 'none';
   document.getElementById('main').style.display          = tab === 'bookmarks' ? '' : 'none';
   document.getElementById('feeds-page').style.display    = tab === 'feeds'     ? '' : 'none';
   document.getElementById('news-page').style.display     = tab === 'news'      ? '' : 'none';
   document.getElementById('calendar-page').style.display = tab === 'calendar'  ? '' : 'none';
   document.getElementById('services-page').style.display = tab === 'services'  ? '' : 'none';
   document.getElementById('irc-page').style.display      = tab === 'irc'       ? '' : 'none';
-  document.getElementById('search-wrap').style.display   = tab === 'bookmarks' ? '' : 'none';
+
+  document.getElementById('search-wrap').style.display    = tab === 'bookmarks' ? '' : 'none';
   document.getElementById('topbar-actions').style.display = tab === 'bookmarks' ? '' : 'none';
-  const titles = { bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC' };
+
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC' };
   document.title = titles[tab] || 'Helm';
-  if (tab === 'feeds')    renderFeeds();
-  if (tab === 'news')     renderNews();
-  if (tab === 'calendar') renderCalendarPage();
-  if (tab === 'services') { renderServicesPage(); startServicesPolling(); }
+
+  if (tab === 'feeds')     renderFeeds();
+  if (tab === 'news')      renderNews();
+  if (tab === 'calendar')  renderCalendarPage();
+  if (tab === 'dashboard') renderDashboard();
+  if (tab === 'services')  { renderServicesPage(); startServicesPolling(); }
   else stopServicesPolling();
 }
 
