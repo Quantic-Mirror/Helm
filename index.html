@@ -849,6 +849,72 @@ body {
 .timer-ctrl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .timer-ctrl-btn:disabled { opacity: 0.4; cursor: default; }
 
+/* Terminal widget */
+.terminal-wrapper {
+  resize: vertical;
+  overflow: hidden;
+  min-height: 200px;
+  max-height: 80vh;
+  border-top: 1px solid var(--border);
+  background: #0a0e14;
+}
+.terminal-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* On This Day widget */
+.onthisday-body { padding: 12px 14px 14px; }
+.otd-loading, .otd-error {
+  font-size: 12px; color: var(--text-dim); padding: 8px 0;
+}
+.otd-year {
+  font-family: var(--font-display);
+  font-size: 20px; font-weight: 700; color: #DB61A2;
+  margin-bottom: 4px;
+}
+.otd-text {
+  font-size: 12px; color: var(--text); line-height: 1.5;
+  margin-bottom: 8px;
+}
+.otd-thumb {
+  width: 100%; max-height: 140px; object-fit: cover;
+  border-radius: 8px; margin-bottom: 8px; display: block;
+}
+.otd-link {
+  font-size: 11px; color: var(--accent); text-decoration: none;
+}
+.otd-link:hover { text-decoration: underline; }
+
+/* Random Wikipedia Article widget */
+.randomwiki-body { padding: 12px 14px 14px; }
+.rwiki-loading, .rwiki-error {
+  font-size: 12px; color: var(--text-dim); padding: 8px 0;
+}
+.rwiki-thumb {
+  width: 100%; max-height: 160px; object-fit: cover;
+  border-radius: 8px; margin-bottom: 8px; display: block;
+}
+.rwiki-title {
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 600; color: var(--text);
+  margin-bottom: 6px;
+}
+.rwiki-extract {
+  font-size: 12px; color: var(--text-muted); line-height: 1.55;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rwiki-link {
+  font-size: 11px; color: var(--accent); text-decoration: none;
+}
+.rwiki-link:hover { text-decoration: underline; }
+
 /* To Do widget */
 .todo-body { padding: 8px 14px 12px; }
 .todo-list {
@@ -2090,6 +2156,9 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-add-clock">Clock</button>
           <button class="dropdown-item" id="btn-add-sysstats">Sys Stats</button>
           <button class="dropdown-item" id="btn-add-todo">To Do</button>
+          <button class="dropdown-item" id="btn-add-terminal">Terminal</button>
+          <button class="dropdown-item" id="btn-add-onthisday">On This Day</button>
+          <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
         </div>
       </div>
       <div class="dropdown" id="dd-tools">
@@ -2690,6 +2759,9 @@ function renderDashboard() {
     clock: renderClockWidget,
     sysstats: renderSysStatsWidget,
     todo: renderTodoWidget,
+    terminal: renderTerminalWidget,
+    onthisday: renderOnThisDayWidget,
+    randomwiki: renderRandomWikiWidget,
   };
 
   // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
@@ -3806,6 +3878,12 @@ window.openWidgetCfg = function(wid) {
     delete WX_CACHE[wid];
     save();
     render();
+    renderDashboard();
+  } else if (w.type === 'terminal') {
+    const url = prompt('Terminal (ttyd) URL:', w.terminalUrl || 'https://popcorn:7681');
+    if (url === null) return;
+    w.terminalUrl = url.trim() || w.terminalUrl;
+    save();
     renderDashboard();
   }
 };
@@ -5230,6 +5308,218 @@ function wireTodoListEvents(widgetId) {
   });
 }
 
+// ── TERMINAL WIDGET ───────────────────────────────────────────────────────────
+// Embeds a ttyd (WebSocket-backed terminal) instance via iframe. ttyd itself
+// must be installed and running separately (pacman -S ttyd on Arch) — this
+// widget is just a viewport onto it, same pattern as the IRC tab embedding
+// The Lounge. Height is resizable and persisted, same approach as Notes.
+
+function renderTerminalWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card terminal-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+  const url = w.terminalUrl || 'https://popcorn:7681';
+  const height = w.terminalHeight || 360;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#F85149"></span>
+      <span class="column-title" style="cursor:default">Terminal</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Change terminal URL" data-cfg-widget="${w.id}">⚙</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="terminal-wrapper" id="terminal-wrap-${w.id}" style="height:${height}px">
+      <iframe class="terminal-iframe" id="terminal-frame-${w.id}" src="${escHtml(url)}" title="Terminal"></iframe>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = (e) => {
+      if (e.target.closest('button')) return;
+      el.draggable = true;
+    };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    // Persist wrapper height across reloads, same pattern as Notes —
+    // look up the live widget by id at save time so a mid-session sync poll
+    // replacing state.widgets can never orphan this reference.
+    const widgetId = w.id;
+    const wrap = document.getElementById('terminal-wrap-' + widgetId);
+    if (wrap) {
+      let resizeSaveTimer;
+      const resizeObserver = new ResizeObserver(() => {
+        clearTimeout(resizeSaveTimer);
+        resizeSaveTimer = setTimeout(() => {
+          const liveWidget = state.widgets.find(x => x.id === widgetId);
+          if (!liveWidget) return;
+          const newHeight = Math.round(wrap.getBoundingClientRect().height);
+          if (newHeight && newHeight !== liveWidget.terminalHeight) {
+            liveWidget.terminalHeight = newHeight;
+            save();
+          }
+        }, 400);
+      });
+      resizeObserver.observe(wrap);
+    }
+  }, 0);
+
+  return el;
+}
+
+// ── ON THIS DAY WIDGET ────────────────────────────────────────────────────────
+// Fetches today's historical events from the Wikimedia REST API. Cached
+// per-day (shared across all On This Day widgets) since the content is
+// identical for everyone on a given date. "Another" reshuffles which event
+// from the day's list is shown, without needing to refetch.
+
+const ONTHISDAY_CACHE = { dateKey: null, events: null, ts: 0 };
+
+function renderOnThisDayWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card onthisday-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#DB61A2"></span>
+      <span class="column-title" style="cursor:default">On This Day</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Show another event" data-otd-shuffle="${w.id}">🔀</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="onthisday-body" id="otd-${w.id}">
+      <div class="otd-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    const shuffleBtn = el.querySelector('[data-otd-shuffle]');
+    if (shuffleBtn) shuffleBtn.onclick = (e) => { e.stopPropagation(); loadOnThisDay(w.id, true); };
+
+    loadOnThisDay(w.id, false);
+  }, 0);
+
+  return el;
+}
+
+async function loadOnThisDay(widgetId, forceReshuffle) {
+  const body = document.getElementById('otd-' + widgetId);
+  if (!body) return;
+
+  const today = new Date();
+  const dateKey = (today.getMonth() + 1) + '-' + today.getDate();
+  const cacheStale = ONTHISDAY_CACHE.dateKey !== dateKey || (Date.now() - ONTHISDAY_CACHE.ts > 6 * 60 * 60 * 1000);
+
+  if (cacheStale) {
+    body.innerHTML = '<div class="otd-loading">Loading…</div>';
+    try {
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const resp = await fetch(`https://en.wikipedia.org/api/rest_v1/feed/onthisday/events/${mm}/${dd}`, {
+        headers: { 'Api-User-Agent': 'Helm-Dashboard/1.0' },
+      });
+      const data = await resp.json();
+      ONTHISDAY_CACHE.dateKey = dateKey;
+      ONTHISDAY_CACHE.events = data.events || [];
+      ONTHISDAY_CACHE.ts = Date.now();
+    } catch (e) {
+      body.innerHTML = '<div class="otd-error">Could not load history for today.</div>';
+      return;
+    }
+  }
+
+  const events = ONTHISDAY_CACHE.events || [];
+  if (events.length === 0) {
+    body.innerHTML = '<div class="otd-error">No events found for today.</div>';
+    return;
+  }
+
+  const idx = Math.floor(Math.random() * events.length);
+  const ev = events[idx];
+  const page = ev.pages && ev.pages[0];
+  const thumb = page && page.thumbnail && page.thumbnail.source;
+  const link = page && page.content_urls && page.content_urls.desktop && page.content_urls.desktop.page;
+  const title = page ? page.title.replace(/_/g, ' ') : '';
+
+  body.innerHTML = `
+    <div class="otd-year">${ev.year}</div>
+    <div class="otd-text">${escHtml(ev.text)}</div>
+    ${thumb ? `<img class="otd-thumb" src="${escHtml(thumb)}" alt="" loading="lazy">` : ''}
+    ${link ? `<a class="otd-link" href="${escHtml(link)}" target="_blank" rel="noopener">${escHtml(title)} →</a>` : ''}
+  `;
+}
+
+// ── RANDOM WIKIPEDIA ARTICLE WIDGET ───────────────────────────────────────────
+
+function renderRandomWikiWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card randomwiki-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#58A6FF"></span>
+      <span class="column-title" style="cursor:default">Random Article</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Get another article" data-wiki-shuffle="${w.id}">↻</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="randomwiki-body" id="rwiki-${w.id}">
+      <div class="rwiki-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    const shuffleBtn = el.querySelector('[data-wiki-shuffle]');
+    if (shuffleBtn) shuffleBtn.onclick = (e) => { e.stopPropagation(); loadRandomWiki(w.id); };
+
+    loadRandomWiki(w.id);
+  }, 0);
+
+  return el;
+}
+
+async function loadRandomWiki(widgetId) {
+  const body = document.getElementById('rwiki-' + widgetId);
+  if (!body) return;
+  body.innerHTML = '<div class="rwiki-loading">Loading…</div>';
+  try {
+    const resp = await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary', {
+      headers: { 'Api-User-Agent': 'Helm-Dashboard/1.0' },
+    });
+    const data = await resp.json();
+    const thumb = data.thumbnail && data.thumbnail.source;
+    const link = data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page;
+    body.innerHTML = `
+      ${thumb ? `<img class="rwiki-thumb" src="${escHtml(thumb)}" alt="" loading="lazy">` : ''}
+      <div class="rwiki-title">${escHtml(data.title || '')}</div>
+      <div class="rwiki-extract">${escHtml(data.extract || '')}</div>
+      ${link ? `<a class="rwiki-link" href="${escHtml(link)}" target="_blank" rel="noopener">Read more →</a>` : ''}
+    `;
+  } catch (e) {
+    body.innerHTML = '<div class="rwiki-error">Could not load an article. Try refreshing.</div>';
+  }
+}
+
 function renderNotesWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card notes-widget';
@@ -5414,8 +5704,22 @@ document.getElementById('btn-add-sysstats').onclick = () => {
   save(); render();
 };
 document.getElementById('btn-add-todo').onclick = () => {
-  state.widgets.push({ id: uid(), type: 'todo', todos: [] });
-  save(); render();
+  state.widgets.push({ id: uid(), type: 'todo', todos: [], gridCol: 1 });
+  save(); render(); renderDashboard();
+};
+document.getElementById('btn-add-terminal').onclick = () => {
+  // Defaults to the left column, per the user's request
+  state.widgets.push({ id: uid(), type: 'terminal', terminalUrl: 'https://popcorn:7681', gridCol: 0 });
+  save(); render(); renderDashboard();
+};
+document.getElementById('btn-add-onthisday').onclick = () => {
+  // Defaults to the right column, per the user's request
+  state.widgets.push({ id: uid(), type: 'onthisday', gridCol: 2 });
+  save(); render(); renderDashboard();
+};
+document.getElementById('btn-add-randomwiki').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'randomwiki', gridCol: 2 });
+  save(); render(); renderDashboard();
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
 document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);
