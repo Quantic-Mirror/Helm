@@ -4033,6 +4033,54 @@ function attachEvents() {
 /* DRAG & DROP */
 let dragCol = null; // colId being dragged
 
+// ── Grid column drop zones — full column is a drop target ──────────────────
+// Each .grid-col accepts drops anywhere (empty space OR over cards).
+// We track the insertion point by finding which card the mouse is nearest to.
+// These helpers are module-level (not nested in setupDrag) so both setupDrag()
+// and wireGridColumns() can use them.
+let dropIndicator = null;
+
+function getDropIndicator() {
+  if (!dropIndicator) {
+    dropIndicator = document.createElement('div');
+    dropIndicator.className = 'drop-indicator';
+  }
+  return dropIndicator;
+}
+
+function clearDropIndicator() {
+  dropIndicator?.remove();
+  document.querySelectorAll('.grid-col-over').forEach(el => el.classList.remove('grid-col-over'));
+}
+
+function cardKey(card) {
+  if (!card) return null;
+  return card.dataset.specialId ? 'special:' + card.dataset.specialId
+       : card.dataset.colId    ? 'col:' + card.dataset.colId
+       : card.dataset.widgetId ? 'widget:' + card.dataset.widgetId
+       : null;
+}
+
+function getCardsInCol(col) {
+  return [...col.querySelectorAll(':scope > .folder-card, :scope > .widget-card')];
+}
+
+function getNearestCard(col, clientY) {
+  const cards = getCardsInCol(col).filter(c => cardKey(c) !== dragCol);
+  let nearest = null, nearestDist = Infinity, insertAfter = false;
+  for (const card of cards) {
+    const rect = card.getBoundingClientRect();
+    const mid  = rect.top + rect.height / 2;
+    const dist = Math.abs(clientY - mid);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest     = card;
+      insertAfter = clientY > mid;
+    }
+  }
+  return { nearest, insertAfter };
+}
+
 function setupDrag() {
   // ── Bookmark drag ──────────────────────────────────────────────
   document.querySelectorAll('.bookmark-card').forEach(card => {
@@ -4129,52 +4177,6 @@ function setupDrag() {
   });
 
   // cross-type drag handled by .grid-col ondrop
-
-  // ── Grid column drop zones — full column is a drop target ──────────────────
-  // Each .grid-col accepts drops anywhere (empty space OR over cards).
-  // We track the insertion point by finding which card the mouse is nearest to.
-  let dropIndicator = null;
-
-  function getDropIndicator() {
-    if (!dropIndicator) {
-      dropIndicator = document.createElement('div');
-      dropIndicator.className = 'drop-indicator';
-    }
-    return dropIndicator;
-  }
-
-  function clearDropIndicator() {
-    dropIndicator?.remove();
-    document.querySelectorAll('.grid-col-over').forEach(el => el.classList.remove('grid-col-over'));
-  }
-
-  function cardKey(card) {
-    if (!card) return null;
-    return card.dataset.specialId ? 'special:' + card.dataset.specialId
-         : card.dataset.colId    ? 'col:' + card.dataset.colId
-         : card.dataset.widgetId ? 'widget:' + card.dataset.widgetId
-         : null;
-  }
-
-  function getCardsInCol(col) {
-    return [...col.querySelectorAll(':scope > .folder-card, :scope > .widget-card')];
-  }
-
-  function getNearestCard(col, clientY) {
-    const cards = getCardsInCol(col).filter(c => cardKey(c) !== dragCol);
-    let nearest = null, nearestDist = Infinity, insertAfter = false;
-    for (const card of cards) {
-      const rect = card.getBoundingClientRect();
-      const mid  = rect.top + rect.height / 2;
-      const dist = Math.abs(clientY - mid);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest     = card;
-        insertAfter = clientY > mid;
-      }
-    }
-    return { nearest, insertAfter };
-  }
 
   // Grid-col drop zones must be scoped per container. #grid (bookmarks) and
   // #dashboard-grid (widgets) both exist in the DOM at the same time (just
