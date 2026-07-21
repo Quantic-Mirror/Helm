@@ -1642,6 +1642,51 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   font-size: 13px; color: var(--text-dim);
 }
 
+/* Network info card */
+.net-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.net-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.net-title {
+  font-family: var(--font-display);
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.net-body {
+  display: flex; gap: 0;
+}
+.net-group {
+  flex: 1;
+  padding: 12px 16px;
+}
+.net-group + .net-group {
+  border-left: 1px solid var(--border);
+}
+.net-group-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.net-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 3px 0;
+}
+.net-label {
+  font-size: 11px; color: var(--text-dim);
+  flex-shrink: 0; min-width: 36px;
+}
+.net-value {
+  font-family: monospace; font-size: 12px; color: var(--text);
+  word-break: break-all;
+}
+.net-none { color: var(--text-dim); font-family: var(--font-body); }
+
 /* ── NEWS PAGE ──────────────────────────────────────────────────────────────── */
 #news-page {
   padding: 20px 24px;
@@ -2105,6 +2150,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <span id="services-last-updated"></span>
     <button class="btn" id="btn-refresh-services">↺ Refresh</button>
   </div>
+  <div id="network-info-section"></div>
   <div id="services-grid"></div>
 </div>
 
@@ -2751,7 +2797,6 @@ function render() {
 const ENGINES = {
   searx:     { label: 'Searx',     url: 'http://popcorn:8080/search?q=',                        icon: '🔍' },
   startpage: { label: 'Startpage', url: 'https://www.startpage.com/search?q=',                  icon: '🌐' },
-  privau:    { label: 'priv.au',   url: 'https://priv.au/search?q=',                            icon: '🔒' },
   youtube:   { label: 'YouTube',   url: 'https://www.youtube.com/results?search_query=',         icon: '▶' },
 };
 
@@ -6236,17 +6281,71 @@ async function fetchServices() {
   const hasBackend = await checkLocalBackend();
   if (!hasBackend) {
     document.getElementById('services-grid').innerHTML =
-      '<div class="svc-error">Services monitoring requires the local backend (marks_server.py). Not reachable.</div>';
+      '<div class="svc-error">Services monitoring requires the local backend (helm_server.py). Not reachable.</div>';
     return;
   }
+  // Fetch both in parallel
+  const [,] = await Promise.all([fetchNetworkInfo(), fetchServiceStatus()]);
+  const el = document.getElementById('services-last-updated');
+  if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+async function fetchNetworkInfo() {
+  try {
+    const resp = await fetch('/api/network', { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    renderNetworkInfo(data);
+  } catch(e) {
+    const el = document.getElementById('network-info-section');
+    if (el) el.innerHTML = '<div class="svc-error">Could not fetch network info.</div>';
+  }
+}
+
+function renderNetworkInfo(data) {
+  const el = document.getElementById('network-info-section');
+  if (!el) return;
+
+  const row = (label, values) => {
+    if (!values || (Array.isArray(values) && values.length === 0) || values === null) {
+      return `<div class="net-row"><span class="net-label">${label}</span><span class="net-value net-none">—</span></div>`;
+    }
+    const vals = Array.isArray(values) ? values : [values];
+    return vals.map(v => `
+      <div class="net-row">
+        <span class="net-label">${label}</span>
+        <span class="net-value">${escHtml(v)}</span>
+      </div>`).join('');
+  };
+
+  el.innerHTML = `
+    <div class="net-card">
+      <div class="net-header">
+        <span class="net-title">🌐 Network</span>
+      </div>
+      <div class="net-body">
+        <div class="net-group">
+          <div class="net-group-label">Private</div>
+          ${row('IPv4', data.private_ipv4)}
+          ${row('IPv6', data.private_ipv6)}
+        </div>
+        <div class="net-group">
+          <div class="net-group-label">Public</div>
+          ${row('IPv4', data.public_ipv4)}
+          ${row('IPv6', data.public_ipv6)}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function fetchServiceStatus() {
   try {
     const resp = await fetch('/api/services', { signal: AbortSignal.timeout(30000) });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     servicesData = data.services || [];
     renderServicesPage();
-    const el = document.getElementById('services-last-updated');
-    if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   } catch(e) {
     document.getElementById('services-grid').innerHTML =
       `<div class="svc-error">Could not fetch service status: ${escHtml(e.message)}</div>`;
