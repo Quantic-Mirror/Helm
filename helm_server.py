@@ -516,6 +516,64 @@ def control_service(service_id, action):
     return False, "Unsupported service type"
 
 
+def get_network_info():
+    """Return public and private IPv4/IPv6 addresses."""
+    import socket as _sock
+    import urllib.request
+
+    result = {
+        "private_ipv4": [],
+        "private_ipv6": [],
+        "public_ipv4":  None,
+        "public_ipv6":  None,
+    }
+
+    # ── Private addresses via getaddrinfo ─────────────────────────────────────
+    try:
+        hostname = _sock.gethostname()
+        infos = _sock.getaddrinfo(hostname, None)
+        seen = set()
+        for info in infos:
+            addr = info[4][0]
+            if addr in seen:
+                continue
+            seen.add(addr)
+            # Skip loopback
+            if addr.startswith("127.") or addr == "::1":
+                continue
+            if ":" in addr:
+                result["private_ipv6"].append(addr)
+            else:
+                result["private_ipv4"].append(addr)
+    except Exception as e:
+        result["private_error"] = str(e)
+
+    # Also grab IPs from all interfaces via socket trick
+    try:
+        s = _sock.socket(_sock.AF_INET, _sock.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip not in result["private_ipv4"]:
+            result["private_ipv4"].insert(0, ip)
+    except Exception:
+        pass
+
+    # ── Public addresses via external lookup ──────────────────────────────────
+    def fetch_ip(url, timeout=5):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Helm/1.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read().decode().strip()
+        except Exception:
+            return None
+
+    result["public_ipv4"] = fetch_ip("https://api4.my-ip.io/v2/ip.txt")
+    result["public_ipv6"] = fetch_ip("https://api6.my-ip.io/v2/ip.txt")
+
+    return result
+
+
 class HelmHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         path = args[0] if args else ""
@@ -570,6 +628,10 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        if parsed.path == "/api/network":
+            self.send_json(200, get_network_info())
             return
 
         if parsed.path == "/api/services":
