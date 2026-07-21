@@ -6292,13 +6292,14 @@ async function fetchServices() {
 
 async function fetchNetworkInfo() {
   try {
-    const resp = await fetch('/api/network', { signal: AbortSignal.timeout(10000) });
-    if (!resp.ok) return;
+    const resp = await fetch('/api/network', { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     renderNetworkInfo(data);
   } catch(e) {
     const el = document.getElementById('network-info-section');
-    if (el) el.innerHTML = '<div class="svc-error">Could not fetch network info.</div>';
+    if (el) el.innerHTML = `<div class="svc-error">Could not fetch network info: ${escHtml(e.message)}</div>`;
+    console.log('[Helm] Network info error:', e);
   }
 }
 
