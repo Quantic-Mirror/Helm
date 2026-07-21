@@ -564,12 +564,14 @@ def get_network_info():
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Helm/1.0"})
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read().decode().strip()
+                raw = r.read().decode().strip()
+                # Some services return extra data after the IP — take only the first line
+                return raw.splitlines()[0].strip()
         except Exception:
             return None
 
-    result["public_ipv4"] = fetch_ip("https://api4.my-ip.io/v2/ip.txt")
-    result["public_ipv6"] = fetch_ip("https://api6.my-ip.io/v2/ip.txt")
+    result["public_ipv4"] = fetch_ip("https://api4.ipify.org")
+    result["public_ipv6"] = fetch_ip("https://api6.ipify.org")
 
     return result
 
