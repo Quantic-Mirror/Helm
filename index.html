@@ -849,22 +849,6 @@ body {
 .timer-ctrl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .timer-ctrl-btn:disabled { opacity: 0.4; cursor: default; }
 
-/* Terminal widget */
-.terminal-wrapper {
-  resize: vertical;
-  overflow: hidden;
-  min-height: 200px;
-  max-height: 80vh;
-  border-top: 1px solid var(--border);
-  background: #0a0e14;
-}
-.terminal-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
-
 /* On This Day widget */
 .onthisday-body { padding: 12px 14px 14px; }
 .otd-loading, .otd-error {
@@ -2156,7 +2140,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-add-clock">Clock</button>
           <button class="dropdown-item" id="btn-add-sysstats">Sys Stats</button>
           <button class="dropdown-item" id="btn-add-todo">To Do</button>
-          <button class="dropdown-item" id="btn-add-terminal">Terminal</button>
           <button class="dropdown-item" id="btn-add-onthisday">On This Day</button>
           <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
         </div>
@@ -2663,6 +2646,8 @@ function load() {
     });
   }
   if (!state.settings.reminderDays && state.settings.reminderDays !== 0) state.settings.reminderDays = 7;
+  // Terminal widget was removed as a feature — drop any leftover instances
+  if (state.widgets) state.widgets = state.widgets.filter(w => w.type !== 'terminal');
   if (!state.widgets || state.widgets.length === 0) {
     state.widgets = [
       { id: uid(), type: 'search', engine: 'searx' },
@@ -2759,7 +2744,6 @@ function renderDashboard() {
     clock: renderClockWidget,
     sysstats: renderSysStatsWidget,
     todo: renderTodoWidget,
-    terminal: renderTerminalWidget,
     onthisday: renderOnThisDayWidget,
     randomwiki: renderRandomWikiWidget,
   };
@@ -3878,12 +3862,6 @@ window.openWidgetCfg = function(wid) {
     delete WX_CACHE[wid];
     save();
     render();
-    renderDashboard();
-  } else if (w.type === 'terminal') {
-    const url = prompt('Terminal (ttyd) URL:', w.terminalUrl || 'https://popcorn:7681');
-    if (url === null) return;
-    w.terminalUrl = url.trim() || w.terminalUrl;
-    save();
     renderDashboard();
   }
 };
@@ -5308,69 +5286,6 @@ function wireTodoListEvents(widgetId) {
   });
 }
 
-// ── TERMINAL WIDGET ───────────────────────────────────────────────────────────
-// Embeds a ttyd (WebSocket-backed terminal) instance via iframe. ttyd itself
-// must be installed and running separately (pacman -S ttyd on Arch) — this
-// widget is just a viewport onto it, same pattern as the IRC tab embedding
-// The Lounge. Height is resizable and persisted, same approach as Notes.
-
-function renderTerminalWidget(w) {
-  const el = document.createElement('div');
-  el.className = 'folder-card widget-card terminal-widget';
-  el.dataset.widgetId = w.id;
-  el.draggable = false;
-  const url = w.terminalUrl || 'https://popcorn:7681';
-  const height = w.terminalHeight || 360;
-
-  el.innerHTML = `
-    <div class="folder-header widget-header">
-      <span class="col-dot" style="background:#F85149"></span>
-      <span class="column-title" style="cursor:default">Terminal</span>
-      <div class="col-actions" style="opacity:1">
-        <button class="icon-btn" title="Change terminal URL" data-cfg-widget="${w.id}">⚙</button>
-        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
-      </div>
-    </div>
-    <div class="terminal-wrapper" id="terminal-wrap-${w.id}" style="height:${height}px">
-      <iframe class="terminal-iframe" id="terminal-frame-${w.id}" src="${escHtml(url)}" title="Terminal"></iframe>
-    </div>
-  `;
-
-  setTimeout(() => {
-    const header = el.querySelector('.widget-header');
-    if (header) header.onmousedown = (e) => {
-      if (e.target.closest('button')) return;
-      el.draggable = true;
-    };
-    el.addEventListener('dragend', () => { el.draggable = false; });
-    document.addEventListener('mouseup', () => { el.draggable = false; });
-
-    // Persist wrapper height across reloads, same pattern as Notes —
-    // look up the live widget by id at save time so a mid-session sync poll
-    // replacing state.widgets can never orphan this reference.
-    const widgetId = w.id;
-    const wrap = document.getElementById('terminal-wrap-' + widgetId);
-    if (wrap) {
-      let resizeSaveTimer;
-      const resizeObserver = new ResizeObserver(() => {
-        clearTimeout(resizeSaveTimer);
-        resizeSaveTimer = setTimeout(() => {
-          const liveWidget = state.widgets.find(x => x.id === widgetId);
-          if (!liveWidget) return;
-          const newHeight = Math.round(wrap.getBoundingClientRect().height);
-          if (newHeight && newHeight !== liveWidget.terminalHeight) {
-            liveWidget.terminalHeight = newHeight;
-            save();
-          }
-        }, 400);
-      });
-      resizeObserver.observe(wrap);
-    }
-  }, 0);
-
-  return el;
-}
-
 // ── ON THIS DAY WIDGET ────────────────────────────────────────────────────────
 // Fetches today's historical events from the Wikimedia REST API. Cached
 // per-day (shared across all On This Day widgets) since the content is
@@ -5705,11 +5620,6 @@ document.getElementById('btn-add-sysstats').onclick = () => {
 };
 document.getElementById('btn-add-todo').onclick = () => {
   state.widgets.push({ id: uid(), type: 'todo', todos: [], gridCol: 1 });
-  save(); render(); renderDashboard();
-};
-document.getElementById('btn-add-terminal').onclick = () => {
-  // Defaults to the left column, per the user's request
-  state.widgets.push({ id: uid(), type: 'terminal', terminalUrl: 'https://popcorn:7681', gridCol: 0 });
   save(); render(); renderDashboard();
 };
 document.getElementById('btn-add-onthisday').onclick = () => {
