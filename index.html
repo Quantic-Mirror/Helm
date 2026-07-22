@@ -1075,6 +1075,11 @@ body {
   outline: none;
 }
 .vault-form input:focus { border-color: var(--accent); }
+.vault-form-editing-label {
+  font-size: 10px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.vault-form input[readonly] { color: var(--text-dim); cursor: not-allowed; }
 .vault-form-secret-row { display: flex; gap: 6px; }
 .vault-health-panel {
   background: var(--surface-2);
@@ -5642,6 +5647,7 @@ function renderVaultReveal(widgetId) {
         <span class="vault-reveal-value">${escHtml(d.expires)}</span>
       </div>` : ''}
       <div class="vault-reveal-row">
+        <button class="btn" data-vault-edit style="flex:1">Edit</button>
         <button class="btn" data-vault-close-reveal style="flex:1">Hide</button>
       </div>
     </div>
@@ -5650,6 +5656,8 @@ function renderVaultReveal(widgetId) {
   if (copyUserBtn) copyUserBtn.onclick = () => vaultCopy(d.username, copyUserBtn);
   const copySecretBtn = revealEl.querySelector('[data-vault-copy-secret]');
   if (copySecretBtn) copySecretBtn.onclick = () => vaultCopy(d.secret, copySecretBtn);
+  const editBtn = revealEl.querySelector('[data-vault-edit]');
+  if (editBtn) editBtn.onclick = () => vaultEditEntry(widgetId);
   const closeBtn = revealEl.querySelector('[data-vault-close-reveal]');
   if (closeBtn) closeBtn.onclick = () => {
     vaultState(widgetId).revealedPath = null;
@@ -5668,8 +5676,33 @@ function vaultCopy(text, btn) {
 }
 
 function vaultToggleForm(widgetId) {
-  vaultState(widgetId).formOpen = !vaultState(widgetId).formOpen;
+  const st = vaultState(widgetId);
+  st.formOpen = !st.formOpen;
+  if (st.formOpen) {
+    // Opening via the "+ New entry" button always starts blank —
+    // editing an existing entry goes through vaultEditEntry instead.
+    st.editingPath = null;
+    st.editingPrefill = null;
+  }
   renderVaultForm(widgetId);
+}
+
+function vaultEditEntry(widgetId) {
+  const st = vaultState(widgetId);
+  const d = st.revealedData;
+  if (!d) return;
+  st.editingPath = d.path;
+  st.editingPrefill = {
+    username: d.username || '',
+    url: d.url || '',
+    tags: (d.tags || []).join(', '),
+    expires: d.expires || '',
+    secret: d.secret || '',
+  };
+  st.formOpen = true;
+  renderVaultForm(widgetId);
+  const formEl = document.getElementById('vault-form-' + widgetId);
+  if (formEl) formEl.scrollIntoView({ block: 'nearest' });
 }
 
 function renderVaultForm(widgetId) {
@@ -5677,19 +5710,23 @@ function renderVaultForm(widgetId) {
   if (!formEl) return;
   const st = vaultState(widgetId);
   if (!st.formOpen) { formEl.innerHTML = ''; return; }
+  const isEdit = !!st.editingPath;
+  const p = st.editingPrefill || {};
   formEl.innerHTML = `
     <div class="vault-form">
-      <input type="text" id="vault-new-path-${widgetId}" placeholder="path, e.g. banking/chase">
-      <input type="text" id="vault-new-username-${widgetId}" placeholder="username (optional)">
+      ${isEdit ? `<div class="vault-form-editing-label">Editing ${escHtml(st.editingPath)}</div>` : ''}
+      <input type="text" id="vault-new-path-${widgetId}" placeholder="path, e.g. banking/chase"
+        value="${escHtml(isEdit ? st.editingPath : '')}" ${isEdit ? 'readonly' : ''}>
+      <input type="text" id="vault-new-username-${widgetId}" placeholder="username (optional)" value="${escHtml(p.username || '')}">
       <div class="vault-form-secret-row">
-        <input type="text" id="vault-new-secret-${widgetId}" placeholder="password" style="flex:1">
+        <input type="text" id="vault-new-secret-${widgetId}" placeholder="password" style="flex:1" value="${escHtml(p.secret || '')}">
         <button class="btn" data-vault-generate="${widgetId}">Generate</button>
       </div>
-      <input type="text" id="vault-new-url-${widgetId}" placeholder="url (optional)">
-      <input type="text" id="vault-new-tags-${widgetId}" placeholder="tags, comma-separated (optional)">
-      <input type="text" id="vault-new-expires-${widgetId}" placeholder="expires YYYY-MM-DD (optional)">
+      <input type="text" id="vault-new-url-${widgetId}" placeholder="url (optional)" value="${escHtml(p.url || '')}">
+      <input type="text" id="vault-new-tags-${widgetId}" placeholder="tags, comma-separated (optional)" value="${escHtml(p.tags || '')}">
+      <input type="text" id="vault-new-expires-${widgetId}" placeholder="expires YYYY-MM-DD (optional)" value="${escHtml(p.expires || '')}">
       <div class="vault-actions-row" style="margin:0">
-        <button class="btn primary" style="flex:1" data-vault-save="${widgetId}">Save entry</button>
+        <button class="btn primary" style="flex:1" data-vault-save="${widgetId}">${isEdit ? 'Save changes' : 'Save entry'}</button>
         <button class="btn" data-vault-cancel="${widgetId}">Cancel</button>
       </div>
     </div>
@@ -5703,7 +5740,13 @@ function renderVaultForm(widgetId) {
   if (saveBtn) saveBtn.onclick = () => vaultSubmitForm(widgetId);
 
   const cancelBtn = formEl.querySelector('[data-vault-cancel]');
-  if (cancelBtn) cancelBtn.onclick = () => { vaultState(widgetId).formOpen = false; renderVaultForm(widgetId); };
+  if (cancelBtn) cancelBtn.onclick = () => {
+    const st = vaultState(widgetId);
+    st.formOpen = false;
+    st.editingPath = null;
+    st.editingPrefill = null;
+    renderVaultForm(widgetId);
+  };
 }
 
 async function vaultGenerate(widgetId) {
@@ -5737,19 +5780,30 @@ async function vaultSubmitForm(widgetId) {
   const tags = val('vault-new-tags-' + widgetId);
   const expires = val('vault-new-expires-' + widgetId);
 
+  const st = vaultState(widgetId);
+  const isEdit = !!st.editingPath;
+
   try {
     const resp = await fetch(vaultEntryUrl(path), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret, username, url, tags, expires }),
+      // force=true on edit: pass insert would otherwise prompt an
+      // interactive "overwrite?" confirmation that has nowhere to go
+      // through a subprocess call, and would just hang like the pinentry
+      // issue did. New entries never need this since the path is fresh.
+      body: JSON.stringify({ secret, username, url, tags, expires, force: isEdit }),
       signal: AbortSignal.timeout(15000),
     });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + resp.status));
-    vaultState(widgetId).formOpen = false;
+
+    st.formOpen = false;
+    st.editingPath = null;
+    st.editingPrefill = null;
     renderVaultForm(widgetId);
     refreshVaultStatus(widgetId);
-    if (vaultState(widgetId).query) vaultSearch(widgetId);
+    if (st.query) vaultSearch(widgetId);
+    if (isEdit) vaultReveal(widgetId, path); // refresh the open reveal panel with the new values
   } catch (e) {
     alert('Could not save entry: ' + e.message);
   }
