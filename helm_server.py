@@ -177,15 +177,51 @@ def _signal_get_number():
     return None
 
 
-def _signal_conv_key(envelope):
-    """Derive a stable conversation id from a signal-cli-rest-api envelope.
-    Returns (conv_id, group_id_or_None)."""
-    data_msg = envelope.get("dataMessage") or {}
-    group_info = data_msg.get("groupInfo")
-    if group_info and group_info.get("groupId"):
-        return "group:" + group_info["groupId"], group_info["groupId"]
-    source = envelope.get("sourceNumber") or envelope.get("source") or "unknown"
-    return "dm:" + source, None
+def _signal_extract_message(envelope):
+    """Normalize both envelope shapes signal-cli-rest-api sends into one
+    common structure. Returns None if this envelope isn't a plain text
+    message (e.g. it's a receipt or typing indicator).
+
+    - dataMessage: an INCOMING message sent to this account. The
+      conversation is keyed by the sender.
+    - syncMessage.sentMessage: an OUTGOING message that was sent from any
+      of this account's linked devices (including the phone itself, not
+      just this widget). Multi-device sync delivers a copy of every sent
+      message this way so all linked devices stay consistent. The
+      conversation is keyed by the recipient, not the sender (the sender
+      is always "this account" in this case).
+    """
+    data_msg = envelope.get("dataMessage")
+    if data_msg and data_msg.get("message"):
+        group_info = data_msg.get("groupInfo") or {}
+        group_id = group_info.get("groupId")
+        peer = envelope.get("sourceNumber") or envelope.get("source")
+        return {
+            "text": data_msg["message"],
+            "group_id": group_id,
+            "group_name": group_info.get("groupName"),
+            "peer_number": peer,
+            "peer_name": envelope.get("sourceName"),
+            "outgoing": False,
+            "timestamp": envelope.get("timestamp", 0),
+        }
+
+    sent_msg = (envelope.get("syncMessage") or {}).get("sentMessage")
+    if sent_msg and sent_msg.get("message"):
+        group_info = sent_msg.get("groupInfo") or {}
+        group_id = group_info.get("groupId")
+        peer = sent_msg.get("destinationNumber") or sent_msg.get("destination")
+        return {
+            "text": sent_msg["message"],
+            "group_id": group_id,
+            "group_name": group_info.get("groupName"),
+            "peer_number": peer,
+            "peer_name": None,
+            "outgoing": True,
+            "timestamp": sent_msg.get("timestamp") or envelope.get("timestamp", 0),
+        }
+
+    return None
 
 
 def _signal_poll_once():
@@ -199,34 +235,57 @@ def _signal_poll_once():
         changed = False
         for item in data:
             envelope = item.get("envelope") or {}
-            data_msg = envelope.get("dataMessage")
-            if not data_msg or not data_msg.get("message"):
-                continue  # skip receipts, typing indicators, and non-text messages
-            conv_id, group_id = _signal_conv_key(envelope)
+            msg = _signal_extract_message(envelope)
+            if not msg:
+                continue  # receipts, typing indicators, reactions, etc — not a text message
+
+            group_id = msg["group_id"]
+            if group_id:
+                conv_id = "group:" + group_id
+            elif msg["peer_number"]:
+                conv_id = "dm:" + msg["peer_number"]
+            else:
+                continue  # no way to identify who this is to/from — skip
+
             conv = _signal_store["conversations"].setdefault(conv_id, {
                 "name": conv_id,
                 "is_group": bool(group_id),
                 "group_id": group_id,
-                "peer_number": None if group_id else (envelope.get("sourceNumber") or envelope.get("source")),
+                "peer_number": None if group_id else msg["peer_number"],
                 "messages": [],
             })
             if not group_id:
-                conv["peer_number"] = envelope.get("sourceNumber") or envelope.get("source")
-                conv["name"] = envelope.get("sourceName") or conv["peer_number"] or conv_id
-            elif not conv.get("name") or conv["name"] == conv_id:
-                group_info = data_msg.get("groupInfo") or {}
-                if group_info.get("groupName"):
-                    conv["name"] = group_info["groupName"]
+                conv["peer_number"] = msg["peer_number"]
+                if msg["peer_name"]:
+                    conv["name"] = msg["peer_name"]
+                elif conv["name"] == conv_id:
+                    conv["name"] = msg["peer_number"] or conv_id
+            elif msg["group_name"] and (not conv.get("name") or conv["name"] == conv_id):
+                conv["name"] = msg["group_name"]
 
-            msg_id = str(envelope.get("timestamp", "")) + ":" + str(envelope.get("source", ""))
+            msg_id = str(msg["timestamp"]) + (":out" if msg["outgoing"] else ":in:" + str(msg["peer_number"]))
             if any(m["id"] == msg_id for m in conv["messages"][-20:]):
                 continue  # de-dupe against recently-seen messages
+
+            # An outgoing sync message can arrive shortly after we've already
+            # optimistically appended the same send from this widget's own
+            # POST /api/signal/send handler. Since the two paths assign
+            # different timestamps (our local clock vs Signal's), exact ID
+            # matching won't catch it — so also skip if the most recent
+            # message in this conversation is already an outgoing message
+            # with identical text within the last 10 seconds.
+            if msg["outgoing"] and conv["messages"]:
+                last = conv["messages"][-1]
+                if last["outgoing"] and last["text"] == msg["text"] \
+                        and abs(last["timestamp"] - msg["timestamp"]) < 10000:
+                    continue
+
             conv["messages"].append({
                 "id": msg_id,
-                "from": envelope.get("sourceName") or envelope.get("sourceNumber") or envelope.get("source") or "?",
-                "text": data_msg.get("message", ""),
-                "timestamp": envelope.get("timestamp", 0),
-                "outgoing": False,
+                "from": "You" if msg["outgoing"] else (msg["peer_name"] or msg["peer_number"] or "?"),
+                "text": msg["text"],
+                "timestamp": msg["timestamp"],
+                "outgoing": msg["outgoing"],
             })
             conv["messages"] = conv["messages"][-SIGNAL_MAX_MESSAGES_PER_CONV:]
             changed = True
