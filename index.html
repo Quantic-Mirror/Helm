@@ -1093,6 +1093,28 @@ body {
 .vault-health-count { color: var(--text-dim); }
 .vault-health-count.warn { color: var(--amber); }
 .vault-health-count.bad { color: var(--red); }
+.vault-health-clickable { cursor: pointer; }
+.vault-health-clickable:hover { color: var(--accent); }
+.vault-health-detail {
+  padding: 2px 0 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.vault-health-item {
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 0;
+}
+.vault-health-item:hover { color: var(--accent); }
+.vault-health-score { color: var(--text-dim); }
+.vault-health-group { padding: 2px 0; }
+.vault-health-item-link {
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.vault-health-item-link:hover { color: var(--accent); }
+.vault-health-sep { color: var(--text-dim); margin: 0 4px; }
 
 /* System Stats widget */
 .sysstats-body { padding: 12px 14px 14px; }
@@ -5764,24 +5786,98 @@ function renderVaultHealth(widgetId) {
   if (!st.healthOpen) { el.innerHTML = ''; return; }
   const d = st.healthData;
   if (!d) { el.innerHTML = '<div class="vault-health-panel">Scanning…</div>'; return; }
+  if (!st.healthExpanded) st.healthExpanded = {};
 
-  const row = (label, count, level) => `
+  const plainRow = (label, count) => `
     <div class="vault-health-row">
       <span>${escHtml(label)}</span>
-      <span class="vault-health-count${level ? ' ' + level : ''}">${count}</span>
+      <span class="vault-health-count">${count}</span>
     </div>`;
+
+  // A clickable, expandable category row. `items` should already be an
+  // array of path strings (reused_passwords gets flattened before calling
+  // this, since it's naturally an array of groups).
+  const section = (key, label, items, level) => {
+    const count = items.length;
+    const expanded = !!st.healthExpanded[key];
+    const header = `
+      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? `data-vault-health-toggle="${key}"` : ''}>
+        <span>${escHtml(label)}${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
+        <span class="vault-health-count${level && count ? ' ' + level : ''}">${count}</span>
+      </div>`;
+    if (!expanded || count === 0) return header;
+    const detail = `
+      <div class="vault-health-detail">
+        ${items.map(p => `<div class="vault-health-item" data-vault-health-open="${escHtml(p)}">${escHtml(p)}</div>`).join('')}
+      </div>`;
+    return header + detail;
+  };
+
+  // Weak passwords: show path + score together, still individually clickable.
+  const weakSection = () => {
+    const count = d.weak.length;
+    const expanded = !!st.healthExpanded.weak;
+    const header = `
+      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? 'data-vault-health-toggle="weak"' : ''}>
+        <span>Weak passwords${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
+        <span class="vault-health-count${count ? ' bad' : ''}">${count}</span>
+      </div>`;
+    if (!expanded || count === 0) return header;
+    const detail = `
+      <div class="vault-health-detail">
+        ${d.weak.map(w => `<div class="vault-health-item" data-vault-health-open="${escHtml(w.path)}">${escHtml(w.path)} <span class="vault-health-score">score ${w.score}</span></div>`).join('')}
+      </div>`;
+    return header + detail;
+  };
+
+  // Reused passwords: each group shares one password across several paths —
+  // show the group, with every path in it individually clickable.
+  const reusedSection = () => {
+    const count = d.reused_passwords.length;
+    const expanded = !!st.healthExpanded.reused;
+    const header = `
+      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? 'data-vault-health-toggle="reused"' : ''}>
+        <span>Reused passwords${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
+        <span class="vault-health-count${count ? ' warn' : ''}">${count}</span>
+      </div>`;
+    if (!expanded || count === 0) return header;
+    const detail = `
+      <div class="vault-health-detail">
+        ${d.reused_passwords.map(group => `
+          <div class="vault-health-group">
+            ${group.paths.map(p => `<span class="vault-health-item-link" data-vault-health-open="${escHtml(p)}">${escHtml(p)}</span>`).join('<span class="vault-health-sep">·</span>')}
+          </div>
+        `).join('')}
+      </div>`;
+    return header + detail;
+  };
 
   el.innerHTML = `
     <div class="vault-health-panel">
-      ${row('Entries', d.entry_count)}
-      ${row('Weak passwords', d.weak.length, d.weak.length ? 'bad' : '')}
-      ${row('Reused passwords', d.reused_passwords.length, d.reused_passwords.length ? 'warn' : '')}
-      ${row('Expired', d.expired.length, d.expired.length ? 'bad' : '')}
-      ${row('Expiring within 30 days', d.expiring_soon.length, d.expiring_soon.length ? 'warn' : '')}
-      ${row('Missing username', d.missing_username.length, d.missing_username.length ? 'warn' : '')}
-      ${row('No tags', d.no_tags.length)}
+      ${plainRow('Entries', d.entry_count)}
+      ${weakSection()}
+      ${reusedSection()}
+      ${section('expired', 'Expired', d.expired, 'bad')}
+      ${section('expiring_soon', 'Expiring within 30 days', d.expiring_soon, 'warn')}
+      ${section('missing_username', 'Missing username', d.missing_username, 'warn')}
+      ${section('no_tags', 'No tags', d.no_tags, '')}
     </div>
   `;
+
+  el.querySelectorAll('[data-vault-health-toggle]').forEach(rowEl => {
+    rowEl.onclick = () => {
+      const key = rowEl.dataset.vaultHealthToggle;
+      st.healthExpanded[key] = !st.healthExpanded[key];
+      renderVaultHealth(widgetId);
+    };
+  });
+
+  el.querySelectorAll('[data-vault-health-open]').forEach(item => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      vaultReveal(widgetId, item.dataset.vaultHealthOpen);
+    };
+  });
 }
 
 async function vaultLock(widgetId) {
