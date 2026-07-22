@@ -2858,7 +2858,6 @@ function renderDashboard() {
     todo: renderTodoWidget,
     onthisday: renderOnThisDayWidget,
     randomwiki: renderRandomWikiWidget,
-    vault: renderVaultWidget,
   };
 
   // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
@@ -2893,7 +2892,8 @@ function render() {
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
 
-  // Build 3 explicit flex columns (no widgets — they live on the Dashboard page)
+  // Build 3 explicit flex columns (most widgets live on the Dashboard page —
+  // the Vault widget is the one exception, rendered here instead, below)
   const cols3 = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
   cols3.forEach(c => { c.className = 'grid-col'; });
 
@@ -2946,6 +2946,17 @@ function render() {
       const gc = Math.min(Math.max(state.settings.recentCol, 0), 2);
       cols3[gc].appendChild(rc);
     }
+  }
+
+  // Vault widget — deliberately lives on the Bookmarks page rather than the
+  // Dashboard page (unlike every other widget type). Uses the same gridCol
+  // convention as the rest of state.widgets.
+  if (!searchQ) {
+    state.widgets.filter(w => w.type === 'vault').forEach(w => {
+      if (w.gridCol === undefined) w.gridCol = 0;
+      const gc = Math.min(Math.max(w.gridCol, 0), 2);
+      cols3[gc].appendChild(renderVaultWidget(w));
+    });
   }
 
   // Folder cards: each column object carries a persistent gridCol (0/1/2)
@@ -6131,7 +6142,7 @@ document.getElementById('btn-add-randomwiki').onclick = () => {
 };
 document.getElementById('btn-add-vault').onclick = () => {
   state.widgets.push({ id: uid(), type: 'vault', gridCol: 0 });
-  save(); render(); renderDashboard();
+  save(); render();
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
 document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);
