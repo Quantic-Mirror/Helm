@@ -934,6 +934,72 @@ body {
 }
 .rwiki-link:hover { text-decoration: underline; }
 
+/* Signal widget */
+.signal-body { padding: 8px 14px 12px; display: flex; flex-direction: column; }
+.signal-status-row {
+  font-size: 11px; color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.signal-status-row.signal-status-unlinked { color: var(--amber); }
+.signal-empty {
+  font-size: 11px; color: var(--text-dim); padding: 12px 2px; text-align: center;
+}
+.signal-conv-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.signal-conv-item {
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.signal-conv-item:last-child { border-bottom: none; }
+.signal-conv-item:hover { background: var(--surface-2); }
+.signal-conv-name { font-size: 12px; font-weight: 600; color: var(--text); }
+.signal-conv-group-tag {
+  font-size: 9px; font-weight: 500; color: var(--text-dim);
+  background: var(--surface-3); border-radius: 6px; padding: 1px 5px;
+}
+.signal-conv-preview {
+  font-size: 11px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.signal-thread-header {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px;
+}
+.signal-thread-name { font-size: 12px; font-weight: 600; color: var(--text); }
+.signal-thread {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 260px; overflow-y: auto;
+  padding: 4px 2px; margin-bottom: 8px;
+}
+.signal-msg { max-width: 85%; }
+.signal-msg-in { align-self: flex-start; }
+.signal-msg-out { align-self: flex-end; }
+.signal-msg-from { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
+.signal-msg-text {
+  font-size: 12px; color: var(--text);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 6px 10px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.signal-msg-out .signal-msg-text { background: var(--accent); color: #0D1117; }
+.signal-compose { display: flex; gap: 6px; }
+.signal-compose input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.signal-compose input:focus { border-color: var(--accent); }
+
 /* Vault widget */
 .vault-body { padding: 8px 14px 12px; }
 .vault-status-row {
@@ -2387,6 +2453,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
           <button class="dropdown-item" id="btn-add-vault">Password Vault</button>
+          <button class="dropdown-item" id="btn-add-signal">Signal Messages</button>
         </div>
       </div>
       <div class="dropdown" id="dd-tools">
@@ -3019,6 +3086,7 @@ function renderDashboard() {
     randomwiki: renderRandomWikiWidget,
     quoteoftheday: renderQuoteWidget,
     sunmoon: renderSunMoonWidget,
+    signal: renderSignalWidget,
   };
 
   // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
@@ -6441,6 +6509,216 @@ function renderSunMoonHtml(body, data) {
   `;
 }
 
+// ── SIGNAL WIDGET ─────────────────────────────────────────────────────────────
+// Talks to /api/signal/* (proxied by helm_server.py to a locally-running
+// signal-cli-rest-api Docker container). Like the Vault widget, none of this
+// widget's live data — conversation list, message threads — lives in
+// state.widgets or gets synced; it's read fresh from the server's own
+// persisted message store on every poll. Only the widget's existence and
+// gridCol are part of the saved app state.
+
+const SIGNAL_STATE = {};   // widgetId -> { activeConvId, conversations }
+const SIGNAL_TIMERS = {};  // widgetId -> poll interval id
+
+function signalState(widgetId) {
+  if (!SIGNAL_STATE[widgetId]) {
+    SIGNAL_STATE[widgetId] = { activeConvId: null, conversations: [] };
+  }
+  return SIGNAL_STATE[widgetId];
+}
+
+function renderSignalWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card signal-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#3A76F0"></span>
+      <span class="column-title" style="cursor:default">Signal</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="signal-body" id="signal-body-${w.id}">
+      <div class="signal-status-row" id="signal-status-${w.id}">Checking status…</div>
+      <div id="signal-content-${w.id}"></div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    loadSignalStatus(w.id);
+    loadSignalConversations(w.id);
+    clearInterval(SIGNAL_TIMERS[w.id]);
+    SIGNAL_TIMERS[w.id] = setInterval(() => {
+      const st = signalState(w.id);
+      if (st.activeConvId) {
+        loadSignalMessages(w.id, st.activeConvId, /*silent=*/true);
+      } else {
+        loadSignalConversations(w.id);
+      }
+    }, 4000);
+  }, 0);
+
+  return el;
+}
+
+async function loadSignalStatus(widgetId) {
+  const el = document.getElementById('signal-status-' + widgetId);
+  if (!el) return;
+  try {
+    const resp = await fetch('/api/signal/status', { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    el.textContent = data.linked ? ('Linked · ' + data.number) : 'Not linked yet';
+    el.className = 'signal-status-row' + (data.linked ? '' : ' signal-status-unlinked');
+  } catch (e) {
+    el.textContent = 'Signal backend unreachable';
+    el.className = 'signal-status-row signal-status-unlinked';
+  }
+}
+
+async function loadSignalConversations(widgetId) {
+  const contentEl = document.getElementById('signal-content-' + widgetId);
+  if (!contentEl) return;
+  try {
+    const resp = await fetch('/api/signal/conversations', { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    signalState(widgetId).conversations = data.conversations || [];
+    if (!signalState(widgetId).activeConvId) {
+      renderSignalConvList(widgetId);
+    }
+  } catch (e) {
+    if (!signalState(widgetId).activeConvId) {
+      contentEl.innerHTML = `<div class="signal-empty">Could not load conversations: ${escHtml(e.message)}</div>`;
+    }
+  }
+}
+
+function renderSignalConvList(widgetId) {
+  const contentEl = document.getElementById('signal-content-' + widgetId);
+  if (!contentEl) return;
+  const convs = signalState(widgetId).conversations;
+  if (convs.length === 0) {
+    contentEl.innerHTML = '<div class="signal-empty">No conversations yet. New messages will appear here once Signal is linked.</div>';
+    return;
+  }
+  contentEl.innerHTML = `
+    <ul class="signal-conv-list">
+      ${convs.map(c => `
+        <li class="signal-conv-item" data-signal-open="${escHtml(c.id)}">
+          <span class="signal-conv-name">${escHtml(c.name)}${c.is_group ? ' <span class="signal-conv-group-tag">group</span>' : ''}</span>
+          <span class="signal-conv-preview">${escHtml(c.last_message)}</span>
+        </li>
+      `).join('')}
+    </ul>
+  `;
+  contentEl.querySelectorAll('[data-signal-open]').forEach(li => {
+    li.onclick = () => openSignalConversation(widgetId, li.dataset.signalOpen);
+  });
+}
+
+function openSignalConversation(widgetId, convId) {
+  signalState(widgetId).activeConvId = convId;
+  loadSignalMessages(widgetId, convId, false);
+}
+
+async function loadSignalMessages(widgetId, convId, silent) {
+  const contentEl = document.getElementById('signal-content-' + widgetId);
+  if (!contentEl) return;
+  if (!silent) contentEl.innerHTML = '<div class="signal-empty">Loading…</div>';
+  try {
+    const resp = await fetch('/api/signal/messages/' + encodeURIComponent(convId), { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    renderSignalThread(widgetId, convId, data.messages || []);
+  } catch (e) {
+    if (!silent) contentEl.innerHTML = `<div class="signal-empty">Could not load messages: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderSignalThread(widgetId, convId, messages) {
+  const contentEl = document.getElementById('signal-content-' + widgetId);
+  if (!contentEl) return;
+  const conv = signalState(widgetId).conversations.find(c => c.id === convId);
+  const name = conv ? conv.name : convId;
+
+  // Preserve scroll position across silent polling refreshes, but always
+  // jump to bottom the first time a thread opens.
+  const existingThread = contentEl.querySelector('.signal-thread');
+  const wasAtBottom = existingThread
+    ? (existingThread.scrollHeight - existingThread.scrollTop - existingThread.clientHeight < 40)
+    : true;
+
+  contentEl.innerHTML = `
+    <div class="signal-thread-header">
+      <button class="icon-btn" data-signal-back title="Back to conversations">←</button>
+      <span class="signal-thread-name">${escHtml(name)}</span>
+    </div>
+    <div class="signal-thread" id="signal-thread-${widgetId}">
+      ${messages.length === 0
+        ? '<div class="signal-empty">No messages yet</div>'
+        : messages.map(m => `
+            <div class="signal-msg ${m.outgoing ? 'signal-msg-out' : 'signal-msg-in'}">
+              ${!m.outgoing ? `<div class="signal-msg-from">${escHtml(m.from)}</div>` : ''}
+              <div class="signal-msg-text">${escHtml(m.text)}</div>
+            </div>
+          `).join('')
+      }
+    </div>
+    <form class="signal-compose" id="signal-compose-${widgetId}" autocomplete="off">
+      <input type="text" id="signal-input-${widgetId}" placeholder="Message…" autocomplete="off" spellcheck="true">
+      <button class="btn primary" type="submit">Send</button>
+    </form>
+  `;
+
+  const threadEl = document.getElementById('signal-thread-' + widgetId);
+  if (threadEl && wasAtBottom) threadEl.scrollTop = threadEl.scrollHeight;
+
+  const backBtn = contentEl.querySelector('[data-signal-back]');
+  if (backBtn) backBtn.onclick = () => {
+    signalState(widgetId).activeConvId = null;
+    renderSignalConvList(widgetId);
+    loadSignalConversations(widgetId);
+  };
+
+  const form = document.getElementById('signal-compose-' + widgetId);
+  const input = document.getElementById('signal-input-' + widgetId);
+  if (input) input.addEventListener('mousedown', (e) => e.stopPropagation());
+  if (form) {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      sendSignalMessage(widgetId, convId, text);
+    };
+  }
+}
+
+async function sendSignalMessage(widgetId, convId, text) {
+  try {
+    const resp = await fetch('/api/signal/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conv_id: convId, text }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + resp.status));
+    loadSignalMessages(widgetId, convId, false);
+  } catch (e) {
+    alert('Could not send message: ' + e.message);
+  }
+}
+
 function renderNotesWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card notes-widget';
@@ -6648,6 +6926,10 @@ document.getElementById('btn-add-sunmoon').onclick = () => {
 document.getElementById('btn-add-vault').onclick = () => {
   state.widgets.push({ id: uid(), type: 'vault', gridCol: 0 });
   save(); render();
+};
+document.getElementById('btn-add-signal').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'signal', gridCol: 1 });
+  save(); render(); renderDashboard();
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
 document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);

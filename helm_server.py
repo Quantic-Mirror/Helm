@@ -52,8 +52,8 @@ import ssl
 import threading
 import urllib.request
 import urllib.error
-from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs, quote
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -95,6 +95,158 @@ def proxy_to_vault(method, path_and_query, body_bytes=None):
 
 
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
+
+# ── SIGNAL INTEGRATION ────────────────────────────────────────────────────────
+# Talks to a locally-running signal-cli-rest-api Docker container (same host
+# as this server, so no cross-machine token proxy needed like the vault).
+#
+# signal-cli-rest-api's /v1/receive endpoint DRAINS its queue on every call —
+# it is not a scrollback API. To show real conversation history across page
+# reloads, a background thread here polls it periodically and persists
+# messages into a local JSON store, grouped by conversation (sender or
+# group). The frontend only ever reads from that persisted store, never
+# directly from signal-cli-rest-api's receive endpoint.
+
+SIGNAL_API_BASE = os.environ.get("SIGNAL_API_URL", "http://127.0.0.1:8082")
+SIGNAL_STORE_FILE = os.path.join(SCRIPT_DIR, "signal_messages.json")
+SIGNAL_POLL_INTERVAL = 3  # seconds
+SIGNAL_MAX_MESSAGES_PER_CONV = 200
+
+_signal_lock = threading.Lock()
+_signal_store = {"number": None, "conversations": {}}
+
+
+def _signal_load_store():
+    global _signal_store
+    if os.path.exists(SIGNAL_STORE_FILE):
+        try:
+            with open(SIGNAL_STORE_FILE, "r", encoding="utf-8") as f:
+                _signal_store = json.load(f)
+                return
+        except Exception:
+            pass
+    _signal_store = {"number": None, "conversations": {}}
+
+
+def _signal_write_store():
+    tmp = SIGNAL_STORE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(_signal_store, f)
+    os.replace(tmp, SIGNAL_STORE_FILE)
+
+
+def _signal_api_get(path, timeout=20):
+    try:
+        req = urllib.request.Request(SIGNAL_API_BASE + path)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            return (json.loads(raw) if raw else None), None
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP {e.code}"
+    except Exception as e:
+        return None, str(e)
+
+
+def _signal_api_post(path, payload, timeout=20):
+    try:
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            SIGNAL_API_BASE + path, data=body, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            return (json.loads(raw) if raw else {}), None
+    except urllib.error.HTTPError as e:
+        try:
+            return None, e.read().decode("utf-8", errors="replace")
+        except Exception:
+            return None, f"HTTP {e.code}"
+    except Exception as e:
+        return None, str(e)
+
+
+def _signal_get_number():
+    """The linked number, cached in the store once discovered."""
+    if _signal_store.get("number"):
+        return _signal_store["number"]
+    data, err = _signal_api_get("/v1/accounts")
+    if data and len(data) > 0:
+        _signal_store["number"] = data[0]
+        return data[0]
+    return None
+
+
+def _signal_conv_key(envelope):
+    """Derive a stable conversation id from a signal-cli-rest-api envelope.
+    Returns (conv_id, group_id_or_None)."""
+    data_msg = envelope.get("dataMessage") or {}
+    group_info = data_msg.get("groupInfo")
+    if group_info and group_info.get("groupId"):
+        return "group:" + group_info["groupId"], group_info["groupId"]
+    source = envelope.get("sourceNumber") or envelope.get("source") or "unknown"
+    return "dm:" + source, None
+
+
+def _signal_poll_once():
+    number = _signal_get_number()
+    if not number:
+        return
+    data, err = _signal_api_get(f"/v1/receive/{quote(number, safe='+')}")
+    if err or not data:
+        return
+    with _signal_lock:
+        changed = False
+        for item in data:
+            envelope = item.get("envelope") or {}
+            data_msg = envelope.get("dataMessage")
+            if not data_msg or not data_msg.get("message"):
+                continue  # skip receipts, typing indicators, and non-text messages
+            conv_id, group_id = _signal_conv_key(envelope)
+            conv = _signal_store["conversations"].setdefault(conv_id, {
+                "name": conv_id,
+                "is_group": bool(group_id),
+                "group_id": group_id,
+                "peer_number": None if group_id else (envelope.get("sourceNumber") or envelope.get("source")),
+                "messages": [],
+            })
+            if not group_id:
+                conv["peer_number"] = envelope.get("sourceNumber") or envelope.get("source")
+                conv["name"] = envelope.get("sourceName") or conv["peer_number"] or conv_id
+            elif not conv.get("name") or conv["name"] == conv_id:
+                group_info = data_msg.get("groupInfo") or {}
+                if group_info.get("groupName"):
+                    conv["name"] = group_info["groupName"]
+
+            msg_id = str(envelope.get("timestamp", "")) + ":" + str(envelope.get("source", ""))
+            if any(m["id"] == msg_id for m in conv["messages"][-20:]):
+                continue  # de-dupe against recently-seen messages
+            conv["messages"].append({
+                "id": msg_id,
+                "from": envelope.get("sourceName") or envelope.get("sourceNumber") or envelope.get("source") or "?",
+                "text": data_msg.get("message", ""),
+                "timestamp": envelope.get("timestamp", 0),
+                "outgoing": False,
+            })
+            conv["messages"] = conv["messages"][-SIGNAL_MAX_MESSAGES_PER_CONV:]
+            changed = True
+        if changed:
+            _signal_write_store()
+
+
+def _signal_poll_loop():
+    while True:
+        try:
+            _signal_poll_once()
+        except Exception as e:
+            print(f"[Helm] Signal poll error (non-fatal): {e}")
+        time.sleep(SIGNAL_POLL_INTERVAL)
+
+
+_signal_load_store()
+threading.Thread(target=_signal_poll_loop, daemon=True).start()
+
+
 KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
 
 # Rolling backup settings
@@ -851,6 +1003,35 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
 
+        if parsed.path == "/api/signal/status":
+            number = _signal_get_number()
+            self.send_json(200, {"linked": bool(number), "number": number})
+            return
+
+        if parsed.path == "/api/signal/conversations":
+            with _signal_lock:
+                convs = []
+                for cid, c in _signal_store["conversations"].items():
+                    last = c["messages"][-1] if c["messages"] else None
+                    convs.append({
+                        "id": cid,
+                        "name": c["name"],
+                        "is_group": c["is_group"],
+                        "last_message": last["text"] if last else "",
+                        "last_timestamp": last["timestamp"] if last else 0,
+                    })
+                convs.sort(key=lambda c: -c["last_timestamp"])
+            self.send_json(200, {"conversations": convs})
+            return
+
+        if parsed.path.startswith("/api/signal/messages/"):
+            conv_id = parsed.path[len("/api/signal/messages/"):]
+            with _signal_lock:
+                conv = _signal_store["conversations"].get(conv_id)
+                messages = list(conv["messages"]) if conv else []
+            self.send_json(200, {"messages": messages})
+            return
+
         super().do_GET()
 
     # ── PUT — last-write-wins, no version conflict rejection ──────────────────
@@ -914,6 +1095,46 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
 
+        if parsed.path == "/api/signal/send":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                self.send_json(400, {"error": "Invalid JSON body"})
+                return
+            conv_id = body.get("conv_id", "")
+            text = body.get("text", "")
+            if not conv_id or not text:
+                self.send_json(400, {"error": "conv_id and text are required"})
+                return
+            number = _signal_get_number()
+            if not number:
+                self.send_json(503, {"error": "Signal not linked yet"})
+                return
+            with _signal_lock:
+                conv = _signal_store["conversations"].get(conv_id)
+            if not conv:
+                self.send_json(404, {"error": "Unknown conversation"})
+                return
+            payload = {"message": text, "number": number}
+            payload["recipients"] = [conv["group_id"]] if conv["is_group"] else [conv["peer_number"]]
+            data, err = _signal_api_post("/v2/send", payload)
+            if err:
+                self.send_json(502, {"error": err})
+                return
+            with _signal_lock:
+                conv["messages"].append({
+                    "id": str(int(time.time() * 1000)) + ":outgoing",
+                    "from": "You",
+                    "text": text,
+                    "timestamp": int(time.time() * 1000),
+                    "outgoing": True,
+                })
+                conv["messages"] = conv["messages"][-SIGNAL_MAX_MESSAGES_PER_CONV:]
+                _signal_write_store()
+            self.send_json(200, {"ok": True})
+            return
+
         self.send_json(404, {"error": "Not found"})
 
     def do_OPTIONS(self):
@@ -974,7 +1195,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    server = HTTPServer(("0.0.0.0", PORT), HelmHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), HelmHandler)
 
     use_tls = os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)
     scheme = "http"
