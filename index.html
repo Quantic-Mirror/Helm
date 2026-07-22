@@ -2571,6 +2571,9 @@ let newsViewMode = 'cards';
 let servicesData = [];
 let servicesPollTimer = null;
 const SERVICES_POLL_MS = 2 * 60 * 1000;
+let logsData = [];
+let logsPollTimer = null;
+const LOGS_POLL_MS = 15 * 1000;
 
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
@@ -6995,10 +6998,6 @@ window.removeNewsSource = function(id) {
 // Polls every 15 seconds while the tab is active. Client-side text filter and
 // level checkboxes narrow an already-fetched batch without re-fetching.
 // ════════════════════════════════════════════════════════════════════════════
-
-let logsData = [];
-let logsPollTimer = null;
-const LOGS_POLL_MS = 15 * 1000;
 
 async function fetchLogs() {
   const hasBackend = await checkLocalBackend();
