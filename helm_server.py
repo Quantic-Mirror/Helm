@@ -319,11 +319,11 @@ def _signal_poll_once():
     if not number:
         return
     data, err = _signal_api_get(f"/v1/receive/{quote(number, safe='+')}")
-    if err or not data:
-        return
     with _signal_lock:
         changed = False
-        for item in data:
+        for item in (data or []):
+            if err:
+                break  # don't process a failed/partial response as if it were empty
             envelope = item.get("envelope") or {}
             msg = _signal_extract_message(envelope)
             if not msg:
@@ -386,8 +386,33 @@ def _signal_poll_once():
             })
             conv["messages"] = conv["messages"][-SIGNAL_MAX_MESSAGES_PER_CONV:]
             changed = True
+        if _signal_resolve_stale_names():
+            changed = True
         if changed:
             _signal_write_store()
+
+
+def _signal_resolve_stale_names():
+    """Re-check every DM conversation still showing a bare number as its
+    name against the contact list. Unlike the resolution done inline while
+    processing new messages, this runs on every poll cycle regardless of
+    whether anything new arrived — otherwise a conversation created before
+    contact data was cached (or before this lookup existed at all) would
+    stay stuck on a number forever until its next incoming message, which
+    might be a long time or never. Must be called with _signal_lock held."""
+    changed = False
+    for conv_id, conv in _signal_store["conversations"].items():
+        if conv["is_group"]:
+            continue
+        peer = conv.get("peer_number")
+        if not peer:
+            continue
+        if conv["name"] == conv_id or conv["name"] == peer:
+            resolved = _signal_resolve_contact_name(peer)
+            if resolved and resolved != conv["name"]:
+                conv["name"] = resolved
+                changed = True
+    return changed
 
 
 def _signal_poll_loop():
