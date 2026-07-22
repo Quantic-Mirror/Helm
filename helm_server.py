@@ -52,12 +52,46 @@ import ssl
 import threading
 import urllib.request
 import urllib.error
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(SCRIPT_DIR, "marks_state.json")
+
+# ── VAULT PROXY ──────────────────────────────────────────────────────────────
+# pass + the GPG agent live on hyperion, not here. Requests to /api/vault/*
+# get forwarded there rather than handled locally. Change VAULT_BACKEND if
+# hyperion's LAN hostname/IP or the vault_server.py port ever changes.
+VAULT_BACKEND = os.environ.get("VAULT_BACKEND_URL", "http://hyperion:8090")
+VAULT_TOKEN_FILE = os.path.join(SCRIPT_DIR, "vault_token.txt")
+
+
+def _vault_token():
+    if os.path.exists(VAULT_TOKEN_FILE):
+        with open(VAULT_TOKEN_FILE) as f:
+            return f.read().strip()
+    return None
+
+
+def proxy_to_vault(method, path_and_query, body_bytes=None):
+    """Forward a request to vault_server.py running on hyperion.
+    Returns (status_code, response_body_bytes)."""
+    token = _vault_token()
+    url = VAULT_BACKEND + path_and_query
+    req = urllib.request.Request(url, data=body_bytes, method=method)
+    if token:
+        req.add_header("X-Vault-Token", token)
+    if body_bytes:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+    except urllib.error.URLError as e:
+        msg = json.dumps({"error": f"Could not reach vault backend on hyperion: {e.reason}"})
+        return 502, msg.encode("utf-8")
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
 
@@ -645,6 +679,16 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 self.send_json(200, dict(_state_cache))
             return
 
+        if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
+                or parsed.path.startswith("/api/vault/entry/") or parsed.path == "/api/vault/health":
+            status, data = proxy_to_vault("GET", self.path)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         super().do_GET()
 
     # ── PUT — last-write-wins, no version conflict rejection ──────────────────
@@ -695,6 +739,19 @@ class HelmHandler(SimpleHTTPRequestHandler):
             ok, msg = control_service(service_id, action)
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
             return
+
+        if parsed.path == "/api/vault/lock" or parsed.path == "/api/vault/generate" \
+                or parsed.path.startswith("/api/vault/entry/"):
+            length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(length) if length else None
+            status, data = proxy_to_vault("POST", self.path, body_bytes)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         self.send_json(404, {"error": "Not found"})
 
     def do_OPTIONS(self):
@@ -755,7 +812,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    server = HTTPServer(("0.0.0.0", PORT), HelmHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), HelmHandler)
 
     use_tls = os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)
     scheme = "http"
@@ -783,6 +840,9 @@ def main():
     print(f"  Static files served from current directory")
     print(f"  Feed proxy available at /api/proxy?url=<encoded-url>")
     print(f"  State sync available at /api/state (GET/PUT)")
+    print(f"  Vault available at /api/vault/* (proxied to {VAULT_BACKEND})")
+    if not os.path.exists(VAULT_TOKEN_FILE):
+        print(f"  !! No vault_token.txt found at {VAULT_TOKEN_FILE} -- vault requests will fail auth on hyperion.")
     print(f"  State persisted to {STATE_FILE}")
     print(f"  Rolling backups (up to {BACKUP_KEEP}, hourly) in {BACKUP_DIR}")
     print("Press Ctrl+C to stop.")
