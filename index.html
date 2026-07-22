@@ -934,6 +934,144 @@ body {
 }
 .rwiki-link:hover { text-decoration: underline; }
 
+/* Vault widget */
+.vault-body { padding: 8px 14px 12px; }
+.vault-status-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.vault-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.vault-status-dot.unlocked { background: var(--green); }
+.vault-status-dot.locked { background: var(--text-dim); }
+.vault-search-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.vault-search-input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.vault-search-input:focus { border-color: var(--accent); }
+.vault-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.vault-empty { font-size: 11px; color: var(--text-dim); padding: 4px 2px; }
+.vault-item {
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-word;
+}
+.vault-item:last-child { border-bottom: none; }
+.vault-item:hover { color: var(--accent); }
+.vault-reveal {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.vault-reveal-row {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 5px;
+}
+.vault-reveal-row:last-child { margin-bottom: 0; }
+.vault-reveal-label { color: var(--text-dim); font-size: 10px; width: 52px; flex-shrink: 0; }
+.vault-reveal-value {
+  flex: 1; font-family: monospace; font-size: 11px;
+  color: var(--text); word-break: break-all;
+}
+.vault-copy-btn {
+  flex-shrink: 0; width: 22px; height: 22px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: none; color: var(--text-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.vault-copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+.vault-tag {
+  display: inline-block; font-size: 9px; color: var(--text-dim);
+  background: var(--surface-3); border-radius: 8px; padding: 1px 6px; margin: 0 3px 3px 0;
+}
+.vault-actions-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.vault-form {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  margin-bottom: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.vault-form input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+}
+.vault-form input:focus { border-color: var(--accent); }
+.vault-form-editing-label {
+  font-size: 10px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.vault-form input[readonly] { color: var(--text-dim); cursor: not-allowed; }
+.vault-form-secret-row { display: flex; gap: 6px; }
+.vault-health-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.vault-health-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.vault-health-row:last-child { border-bottom: none; }
+.vault-health-count { color: var(--text-dim); }
+.vault-health-count.warn { color: var(--amber); }
+.vault-health-count.bad { color: var(--red); }
+.vault-health-clickable { cursor: pointer; }
+.vault-health-clickable:hover { color: var(--accent); }
+.vault-health-detail {
+  padding: 2px 0 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.vault-health-item {
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 0;
+}
+.vault-health-item:hover { color: var(--accent); }
+.vault-health-score { color: var(--text-dim); }
+.vault-health-group { padding: 2px 0; }
+.vault-health-item-link {
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.vault-health-item-link:hover { color: var(--accent); }
+.vault-health-sep { color: var(--text-dim); margin: 0 4px; }
+
 /* To Do widget */
 .todo-body { padding: 8px 14px 12px; }
 .todo-list {
@@ -2248,6 +2386,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
           <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
+          <button class="dropdown-item" id="btn-add-vault">Password Vault</button>
         </div>
       </div>
       <div class="dropdown" id="dd-tools">
@@ -2967,6 +3106,17 @@ function render() {
       const gc = Math.min(Math.max(state.settings.recentCol, 0), 2);
       cols3[gc].appendChild(rc);
     }
+  }
+
+  // Vault widget — deliberately lives on the Bookmarks page rather than the
+  // Dashboard page (unlike every other widget type). Uses the same gridCol
+  // convention as the rest of state.widgets.
+  if (!searchQ) {
+    state.widgets.filter(w => w.type === 'vault').forEach(w => {
+      if (w.gridCol === undefined) w.gridCol = 0;
+      const gc = Math.min(Math.max(w.gridCol, 0), 2);
+      cols3[gc].appendChild(renderVaultWidget(w));
+    });
   }
 
   // Folder cards: each column object carries a persistent gridCol (0/1/2)
@@ -5428,6 +5578,514 @@ function wireTodoListEvents(widgetId) {
   });
 }
 
+// ── VAULT WIDGET ─────────────────────────────────────────────────────────────
+// Talks to /api/vault/* (proxied by helm_server.py to vault_server.py on
+// hyperion, where `pass` and the GPG agent actually live). No secrets are
+// ever stored in state.widgets or written to marks_state.json — search
+// results, revealed entries, and the health scan all live in the
+// module-level VAULT_STATE object below, which is intentionally NOT part
+// of the persisted/synced app state.
+
+const VAULT_STATE = {}; // widgetId -> ephemeral UI state, never persisted
+
+function vaultState(widgetId) {
+  if (!VAULT_STATE[widgetId]) {
+    VAULT_STATE[widgetId] = {
+      query: '', results: [],
+      revealedPath: null, revealedData: null,
+      formOpen: false,
+      healthOpen: false, healthData: null,
+    };
+  }
+  return VAULT_STATE[widgetId];
+}
+
+function renderVaultWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card vault-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#F85149"></span>
+      <span class="column-title" style="cursor:default">Vault</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Health check" data-vault-health="${w.id}">♥</button>
+        <button class="icon-btn" title="Lock now" data-vault-lock="${w.id}">🔒</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="vault-body" id="vault-body-${w.id}">
+      <div class="vault-status-row" id="vault-status-${w.id}">
+        <span class="vault-status-dot locked" id="vault-status-dot-${w.id}"></span>
+        <span id="vault-status-text-${w.id}">Checking status…</span>
+      </div>
+      <div class="vault-search-row">
+        <input class="vault-search-input" id="vault-search-${w.id}" type="text"
+          placeholder="Search entries…" draggable="false" autocomplete="off" spellcheck="false">
+      </div>
+      <div id="vault-health-${w.id}"></div>
+      <div id="vault-reveal-${w.id}"></div>
+      <ul class="vault-list" id="vault-list-${w.id}">
+        <li class="vault-empty">Type to search…</li>
+      </ul>
+      <div class="vault-actions-row">
+        <button class="btn" style="flex:1" data-vault-new="${w.id}">+ New entry</button>
+      </div>
+      <div id="vault-form-${w.id}"></div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    wireVaultWidget(w.id, el);
+  }, 0);
+
+  return el;
+}
+
+function wireVaultWidget(widgetId, el) {
+  refreshVaultStatus(widgetId);
+
+  const searchInput = el.querySelector('#vault-search-' + widgetId);
+  if (searchInput) {
+    searchInput.addEventListener('mousedown', (e) => e.stopPropagation());
+    let debounceTimer = null;
+    searchInput.oninput = (e) => {
+      vaultState(widgetId).query = e.target.value;
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => vaultSearch(widgetId), 200);
+    };
+  }
+
+  const healthBtn = el.querySelector('[data-vault-health]');
+  if (healthBtn) healthBtn.onclick = () => vaultToggleHealth(widgetId);
+
+  const lockBtn = el.querySelector('[data-vault-lock]');
+  if (lockBtn) lockBtn.onclick = () => vaultLock(widgetId);
+
+  const newBtn = el.querySelector('[data-vault-new]');
+  if (newBtn) newBtn.onclick = () => vaultToggleForm(widgetId);
+}
+
+async function refreshVaultStatus(widgetId) {
+  const dot = document.getElementById('vault-status-dot-' + widgetId);
+  const text = document.getElementById('vault-status-text-' + widgetId);
+  if (!dot || !text) return;
+  try {
+    const resp = await fetch('/api/vault/status', { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    dot.className = 'vault-status-dot ' + (data.locked ? 'locked' : 'unlocked');
+    text.textContent = (data.locked ? 'Locked' : 'Unlocked') + ' · ' + data.entry_count + ' entries';
+  } catch (e) {
+    dot.className = 'vault-status-dot locked';
+    text.textContent = 'Vault backend unreachable';
+  }
+}
+
+async function vaultSearch(widgetId) {
+  const listEl = document.getElementById('vault-list-' + widgetId);
+  if (!listEl) return;
+  const st = vaultState(widgetId);
+  if (!st.query) {
+    st.results = [];
+    listEl.innerHTML = '<li class="vault-empty">Type to search…</li>';
+    return;
+  }
+  listEl.innerHTML = '<li class="vault-empty">Searching…</li>';
+  try {
+    const resp = await fetch('/api/vault/search?q=' + encodeURIComponent(st.query), { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    st.results = data.results || [];
+    renderVaultList(widgetId);
+  } catch (e) {
+    listEl.innerHTML = `<li class="vault-empty">Search failed: ${escHtml(e.message)}</li>`;
+  }
+}
+
+function renderVaultList(widgetId) {
+  const listEl = document.getElementById('vault-list-' + widgetId);
+  if (!listEl) return;
+  const st = vaultState(widgetId);
+  if (st.results.length === 0) {
+    listEl.innerHTML = '<li class="vault-empty">No matches</li>';
+    return;
+  }
+  listEl.innerHTML = st.results.map(r => `
+    <li class="vault-item" data-vault-open="${escHtml(r.path)}">${escHtml(r.path)}</li>
+  `).join('');
+  listEl.querySelectorAll('[data-vault-open]').forEach(li => {
+    li.onclick = () => vaultReveal(widgetId, li.dataset.vaultOpen);
+  });
+}
+
+function vaultEntryUrl(path) {
+  // Encode each path segment individually so spaces/special chars are safe
+  // without escaping the '/' separators pass paths rely on.
+  return '/api/vault/entry/' + path.split('/').map(encodeURIComponent).join('/');
+}
+
+async function vaultReveal(widgetId, path) {
+  const revealEl = document.getElementById('vault-reveal-' + widgetId);
+  if (!revealEl) return;
+  revealEl.innerHTML = '<div class="vault-reveal">Decrypting…</div>';
+  try {
+    const resp = await fetch(vaultEntryUrl(path), { signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + resp.status));
+    }
+    const data = await resp.json();
+    vaultState(widgetId).revealedPath = path;
+    vaultState(widgetId).revealedData = data;
+    renderVaultReveal(widgetId);
+    refreshVaultStatus(widgetId); // decrypting may have just unlocked the agent
+  } catch (e) {
+    revealEl.innerHTML = `<div class="vault-reveal">Could not decrypt: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderVaultReveal(widgetId) {
+  const revealEl = document.getElementById('vault-reveal-' + widgetId);
+  const st = vaultState(widgetId);
+  if (!revealEl) return;
+  if (!st.revealedData) { revealEl.innerHTML = ''; return; }
+  const d = st.revealedData;
+  const tags = (d.tags || []).map(t => `<span class="vault-tag">${escHtml(t)}</span>`).join('');
+  revealEl.innerHTML = `
+    <div class="vault-reveal">
+      <div class="vault-reveal-row">
+        <span class="vault-reveal-label">Path</span>
+        <span class="vault-reveal-value">${escHtml(d.path)}</span>
+      </div>
+      ${d.username ? `
+      <div class="vault-reveal-row">
+        <span class="vault-reveal-label">User</span>
+        <span class="vault-reveal-value">${escHtml(d.username)}</span>
+        <button class="vault-copy-btn" data-vault-copy-user title="Copy username">⧉</button>
+      </div>` : ''}
+      <div class="vault-reveal-row">
+        <span class="vault-reveal-label">Secret</span>
+        <span class="vault-reveal-value">${escHtml(d.secret)}</span>
+        <button class="vault-copy-btn" data-vault-copy-secret title="Copy password">⧉</button>
+      </div>
+      ${d.url ? `
+      <div class="vault-reveal-row">
+        <span class="vault-reveal-label">URL</span>
+        <span class="vault-reveal-value">${escHtml(d.url)}</span>
+      </div>` : ''}
+      ${tags ? `<div class="vault-reveal-row"><span class="vault-reveal-label">Tags</span><div>${tags}</div></div>` : ''}
+      ${d.expires ? `
+      <div class="vault-reveal-row">
+        <span class="vault-reveal-label">Expires</span>
+        <span class="vault-reveal-value">${escHtml(d.expires)}</span>
+      </div>` : ''}
+      <div class="vault-reveal-row">
+        <button class="btn" data-vault-edit style="flex:1">Edit</button>
+        <button class="btn" data-vault-close-reveal style="flex:1">Hide</button>
+      </div>
+    </div>
+  `;
+  const copyUserBtn = revealEl.querySelector('[data-vault-copy-user]');
+  if (copyUserBtn) copyUserBtn.onclick = () => vaultCopy(d.username, copyUserBtn);
+  const copySecretBtn = revealEl.querySelector('[data-vault-copy-secret]');
+  if (copySecretBtn) copySecretBtn.onclick = () => vaultCopy(d.secret, copySecretBtn);
+  const editBtn = revealEl.querySelector('[data-vault-edit]');
+  if (editBtn) editBtn.onclick = () => vaultEditEntry(widgetId);
+  const closeBtn = revealEl.querySelector('[data-vault-close-reveal]');
+  if (closeBtn) closeBtn.onclick = () => {
+    vaultState(widgetId).revealedPath = null;
+    vaultState(widgetId).revealedData = null;
+    revealEl.innerHTML = '';
+  };
+}
+
+function vaultCopy(text, btn) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const original = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = original; }, 1200);
+  }).catch(() => { /* clipboard permission denied — user can still select/copy manually */ });
+}
+
+function vaultToggleForm(widgetId) {
+  const st = vaultState(widgetId);
+  st.formOpen = !st.formOpen;
+  if (st.formOpen) {
+    // Opening via the "+ New entry" button always starts blank —
+    // editing an existing entry goes through vaultEditEntry instead.
+    st.editingPath = null;
+    st.editingPrefill = null;
+  }
+  renderVaultForm(widgetId);
+}
+
+function vaultEditEntry(widgetId) {
+  const st = vaultState(widgetId);
+  const d = st.revealedData;
+  if (!d) return;
+  st.editingPath = d.path;
+  st.editingPrefill = {
+    username: d.username || '',
+    url: d.url || '',
+    tags: (d.tags || []).join(', '),
+    expires: d.expires || '',
+    secret: d.secret || '',
+  };
+  st.formOpen = true;
+  renderVaultForm(widgetId);
+  const formEl = document.getElementById('vault-form-' + widgetId);
+  if (formEl) formEl.scrollIntoView({ block: 'nearest' });
+}
+
+function renderVaultForm(widgetId) {
+  const formEl = document.getElementById('vault-form-' + widgetId);
+  if (!formEl) return;
+  const st = vaultState(widgetId);
+  if (!st.formOpen) { formEl.innerHTML = ''; return; }
+  const isEdit = !!st.editingPath;
+  const p = st.editingPrefill || {};
+  formEl.innerHTML = `
+    <div class="vault-form">
+      ${isEdit ? `<div class="vault-form-editing-label">Editing ${escHtml(st.editingPath)}</div>` : ''}
+      <input type="text" id="vault-new-path-${widgetId}" placeholder="path, e.g. banking/chase"
+        value="${escHtml(isEdit ? st.editingPath : '')}" ${isEdit ? 'readonly' : ''}>
+      <input type="text" id="vault-new-username-${widgetId}" placeholder="username (optional)" value="${escHtml(p.username || '')}">
+      <div class="vault-form-secret-row">
+        <input type="text" id="vault-new-secret-${widgetId}" placeholder="password" style="flex:1" value="${escHtml(p.secret || '')}">
+        <button class="btn" data-vault-generate="${widgetId}">Generate</button>
+      </div>
+      <input type="text" id="vault-new-url-${widgetId}" placeholder="url (optional)" value="${escHtml(p.url || '')}">
+      <input type="text" id="vault-new-tags-${widgetId}" placeholder="tags, comma-separated (optional)" value="${escHtml(p.tags || '')}">
+      <input type="text" id="vault-new-expires-${widgetId}" placeholder="expires YYYY-MM-DD (optional)" value="${escHtml(p.expires || '')}">
+      <div class="vault-actions-row" style="margin:0">
+        <button class="btn primary" style="flex:1" data-vault-save="${widgetId}">${isEdit ? 'Save changes' : 'Save entry'}</button>
+        <button class="btn" data-vault-cancel="${widgetId}">Cancel</button>
+      </div>
+    </div>
+  `;
+  formEl.querySelectorAll('input').forEach(inp => inp.addEventListener('mousedown', (e) => e.stopPropagation()));
+
+  const genBtn = formEl.querySelector('[data-vault-generate]');
+  if (genBtn) genBtn.onclick = () => vaultGenerate(widgetId);
+
+  const saveBtn = formEl.querySelector('[data-vault-save]');
+  if (saveBtn) saveBtn.onclick = () => vaultSubmitForm(widgetId);
+
+  const cancelBtn = formEl.querySelector('[data-vault-cancel]');
+  if (cancelBtn) cancelBtn.onclick = () => {
+    const st = vaultState(widgetId);
+    st.formOpen = false;
+    st.editingPath = null;
+    st.editingPrefill = null;
+    renderVaultForm(widgetId);
+  };
+}
+
+async function vaultGenerate(widgetId) {
+  const secretInput = document.getElementById('vault-new-secret-' + widgetId);
+  if (!secretInput) return;
+  try {
+    const resp = await fetch('/api/vault/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ length: 20, symbols: true }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    secretInput.value = data.password;
+  } catch (e) {
+    alert('Could not generate password: ' + e.message);
+  }
+}
+
+async function vaultSubmitForm(widgetId) {
+  const pathEl = document.getElementById('vault-new-path-' + widgetId);
+  const secretEl = document.getElementById('vault-new-secret-' + widgetId);
+  const path = pathEl ? pathEl.value.trim() : '';
+  const secret = secretEl ? secretEl.value : '';
+  if (!path || !secret) { alert('Path and password are required.'); return; }
+
+  const val = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
+  const username = val('vault-new-username-' + widgetId);
+  const url = val('vault-new-url-' + widgetId);
+  const tags = val('vault-new-tags-' + widgetId);
+  const expires = val('vault-new-expires-' + widgetId);
+
+  const st = vaultState(widgetId);
+  const isEdit = !!st.editingPath;
+
+  try {
+    const resp = await fetch(vaultEntryUrl(path), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // force=true on edit: pass insert would otherwise prompt an
+      // interactive "overwrite?" confirmation that has nowhere to go
+      // through a subprocess call, and would just hang like the pinentry
+      // issue did. New entries never need this since the path is fresh.
+      body: JSON.stringify({ secret, username, url, tags, expires, force: isEdit }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + resp.status));
+
+    st.formOpen = false;
+    st.editingPath = null;
+    st.editingPrefill = null;
+    renderVaultForm(widgetId);
+    refreshVaultStatus(widgetId);
+    if (st.query) vaultSearch(widgetId);
+    if (isEdit) vaultReveal(widgetId, path); // refresh the open reveal panel with the new values
+  } catch (e) {
+    alert('Could not save entry: ' + e.message);
+  }
+}
+
+async function vaultToggleHealth(widgetId) {
+  const st = vaultState(widgetId);
+  st.healthOpen = !st.healthOpen;
+  if (st.healthOpen && !st.healthData) {
+    await vaultLoadHealth(widgetId);
+  } else {
+    renderVaultHealth(widgetId);
+  }
+}
+
+async function vaultLoadHealth(widgetId) {
+  const el = document.getElementById('vault-health-' + widgetId);
+  if (el) el.innerHTML = '<div class="vault-health-panel">Scanning… (decrypts every entry, can take a bit)</div>';
+  try {
+    const resp = await fetch('/api/vault/health', { signal: AbortSignal.timeout(30000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    vaultState(widgetId).healthData = data;
+    renderVaultHealth(widgetId);
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="vault-health-panel">Health scan failed: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderVaultHealth(widgetId) {
+  const el = document.getElementById('vault-health-' + widgetId);
+  const st = vaultState(widgetId);
+  if (!el) return;
+  if (!st.healthOpen) { el.innerHTML = ''; return; }
+  const d = st.healthData;
+  if (!d) { el.innerHTML = '<div class="vault-health-panel">Scanning…</div>'; return; }
+  if (!st.healthExpanded) st.healthExpanded = {};
+
+  const plainRow = (label, count) => `
+    <div class="vault-health-row">
+      <span>${escHtml(label)}</span>
+      <span class="vault-health-count">${count}</span>
+    </div>`;
+
+  // A clickable, expandable category row. `items` should already be an
+  // array of path strings (reused_passwords gets flattened before calling
+  // this, since it's naturally an array of groups).
+  const section = (key, label, items, level) => {
+    const count = items.length;
+    const expanded = !!st.healthExpanded[key];
+    const header = `
+      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? `data-vault-health-toggle="${key}"` : ''}>
+        <span>${escHtml(label)}${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
+        <span class="vault-health-count${level && count ? ' ' + level : ''}">${count}</span>
+      </div>`;
+    if (!expanded || count === 0) return header;
+    const detail = `
+      <div class="vault-health-detail">
+        ${items.map(p => `<div class="vault-health-item" data-vault-health-open="${escHtml(p)}">${escHtml(p)}</div>`).join('')}
+      </div>`;
+    return header + detail;
+  };
+
+  // Weak passwords: show path + score together, still individually clickable.
+  const weakSection = () => {
+    const count = d.weak.length;
+    const expanded = !!st.healthExpanded.weak;
+    const header = `
+      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? 'data-vault-health-toggle="weak"' : ''}>
+        <span>Weak passwords${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
+        <span class="vault-health-count${count ? ' bad' : ''}">${count}</span>
+      </div>`;
+    if (!expanded || count === 0) return header;
+    const detail = `
+      <div class="vault-health-detail">
+        ${d.weak.map(w => `<div class="vault-health-item" data-vault-health-open="${escHtml(w.path)}">${escHtml(w.path)} <span class="vault-health-score">score ${w.score}</span></div>`).join('')}
+      </div>`;
+    return header + detail;
+  };
+
+  // Reused passwords: each group shares one password across several paths —
+  // show the group, with every path in it individually clickable.
+  const reusedSection = () => {
+    const count = d.reused_passwords.length;
+    const expanded = !!st.healthExpanded.reused;
+    const header = `
+      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? 'data-vault-health-toggle="reused"' : ''}>
+        <span>Reused passwords${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
+        <span class="vault-health-count${count ? ' warn' : ''}">${count}</span>
+      </div>`;
+    if (!expanded || count === 0) return header;
+    const detail = `
+      <div class="vault-health-detail">
+        ${d.reused_passwords.map(group => `
+          <div class="vault-health-group">
+            ${group.paths.map(p => `<span class="vault-health-item-link" data-vault-health-open="${escHtml(p)}">${escHtml(p)}</span>`).join('<span class="vault-health-sep">·</span>')}
+          </div>
+        `).join('')}
+      </div>`;
+    return header + detail;
+  };
+
+  el.innerHTML = `
+    <div class="vault-health-panel">
+      ${plainRow('Entries', d.entry_count)}
+      ${weakSection()}
+      ${reusedSection()}
+      ${section('expired', 'Expired', d.expired, 'bad')}
+      ${section('expiring_soon', 'Expiring within 30 days', d.expiring_soon, 'warn')}
+      ${section('missing_username', 'Missing username', d.missing_username, 'warn')}
+      ${section('no_tags', 'No tags', d.no_tags, '')}
+    </div>
+  `;
+
+  el.querySelectorAll('[data-vault-health-toggle]').forEach(rowEl => {
+    rowEl.onclick = () => {
+      const key = rowEl.dataset.vaultHealthToggle;
+      st.healthExpanded[key] = !st.healthExpanded[key];
+      renderVaultHealth(widgetId);
+    };
+  });
+
+  el.querySelectorAll('[data-vault-health-open]').forEach(item => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      vaultReveal(widgetId, item.dataset.vaultHealthOpen);
+    };
+  });
+}
+
+async function vaultLock(widgetId) {
+  try {
+    await fetch('/api/vault/lock', { method: 'POST', signal: AbortSignal.timeout(8000) });
+  } catch (e) { /* best-effort */ }
+  refreshVaultStatus(widgetId);
+  vaultState(widgetId).revealedPath = null;
+  vaultState(widgetId).revealedData = null;
+  const revealEl = document.getElementById('vault-reveal-' + widgetId);
+  if (revealEl) revealEl.innerHTML = '';
+}
+
 // ── ON THIS DAY WIDGET ────────────────────────────────────────────────────────
 // Fetches today's historical events from the Wikimedia REST API. Cached
 // per-day (shared across all On This Day widgets) since the content is
@@ -5987,6 +6645,10 @@ document.getElementById('btn-add-sunmoon').onclick = () => {
   state.widgets.push({ id: uid(), type: 'sunmoon', city: 'Athens, GA', gridCol: 2 });
   save(); render(); renderDashboard();
 };
+document.getElementById('btn-add-vault').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'vault', gridCol: 0 });
+  save(); render();
+};
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
 document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);
 document.getElementById('search').onkeydown = (e) => {
@@ -6183,7 +6845,9 @@ function switchTab(tab) {
   show('irc-page',       tab === 'irc');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
-  show('topbar-actions', tab === 'bookmarks');
+  show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
+  show('topbar-tools', tab === 'dashboard');
+  show('btn-add-bm-top', tab === 'bookmarks');
 
   const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs' };
   document.title = titles[tab] || 'Helm';

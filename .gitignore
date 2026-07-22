@@ -10,3 +10,5 @@ marks_state.json
 *.tmp
 __pycache__/
 *.bak
+vault_token.txt
+
