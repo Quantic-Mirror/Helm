@@ -204,6 +204,15 @@ SIGNAL_CONTACTS_TTL = 3600  # seconds
 _signal_contacts_cache = {"ts": 0, "by_number": {}}
 
 
+def _signal_normalize_number(number):
+    """Strip whitespace so a stray space/newline in either the envelope or
+    the contacts response can't silently break a dict lookup that would
+    otherwise match. Signal numbers are E.164 (+ and digits only), so this
+    is a safe, conservative normalization — it doesn't try to reformat
+    anything, just removes accidental incidental whitespace."""
+    return number.strip() if isinstance(number, str) else number
+
+
 def _signal_refresh_contacts():
     number = _signal_get_number()
     if not number:
@@ -216,6 +225,7 @@ def _signal_refresh_contacts():
         num = entry.get("number") or entry.get("recipient")
         if not num:
             continue
+        num = _signal_normalize_number(num)
         # Try several plausible field names rather than hard-coding one
         # schema — signal-cli-rest-api's exact contact JSON shape has
         # shifted across versions, and falling through to the number is
@@ -237,7 +247,7 @@ def _signal_resolve_contact_name(number):
         return None
     if time.time() - _signal_contacts_cache["ts"] > SIGNAL_CONTACTS_TTL:
         _signal_refresh_contacts()
-    return _signal_contacts_cache["by_number"].get(number)
+    return _signal_contacts_cache["by_number"].get(_signal_normalize_number(number))
 
 
 def _signal_extract_attachments(raw_attachments):
@@ -283,7 +293,7 @@ def _signal_extract_message(envelope):
     if data_msg and (data_msg.get("message") or data_msg.get("attachments")):
         group_info = data_msg.get("groupInfo") or {}
         group_id = group_info.get("groupId")
-        peer = envelope.get("sourceNumber") or envelope.get("source")
+        peer = _signal_normalize_number(envelope.get("sourceNumber") or envelope.get("source"))
         return {
             "text": data_msg.get("message") or "",
             "attachments": _signal_extract_attachments(data_msg.get("attachments")),
@@ -299,7 +309,7 @@ def _signal_extract_message(envelope):
     if sent_msg and (sent_msg.get("message") or sent_msg.get("attachments")):
         group_info = sent_msg.get("groupInfo") or {}
         group_id = group_info.get("groupId")
-        peer = sent_msg.get("destinationNumber") or sent_msg.get("destination")
+        peer = _signal_normalize_number(sent_msg.get("destinationNumber") or sent_msg.get("destination"))
         return {
             "text": sent_msg.get("message") or "",
             "attachments": _signal_extract_attachments(sent_msg.get("attachments")),
