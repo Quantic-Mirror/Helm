@@ -849,6 +849,41 @@ body {
 .timer-ctrl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .timer-ctrl-btn:disabled { opacity: 0.4; cursor: default; }
 
+/* Quote of the Day widget */
+.quote-body { padding: 14px; }
+.quote-loading, .quote-error {
+  font-size: 12px; color: var(--text-dim); padding: 8px 0;
+}
+.quote-text {
+  font-family: var(--font-display);
+  font-size: 14px; font-style: italic; color: var(--text);
+  line-height: 1.5; margin-bottom: 8px;
+}
+.quote-author {
+  font-size: 12px; color: var(--text-muted); margin-bottom: 10px;
+}
+.quote-attribution {
+  font-size: 10px; color: var(--text-dim); text-decoration: none;
+}
+.quote-attribution:hover { color: var(--accent); text-decoration: underline; }
+
+/* Sun & Moon widget */
+.sunmoon-body { padding: 12px 14px 14px; }
+.sunmoon-loading, .sunmoon-error {
+  font-size: 12px; color: var(--text-dim); padding: 8px 0;
+}
+.sunmoon-city {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  margin-bottom: 10px;
+}
+.sunmoon-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0;
+}
+.sunmoon-icon { font-size: 16px; flex-shrink: 0; }
+.sunmoon-label { font-size: 12px; color: var(--text-muted); flex: 1; }
+.sunmoon-value { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+
 /* On This Day widget */
 .onthisday-body { padding: 12px 14px 14px; }
 .otd-loading, .otd-error {
@@ -982,144 +1017,6 @@ body {
   transition: border-color 0.12s, color 0.12s;
 }
 .todo-add-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-/* Vault widget */
-.vault-body { padding: 8px 14px 12px; }
-.vault-status-row {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11px; color: var(--text-dim);
-  margin-bottom: 8px;
-}
-.vault-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.vault-status-dot.unlocked { background: var(--green); }
-.vault-status-dot.locked { background: var(--text-dim); }
-.vault-search-row { display: flex; gap: 6px; margin-bottom: 8px; }
-.vault-search-input {
-  flex: 1;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-family: var(--font-body);
-  font-size: 12px;
-  padding: 5px 8px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.vault-search-input:focus { border-color: var(--accent); }
-.vault-list {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-.vault-empty { font-size: 11px; color: var(--text-dim); padding: 4px 2px; }
-.vault-item {
-  padding: 5px 2px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text);
-  word-break: break-word;
-}
-.vault-item:last-child { border-bottom: none; }
-.vault-item:hover { color: var(--accent); }
-.vault-reveal {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-.vault-reveal-row {
-  display: flex; align-items: center; gap: 6px;
-  margin-bottom: 5px;
-}
-.vault-reveal-row:last-child { margin-bottom: 0; }
-.vault-reveal-label { color: var(--text-dim); font-size: 10px; width: 52px; flex-shrink: 0; }
-.vault-reveal-value {
-  flex: 1; font-family: monospace; font-size: 11px;
-  color: var(--text); word-break: break-all;
-}
-.vault-copy-btn {
-  flex-shrink: 0; width: 22px; height: 22px;
-  border: 1px solid var(--border); border-radius: 5px;
-  background: none; color: var(--text-muted); cursor: pointer;
-  display: flex; align-items: center; justify-content: center; font-size: 11px;
-}
-.vault-copy-btn:hover { border-color: var(--accent); color: var(--accent); }
-.vault-tag {
-  display: inline-block; font-size: 9px; color: var(--text-dim);
-  background: var(--surface-3); border-radius: 8px; padding: 1px 6px; margin: 0 3px 3px 0;
-}
-.vault-actions-row { display: flex; gap: 6px; margin-bottom: 8px; }
-.vault-form {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px;
-  margin-bottom: 8px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.vault-form input {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-family: var(--font-body);
-  font-size: 12px;
-  padding: 5px 8px;
-  outline: none;
-}
-.vault-form input:focus { border-color: var(--accent); }
-.vault-form-editing-label {
-  font-size: 10px; color: var(--text-dim);
-  text-transform: uppercase; letter-spacing: 0.04em;
-}
-.vault-form input[readonly] { color: var(--text-dim); cursor: not-allowed; }
-.vault-form-secret-row { display: flex; gap: 6px; }
-.vault-health-panel {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px;
-  margin-bottom: 8px;
-  font-size: 11px;
-}
-.vault-health-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 3px 0;
-  border-bottom: 1px solid var(--border);
-}
-.vault-health-row:last-child { border-bottom: none; }
-.vault-health-count { color: var(--text-dim); }
-.vault-health-count.warn { color: var(--amber); }
-.vault-health-count.bad { color: var(--red); }
-.vault-health-clickable { cursor: pointer; }
-.vault-health-clickable:hover { color: var(--accent); }
-.vault-health-detail {
-  padding: 2px 0 6px 8px;
-  border-bottom: 1px solid var(--border);
-}
-.vault-health-item {
-  font-size: 10px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px 0;
-}
-.vault-health-item:hover { color: var(--accent); }
-.vault-health-score { color: var(--text-dim); }
-.vault-health-group { padding: 2px 0; }
-.vault-health-item-link {
-  font-size: 10px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.vault-health-item-link:hover { color: var(--accent); }
-.vault-health-sep { color: var(--text-dim); margin: 0 4px; }
 
 /* System Stats widget */
 .sysstats-body { padding: 12px 14px 14px; }
@@ -1753,6 +1650,74 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 .calp-add-btn { opacity: 0; transition: opacity 0.12s; }
 .calp-agenda-row:hover .calp-add-btn { opacity: 1; }
 
+/* ── LOGS PAGE ────────────────────────────────────────────────────────────────── */
+#logs-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+#logs-topbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.logs-search-wrap {
+  position: relative;
+  display: flex; align-items: center;
+  flex: 1; min-width: 160px;
+}
+#logs-search {
+  width: 100%;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  font-family: var(--font-body); font-size: 12px;
+  padding: 6px 26px 6px 10px; outline: none;
+  transition: border-color 0.15s;
+}
+#logs-search:focus { border-color: var(--accent); }
+#logs-search-clear {
+  position: absolute; right: 6px;
+  background: none; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 3px;
+}
+#logs-search-clear:hover { color: var(--text); background: var(--surface-2); }
+.logs-level-toggle {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-muted); cursor: pointer;
+  white-space: nowrap;
+}
+.logs-level-toggle input { cursor: pointer; }
+#logs-last-updated { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+
+#logs-body {
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+  max-height: calc(100vh - 160px); overflow-y: auto;
+  font-family: monospace; font-size: 11.5px;
+}
+.log-line {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: pre-wrap; word-break: break-word;
+  line-height: 1.5;
+}
+.log-line:last-child { border-bottom: none; }
+.log-time { color: var(--text-dim); flex-shrink: 0; white-space: nowrap; }
+.log-service {
+  color: var(--text-muted); flex-shrink: 0; white-space: nowrap;
+  min-width: 90px;
+}
+.log-level-badge {
+  flex-shrink: 0; font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 1px 6px; border-radius: 4px;
+  white-space: nowrap;
+}
+.log-level-badge-error   { background: rgba(248,81,73,0.15);  color: var(--red); }
+.log-level-badge-warning { background: rgba(227,179,65,0.15); color: var(--amber); }
+.log-level-badge-info    { background: var(--surface-2); color: var(--text-dim); }
+.log-message { color: var(--text); flex: 1; min-width: 0; }
+.log-level-error .log-message { color: #ffb3ae; }
+.logs-error, .logs-empty {
+  padding: 40px 20px; text-align: center; font-size: 13px; color: var(--text-dim);
+}
+
 /* ── SERVICES PAGE ───────────────────────────────────────────────────────────── */
 #services-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
 #services-topbar {
@@ -2244,6 +2209,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="services">Services</button>
     <button class="tab-btn" data-tab="irc">IRC</button>
+    <button class="tab-btn" data-tab="logs">Logs</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -2280,7 +2246,8 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-add-todo">To Do</button>
           <button class="dropdown-item" id="btn-add-onthisday">On This Day</button>
           <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
-          <button class="dropdown-item" id="btn-add-vault">Password Vault</button>
+          <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
+          <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
         </div>
       </div>
       <div class="dropdown" id="dd-tools">
@@ -2373,6 +2340,29 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 <!-- IRC PAGE -->
 <div id="irc-page" style="display:none">
   <iframe id="irc-frame" src="https://popcorn:9000" allow="fullscreen"></iframe>
+</div>
+
+<!-- LOGS PAGE -->
+<div id="logs-page" style="display:none">
+  <div id="logs-topbar">
+    <select id="logs-service-filter" class="btn" style="cursor:pointer">
+      <option value="all">All services</option>
+      <option value="helm">Helm</option>
+      <option value="thelounge">The Lounge (IRC)</option>
+      <option value="searxng-core">SearXNG</option>
+      <option value="r2-sync">Cloudflare R2 Sync</option>
+    </select>
+    <div class="logs-search-wrap">
+      <input type="text" id="logs-search" placeholder="Filter logs…" autocomplete="off" spellcheck="false">
+      <button id="logs-search-clear" title="Clear filter">✕</button>
+    </div>
+    <label class="logs-level-toggle"><input type="checkbox" id="logs-level-error" checked> Error</label>
+    <label class="logs-level-toggle"><input type="checkbox" id="logs-level-warning" checked> Warning</label>
+    <label class="logs-level-toggle"><input type="checkbox" id="logs-level-info" checked> Info</label>
+    <span id="logs-last-updated"></span>
+    <button class="btn" id="btn-refresh-logs">↺ Refresh</button>
+  </div>
+  <div id="logs-body"></div>
 </div>
 
 <!-- MODAL -->
@@ -2885,6 +2875,8 @@ function renderDashboard() {
     todo: renderTodoWidget,
     onthisday: renderOnThisDayWidget,
     randomwiki: renderRandomWikiWidget,
+    quoteoftheday: renderQuoteWidget,
+    sunmoon: renderSunMoonWidget,
   };
 
   // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
@@ -2919,8 +2911,7 @@ function render() {
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
 
-  // Build 3 explicit flex columns (most widgets live on the Dashboard page —
-  // the Vault widget is the one exception, rendered here instead, below)
+  // Build 3 explicit flex columns (no widgets — they live on the Dashboard page)
   const cols3 = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
   cols3.forEach(c => { c.className = 'grid-col'; });
 
@@ -2973,17 +2964,6 @@ function render() {
       const gc = Math.min(Math.max(state.settings.recentCol, 0), 2);
       cols3[gc].appendChild(rc);
     }
-  }
-
-  // Vault widget — deliberately lives on the Bookmarks page rather than the
-  // Dashboard page (unlike every other widget type). Uses the same gridCol
-  // convention as the rest of state.widgets.
-  if (!searchQ) {
-    state.widgets.filter(w => w.type === 'vault').forEach(w => {
-      if (w.gridCol === undefined) w.gridCol = 0;
-      const gc = Math.min(Math.max(w.gridCol, 0), 2);
-      cols3[gc].appendChild(renderVaultWidget(w));
-    });
   }
 
   // Folder cards: each column object carries a persistent gridCol (0/1/2)
@@ -3363,7 +3343,7 @@ async function loadSysStats(w) {
 
   const hasBackend = await checkLocalBackend();
   if (!hasBackend) {
-    el.innerHTML = `<div class="sysstats-error">Host stats require the local backend (marks_server.py).<br>Not reachable right now.</div>`;
+    el.innerHTML = `<div class="sysstats-error">Host stats require the local backend (helm_server.py).<br>Not reachable right now.</div>`;
     return;
   }
 
@@ -4011,6 +3991,14 @@ window.openWidgetCfg = function(wid) {
     if (city === null) return;
     w.city = city.trim() || w.city;
     delete WX_CACHE[wid];
+    save();
+    render();
+    renderDashboard();
+  } else if (w.type === 'sunmoon') {
+    const city = prompt('Enter city name (e.g. "Athens, GA" or just "Athens"):', w.city || '');
+    if (city === null) return;
+    w.city = city.trim() || w.city;
+    delete SUNMOON_CACHE[wid];
     save();
     render();
     renderDashboard();
@@ -5437,514 +5425,6 @@ function wireTodoListEvents(widgetId) {
   });
 }
 
-// ── VAULT WIDGET ─────────────────────────────────────────────────────────────
-// Talks to /api/vault/* (proxied by helm_server.py to vault_server.py on
-// hyperion, where `pass` and the GPG agent actually live). No secrets are
-// ever stored in state.widgets or written to marks_state.json — search
-// results, revealed entries, and the health scan all live in the
-// module-level VAULT_STATE object below, which is intentionally NOT part
-// of the persisted/synced app state.
-
-const VAULT_STATE = {}; // widgetId -> ephemeral UI state, never persisted
-
-function vaultState(widgetId) {
-  if (!VAULT_STATE[widgetId]) {
-    VAULT_STATE[widgetId] = {
-      query: '', results: [],
-      revealedPath: null, revealedData: null,
-      formOpen: false,
-      healthOpen: false, healthData: null,
-    };
-  }
-  return VAULT_STATE[widgetId];
-}
-
-function renderVaultWidget(w) {
-  const el = document.createElement('div');
-  el.className = 'folder-card widget-card vault-widget';
-  el.dataset.widgetId = w.id;
-  el.draggable = false;
-
-  el.innerHTML = `
-    <div class="folder-header widget-header">
-      <span class="col-dot" style="background:#F85149"></span>
-      <span class="column-title" style="cursor:default">Vault</span>
-      <div class="col-actions" style="opacity:1">
-        <button class="icon-btn" title="Health check" data-vault-health="${w.id}">♥</button>
-        <button class="icon-btn" title="Lock now" data-vault-lock="${w.id}">🔒</button>
-        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
-      </div>
-    </div>
-    <div class="vault-body" id="vault-body-${w.id}">
-      <div class="vault-status-row" id="vault-status-${w.id}">
-        <span class="vault-status-dot locked" id="vault-status-dot-${w.id}"></span>
-        <span id="vault-status-text-${w.id}">Checking status…</span>
-      </div>
-      <div class="vault-search-row">
-        <input class="vault-search-input" id="vault-search-${w.id}" type="text"
-          placeholder="Search entries…" draggable="false" autocomplete="off" spellcheck="false">
-      </div>
-      <div id="vault-health-${w.id}"></div>
-      <div id="vault-reveal-${w.id}"></div>
-      <ul class="vault-list" id="vault-list-${w.id}">
-        <li class="vault-empty">Type to search…</li>
-      </ul>
-      <div class="vault-actions-row">
-        <button class="btn" style="flex:1" data-vault-new="${w.id}">+ New entry</button>
-      </div>
-      <div id="vault-form-${w.id}"></div>
-    </div>
-  `;
-
-  setTimeout(() => {
-    const header = el.querySelector('.widget-header');
-    if (header) header.onmousedown = () => { el.draggable = true; };
-    el.addEventListener('dragend', () => { el.draggable = false; });
-    document.addEventListener('mouseup', () => { el.draggable = false; });
-
-    wireVaultWidget(w.id, el);
-  }, 0);
-
-  return el;
-}
-
-function wireVaultWidget(widgetId, el) {
-  refreshVaultStatus(widgetId);
-
-  const searchInput = el.querySelector('#vault-search-' + widgetId);
-  if (searchInput) {
-    searchInput.addEventListener('mousedown', (e) => e.stopPropagation());
-    let debounceTimer = null;
-    searchInput.oninput = (e) => {
-      vaultState(widgetId).query = e.target.value;
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => vaultSearch(widgetId), 200);
-    };
-  }
-
-  const healthBtn = el.querySelector('[data-vault-health]');
-  if (healthBtn) healthBtn.onclick = () => vaultToggleHealth(widgetId);
-
-  const lockBtn = el.querySelector('[data-vault-lock]');
-  if (lockBtn) lockBtn.onclick = () => vaultLock(widgetId);
-
-  const newBtn = el.querySelector('[data-vault-new]');
-  if (newBtn) newBtn.onclick = () => vaultToggleForm(widgetId);
-}
-
-async function refreshVaultStatus(widgetId) {
-  const dot = document.getElementById('vault-status-dot-' + widgetId);
-  const text = document.getElementById('vault-status-text-' + widgetId);
-  if (!dot || !text) return;
-  try {
-    const resp = await fetch('/api/vault/status', { signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    dot.className = 'vault-status-dot ' + (data.locked ? 'locked' : 'unlocked');
-    text.textContent = (data.locked ? 'Locked' : 'Unlocked') + ' · ' + data.entry_count + ' entries';
-  } catch (e) {
-    dot.className = 'vault-status-dot locked';
-    text.textContent = 'Vault backend unreachable';
-  }
-}
-
-async function vaultSearch(widgetId) {
-  const listEl = document.getElementById('vault-list-' + widgetId);
-  if (!listEl) return;
-  const st = vaultState(widgetId);
-  if (!st.query) {
-    st.results = [];
-    listEl.innerHTML = '<li class="vault-empty">Type to search…</li>';
-    return;
-  }
-  listEl.innerHTML = '<li class="vault-empty">Searching…</li>';
-  try {
-    const resp = await fetch('/api/vault/search?q=' + encodeURIComponent(st.query), { signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    st.results = data.results || [];
-    renderVaultList(widgetId);
-  } catch (e) {
-    listEl.innerHTML = `<li class="vault-empty">Search failed: ${escHtml(e.message)}</li>`;
-  }
-}
-
-function renderVaultList(widgetId) {
-  const listEl = document.getElementById('vault-list-' + widgetId);
-  if (!listEl) return;
-  const st = vaultState(widgetId);
-  if (st.results.length === 0) {
-    listEl.innerHTML = '<li class="vault-empty">No matches</li>';
-    return;
-  }
-  listEl.innerHTML = st.results.map(r => `
-    <li class="vault-item" data-vault-open="${escHtml(r.path)}">${escHtml(r.path)}</li>
-  `).join('');
-  listEl.querySelectorAll('[data-vault-open]').forEach(li => {
-    li.onclick = () => vaultReveal(widgetId, li.dataset.vaultOpen);
-  });
-}
-
-function vaultEntryUrl(path) {
-  // Encode each path segment individually so spaces/special chars are safe
-  // without escaping the '/' separators pass paths rely on.
-  return '/api/vault/entry/' + path.split('/').map(encodeURIComponent).join('/');
-}
-
-async function vaultReveal(widgetId, path) {
-  const revealEl = document.getElementById('vault-reveal-' + widgetId);
-  if (!revealEl) return;
-  revealEl.innerHTML = '<div class="vault-reveal">Decrypting…</div>';
-  try {
-    const resp = await fetch(vaultEntryUrl(path), { signal: AbortSignal.timeout(15000) });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error || ('HTTP ' + resp.status));
-    }
-    const data = await resp.json();
-    vaultState(widgetId).revealedPath = path;
-    vaultState(widgetId).revealedData = data;
-    renderVaultReveal(widgetId);
-    refreshVaultStatus(widgetId); // decrypting may have just unlocked the agent
-  } catch (e) {
-    revealEl.innerHTML = `<div class="vault-reveal">Could not decrypt: ${escHtml(e.message)}</div>`;
-  }
-}
-
-function renderVaultReveal(widgetId) {
-  const revealEl = document.getElementById('vault-reveal-' + widgetId);
-  const st = vaultState(widgetId);
-  if (!revealEl) return;
-  if (!st.revealedData) { revealEl.innerHTML = ''; return; }
-  const d = st.revealedData;
-  const tags = (d.tags || []).map(t => `<span class="vault-tag">${escHtml(t)}</span>`).join('');
-  revealEl.innerHTML = `
-    <div class="vault-reveal">
-      <div class="vault-reveal-row">
-        <span class="vault-reveal-label">Path</span>
-        <span class="vault-reveal-value">${escHtml(d.path)}</span>
-      </div>
-      ${d.username ? `
-      <div class="vault-reveal-row">
-        <span class="vault-reveal-label">User</span>
-        <span class="vault-reveal-value">${escHtml(d.username)}</span>
-        <button class="vault-copy-btn" data-vault-copy-user title="Copy username">⧉</button>
-      </div>` : ''}
-      <div class="vault-reveal-row">
-        <span class="vault-reveal-label">Secret</span>
-        <span class="vault-reveal-value">${escHtml(d.secret)}</span>
-        <button class="vault-copy-btn" data-vault-copy-secret title="Copy password">⧉</button>
-      </div>
-      ${d.url ? `
-      <div class="vault-reveal-row">
-        <span class="vault-reveal-label">URL</span>
-        <span class="vault-reveal-value">${escHtml(d.url)}</span>
-      </div>` : ''}
-      ${tags ? `<div class="vault-reveal-row"><span class="vault-reveal-label">Tags</span><div>${tags}</div></div>` : ''}
-      ${d.expires ? `
-      <div class="vault-reveal-row">
-        <span class="vault-reveal-label">Expires</span>
-        <span class="vault-reveal-value">${escHtml(d.expires)}</span>
-      </div>` : ''}
-      <div class="vault-reveal-row">
-        <button class="btn" data-vault-edit style="flex:1">Edit</button>
-        <button class="btn" data-vault-close-reveal style="flex:1">Hide</button>
-      </div>
-    </div>
-  `;
-  const copyUserBtn = revealEl.querySelector('[data-vault-copy-user]');
-  if (copyUserBtn) copyUserBtn.onclick = () => vaultCopy(d.username, copyUserBtn);
-  const copySecretBtn = revealEl.querySelector('[data-vault-copy-secret]');
-  if (copySecretBtn) copySecretBtn.onclick = () => vaultCopy(d.secret, copySecretBtn);
-  const editBtn = revealEl.querySelector('[data-vault-edit]');
-  if (editBtn) editBtn.onclick = () => vaultEditEntry(widgetId);
-  const closeBtn = revealEl.querySelector('[data-vault-close-reveal]');
-  if (closeBtn) closeBtn.onclick = () => {
-    vaultState(widgetId).revealedPath = null;
-    vaultState(widgetId).revealedData = null;
-    revealEl.innerHTML = '';
-  };
-}
-
-function vaultCopy(text, btn) {
-  if (!text) return;
-  navigator.clipboard.writeText(text).then(() => {
-    const original = btn.textContent;
-    btn.textContent = '✓';
-    setTimeout(() => { btn.textContent = original; }, 1200);
-  }).catch(() => { /* clipboard permission denied — user can still select/copy manually */ });
-}
-
-function vaultToggleForm(widgetId) {
-  const st = vaultState(widgetId);
-  st.formOpen = !st.formOpen;
-  if (st.formOpen) {
-    // Opening via the "+ New entry" button always starts blank —
-    // editing an existing entry goes through vaultEditEntry instead.
-    st.editingPath = null;
-    st.editingPrefill = null;
-  }
-  renderVaultForm(widgetId);
-}
-
-function vaultEditEntry(widgetId) {
-  const st = vaultState(widgetId);
-  const d = st.revealedData;
-  if (!d) return;
-  st.editingPath = d.path;
-  st.editingPrefill = {
-    username: d.username || '',
-    url: d.url || '',
-    tags: (d.tags || []).join(', '),
-    expires: d.expires || '',
-    secret: d.secret || '',
-  };
-  st.formOpen = true;
-  renderVaultForm(widgetId);
-  const formEl = document.getElementById('vault-form-' + widgetId);
-  if (formEl) formEl.scrollIntoView({ block: 'nearest' });
-}
-
-function renderVaultForm(widgetId) {
-  const formEl = document.getElementById('vault-form-' + widgetId);
-  if (!formEl) return;
-  const st = vaultState(widgetId);
-  if (!st.formOpen) { formEl.innerHTML = ''; return; }
-  const isEdit = !!st.editingPath;
-  const p = st.editingPrefill || {};
-  formEl.innerHTML = `
-    <div class="vault-form">
-      ${isEdit ? `<div class="vault-form-editing-label">Editing ${escHtml(st.editingPath)}</div>` : ''}
-      <input type="text" id="vault-new-path-${widgetId}" placeholder="path, e.g. banking/chase"
-        value="${escHtml(isEdit ? st.editingPath : '')}" ${isEdit ? 'readonly' : ''}>
-      <input type="text" id="vault-new-username-${widgetId}" placeholder="username (optional)" value="${escHtml(p.username || '')}">
-      <div class="vault-form-secret-row">
-        <input type="text" id="vault-new-secret-${widgetId}" placeholder="password" style="flex:1" value="${escHtml(p.secret || '')}">
-        <button class="btn" data-vault-generate="${widgetId}">Generate</button>
-      </div>
-      <input type="text" id="vault-new-url-${widgetId}" placeholder="url (optional)" value="${escHtml(p.url || '')}">
-      <input type="text" id="vault-new-tags-${widgetId}" placeholder="tags, comma-separated (optional)" value="${escHtml(p.tags || '')}">
-      <input type="text" id="vault-new-expires-${widgetId}" placeholder="expires YYYY-MM-DD (optional)" value="${escHtml(p.expires || '')}">
-      <div class="vault-actions-row" style="margin:0">
-        <button class="btn primary" style="flex:1" data-vault-save="${widgetId}">${isEdit ? 'Save changes' : 'Save entry'}</button>
-        <button class="btn" data-vault-cancel="${widgetId}">Cancel</button>
-      </div>
-    </div>
-  `;
-  formEl.querySelectorAll('input').forEach(inp => inp.addEventListener('mousedown', (e) => e.stopPropagation()));
-
-  const genBtn = formEl.querySelector('[data-vault-generate]');
-  if (genBtn) genBtn.onclick = () => vaultGenerate(widgetId);
-
-  const saveBtn = formEl.querySelector('[data-vault-save]');
-  if (saveBtn) saveBtn.onclick = () => vaultSubmitForm(widgetId);
-
-  const cancelBtn = formEl.querySelector('[data-vault-cancel]');
-  if (cancelBtn) cancelBtn.onclick = () => {
-    const st = vaultState(widgetId);
-    st.formOpen = false;
-    st.editingPath = null;
-    st.editingPrefill = null;
-    renderVaultForm(widgetId);
-  };
-}
-
-async function vaultGenerate(widgetId) {
-  const secretInput = document.getElementById('vault-new-secret-' + widgetId);
-  if (!secretInput) return;
-  try {
-    const resp = await fetch('/api/vault/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ length: 20, symbols: true }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    secretInput.value = data.password;
-  } catch (e) {
-    alert('Could not generate password: ' + e.message);
-  }
-}
-
-async function vaultSubmitForm(widgetId) {
-  const pathEl = document.getElementById('vault-new-path-' + widgetId);
-  const secretEl = document.getElementById('vault-new-secret-' + widgetId);
-  const path = pathEl ? pathEl.value.trim() : '';
-  const secret = secretEl ? secretEl.value : '';
-  if (!path || !secret) { alert('Path and password are required.'); return; }
-
-  const val = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ''; };
-  const username = val('vault-new-username-' + widgetId);
-  const url = val('vault-new-url-' + widgetId);
-  const tags = val('vault-new-tags-' + widgetId);
-  const expires = val('vault-new-expires-' + widgetId);
-
-  const st = vaultState(widgetId);
-  const isEdit = !!st.editingPath;
-
-  try {
-    const resp = await fetch(vaultEntryUrl(path), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // force=true on edit: pass insert would otherwise prompt an
-      // interactive "overwrite?" confirmation that has nowhere to go
-      // through a subprocess call, and would just hang like the pinentry
-      // issue did. New entries never need this since the path is fresh.
-      body: JSON.stringify({ secret, username, url, tags, expires, force: isEdit }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + resp.status));
-
-    st.formOpen = false;
-    st.editingPath = null;
-    st.editingPrefill = null;
-    renderVaultForm(widgetId);
-    refreshVaultStatus(widgetId);
-    if (st.query) vaultSearch(widgetId);
-    if (isEdit) vaultReveal(widgetId, path); // refresh the open reveal panel with the new values
-  } catch (e) {
-    alert('Could not save entry: ' + e.message);
-  }
-}
-
-async function vaultToggleHealth(widgetId) {
-  const st = vaultState(widgetId);
-  st.healthOpen = !st.healthOpen;
-  if (st.healthOpen && !st.healthData) {
-    await vaultLoadHealth(widgetId);
-  } else {
-    renderVaultHealth(widgetId);
-  }
-}
-
-async function vaultLoadHealth(widgetId) {
-  const el = document.getElementById('vault-health-' + widgetId);
-  if (el) el.innerHTML = '<div class="vault-health-panel">Scanning… (decrypts every entry, can take a bit)</div>';
-  try {
-    const resp = await fetch('/api/vault/health', { signal: AbortSignal.timeout(30000) });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    vaultState(widgetId).healthData = data;
-    renderVaultHealth(widgetId);
-  } catch (e) {
-    if (el) el.innerHTML = `<div class="vault-health-panel">Health scan failed: ${escHtml(e.message)}</div>`;
-  }
-}
-
-function renderVaultHealth(widgetId) {
-  const el = document.getElementById('vault-health-' + widgetId);
-  const st = vaultState(widgetId);
-  if (!el) return;
-  if (!st.healthOpen) { el.innerHTML = ''; return; }
-  const d = st.healthData;
-  if (!d) { el.innerHTML = '<div class="vault-health-panel">Scanning…</div>'; return; }
-  if (!st.healthExpanded) st.healthExpanded = {};
-
-  const plainRow = (label, count) => `
-    <div class="vault-health-row">
-      <span>${escHtml(label)}</span>
-      <span class="vault-health-count">${count}</span>
-    </div>`;
-
-  // A clickable, expandable category row. `items` should already be an
-  // array of path strings (reused_passwords gets flattened before calling
-  // this, since it's naturally an array of groups).
-  const section = (key, label, items, level) => {
-    const count = items.length;
-    const expanded = !!st.healthExpanded[key];
-    const header = `
-      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? `data-vault-health-toggle="${key}"` : ''}>
-        <span>${escHtml(label)}${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
-        <span class="vault-health-count${level && count ? ' ' + level : ''}">${count}</span>
-      </div>`;
-    if (!expanded || count === 0) return header;
-    const detail = `
-      <div class="vault-health-detail">
-        ${items.map(p => `<div class="vault-health-item" data-vault-health-open="${escHtml(p)}">${escHtml(p)}</div>`).join('')}
-      </div>`;
-    return header + detail;
-  };
-
-  // Weak passwords: show path + score together, still individually clickable.
-  const weakSection = () => {
-    const count = d.weak.length;
-    const expanded = !!st.healthExpanded.weak;
-    const header = `
-      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? 'data-vault-health-toggle="weak"' : ''}>
-        <span>Weak passwords${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
-        <span class="vault-health-count${count ? ' bad' : ''}">${count}</span>
-      </div>`;
-    if (!expanded || count === 0) return header;
-    const detail = `
-      <div class="vault-health-detail">
-        ${d.weak.map(w => `<div class="vault-health-item" data-vault-health-open="${escHtml(w.path)}">${escHtml(w.path)} <span class="vault-health-score">score ${w.score}</span></div>`).join('')}
-      </div>`;
-    return header + detail;
-  };
-
-  // Reused passwords: each group shares one password across several paths —
-  // show the group, with every path in it individually clickable.
-  const reusedSection = () => {
-    const count = d.reused_passwords.length;
-    const expanded = !!st.healthExpanded.reused;
-    const header = `
-      <div class="vault-health-row${count ? ' vault-health-clickable' : ''}" ${count ? 'data-vault-health-toggle="reused"' : ''}>
-        <span>Reused passwords${count ? (expanded ? ' ▾' : ' ▸') : ''}</span>
-        <span class="vault-health-count${count ? ' warn' : ''}">${count}</span>
-      </div>`;
-    if (!expanded || count === 0) return header;
-    const detail = `
-      <div class="vault-health-detail">
-        ${d.reused_passwords.map(group => `
-          <div class="vault-health-group">
-            ${group.paths.map(p => `<span class="vault-health-item-link" data-vault-health-open="${escHtml(p)}">${escHtml(p)}</span>`).join('<span class="vault-health-sep">·</span>')}
-          </div>
-        `).join('')}
-      </div>`;
-    return header + detail;
-  };
-
-  el.innerHTML = `
-    <div class="vault-health-panel">
-      ${plainRow('Entries', d.entry_count)}
-      ${weakSection()}
-      ${reusedSection()}
-      ${section('expired', 'Expired', d.expired, 'bad')}
-      ${section('expiring_soon', 'Expiring within 30 days', d.expiring_soon, 'warn')}
-      ${section('missing_username', 'Missing username', d.missing_username, 'warn')}
-      ${section('no_tags', 'No tags', d.no_tags, '')}
-    </div>
-  `;
-
-  el.querySelectorAll('[data-vault-health-toggle]').forEach(rowEl => {
-    rowEl.onclick = () => {
-      const key = rowEl.dataset.vaultHealthToggle;
-      st.healthExpanded[key] = !st.healthExpanded[key];
-      renderVaultHealth(widgetId);
-    };
-  });
-
-  el.querySelectorAll('[data-vault-health-open]').forEach(item => {
-    item.onclick = (e) => {
-      e.stopPropagation();
-      vaultReveal(widgetId, item.dataset.vaultHealthOpen);
-    };
-  });
-}
-
-async function vaultLock(widgetId) {
-  try {
-    await fetch('/api/vault/lock', { method: 'POST', signal: AbortSignal.timeout(8000) });
-  } catch (e) { /* best-effort */ }
-  refreshVaultStatus(widgetId);
-  vaultState(widgetId).revealedPath = null;
-  vaultState(widgetId).revealedData = null;
-  const revealEl = document.getElementById('vault-reveal-' + widgetId);
-  if (revealEl) revealEl.innerHTML = '';
-}
-
 // ── ON THIS DAY WIDGET ────────────────────────────────────────────────────────
 // Fetches today's historical events from the Wikimedia REST API. Cached
 // per-day (shared across all On This Day widgets) since the content is
@@ -6092,6 +5572,212 @@ async function loadRandomWiki(widgetId) {
   } catch (e) {
     body.innerHTML = '<div class="rwiki-error">Could not load an article. Try refreshing.</div>';
   }
+}
+
+// ── QUOTE OF THE DAY WIDGET ───────────────────────────────────────────────────
+// Fetches via Helm's own /api/proxy so this works regardless of the quote
+// provider's CORS policy (ZenQuotes' free tier does not send CORS headers
+// for direct browser calls — proxying through the server sidesteps that,
+// since CORS is a browser-only restriction and never applies to a server
+// making its own outbound request). Cached for the day since /api/today
+// returns the same quote for a given 24-hour period regardless of how many
+// times it's fetched.
+
+const QUOTE_CACHE = { dateKey: null, quote: null };
+
+function renderQuoteWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card quote-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#3FB950"></span>
+      <span class="column-title" style="cursor:default">Quote of the Day</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="quote-body" id="quote-${w.id}">
+      <div class="quote-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    loadQuoteOfTheDay(w.id);
+  }, 0);
+
+  return el;
+}
+
+async function loadQuoteOfTheDay(widgetId) {
+  const body = document.getElementById('quote-' + widgetId);
+  if (!body) return;
+
+  const today = new Date();
+  const dateKey = today.getFullYear() + '-' + (today.getMonth() + 1) + '-' + today.getDate();
+
+  if (QUOTE_CACHE.dateKey === dateKey && QUOTE_CACHE.quote) {
+    renderQuoteHtml(body, QUOTE_CACHE.quote);
+    return;
+  }
+
+  body.innerHTML = '<div class="quote-loading">Loading…</div>';
+  try {
+    const hasBackend = await checkLocalBackend();
+    if (!hasBackend) {
+      body.innerHTML = '<div class="quote-error">Requires the local backend to fetch (avoids CORS restrictions on the free quote API).</div>';
+      return;
+    }
+    const proxyUrl = '/api/proxy?url=' + encodeURIComponent('https://zenquotes.io/api/today');
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+    const data = await resp.json();
+    const entry = Array.isArray(data) ? data[0] : data;
+    if (!entry || !entry.q) throw new Error('Unexpected response format');
+
+    const quote = { text: entry.q, author: entry.a || 'Unknown' };
+    QUOTE_CACHE.dateKey = dateKey;
+    QUOTE_CACHE.quote = quote;
+    renderQuoteHtml(body, quote);
+  } catch (e) {
+    body.innerHTML = `<div class="quote-error">Could not load today's quote.<br><small>${escHtml(e.message)}</small></div>`;
+  }
+}
+
+function renderQuoteHtml(body, quote) {
+  body.innerHTML = `
+    <div class="quote-text">“${escHtml(quote.text)}”</div>
+    <div class="quote-author">— ${escHtml(quote.author)}</div>
+    <a class="quote-attribution" href="https://zenquotes.io/" target="_blank" rel="noopener">Quotes provided by ZenQuotes.io</a>
+  `;
+}
+
+// ── SUNRISE/SUNSET + MOON PHASE WIDGET ────────────────────────────────────────
+// Sunrise/sunset comes from Open-Meteo (same provider as the Weather widget).
+// Moon phase is a pure date calculation — no API needed — based on days
+// elapsed since a known reference new moon, modulo the synodic month length.
+
+const SUNMOON_CACHE = {}; // widgetId -> { data, ts }
+
+const MOON_PHASES = [
+  { name: 'New Moon',        icon: '🌑' },
+  { name: 'Waxing Crescent', icon: '🌒' },
+  { name: 'First Quarter',   icon: '🌓' },
+  { name: 'Waxing Gibbous',  icon: '🌔' },
+  { name: 'Full Moon',       icon: '🌕' },
+  { name: 'Waning Gibbous',  icon: '🌖' },
+  { name: 'Last Quarter',    icon: '🌗' },
+  { name: 'Waning Crescent', icon: '🌘' },
+];
+
+function getMoonPhase(date) {
+  // Reference: a known new moon (2000-01-06 18:14 UTC), synodic month ≈ 29.530588853 days
+  const synodicMonth = 29.530588853;
+  const referenceNewMoon = Date.UTC(2000, 0, 6, 18, 14, 0);
+  const daysSince = (date.getTime() - referenceNewMoon) / 86400000;
+  const phaseFraction = ((daysSince % synodicMonth) + synodicMonth) % synodicMonth / synodicMonth;
+  const index = Math.floor(phaseFraction * 8 + 0.5) % 8;
+  return { ...MOON_PHASES[index], illumination: Math.round((1 - Math.cos(phaseFraction * 2 * Math.PI)) / 2 * 100) };
+}
+
+function renderSunMoonWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card sunmoon-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#F0C419"></span>
+      <span class="column-title" style="cursor:default">Sun &amp; Moon</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Change city" data-cfg-widget="${w.id}">⚙</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="sunmoon-body" id="sunmoon-${w.id}">
+      <div class="sunmoon-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    loadSunMoon(w);
+  }, 0);
+
+  return el;
+}
+
+async function loadSunMoon(w) {
+  const body = document.getElementById('sunmoon-' + w.id);
+  if (!body) return;
+
+  const cached = SUNMOON_CACHE[w.id];
+  if (cached && Date.now() - cached.ts < 60 * 60 * 1000) {
+    renderSunMoonHtml(body, cached.data);
+    return;
+  }
+
+  body.innerHTML = '<div class="sunmoon-loading">Loading…</div>';
+  try {
+    const rawCity = w.city || 'Athens, GA';
+    const cityName = rawCity.split(',')[0].trim();
+    const geoResp = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=en&format=json`
+    );
+    const geo = await geoResp.json();
+    if (!geo.results?.length) {
+      body.innerHTML = `<div class="sunmoon-error">City not found: "${escHtml(rawCity)}"</div>`;
+      return;
+    }
+    const { latitude: lat, longitude: lon, name, timezone } = geo.results[0];
+    const sunResp = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=sunrise,sunset&timezone=auto&forecast_days=1`
+    );
+    const sun = await sunResp.json();
+    const data = {
+      cityName: name,
+      sunrise: sun.daily?.sunrise?.[0],
+      sunset: sun.daily?.sunset?.[0],
+      moon: getMoonPhase(new Date()),
+    };
+    SUNMOON_CACHE[w.id] = { data, ts: Date.now() };
+    renderSunMoonHtml(body, data);
+  } catch (e) {
+    body.innerHTML = `<div class="sunmoon-error">Could not load data.<br><small>${escHtml(e.message)}</small></div>`;
+  }
+}
+
+function renderSunMoonHtml(body, data) {
+  const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—';
+  body.innerHTML = `
+    <div class="sunmoon-city">${escHtml(data.cityName || '')}</div>
+    <div class="sunmoon-row">
+      <span class="sunmoon-icon">🌅</span>
+      <span class="sunmoon-label">Sunrise</span>
+      <span class="sunmoon-value">${fmtTime(data.sunrise)}</span>
+    </div>
+    <div class="sunmoon-row">
+      <span class="sunmoon-icon">🌇</span>
+      <span class="sunmoon-label">Sunset</span>
+      <span class="sunmoon-value">${fmtTime(data.sunset)}</span>
+    </div>
+    <div class="sunmoon-row">
+      <span class="sunmoon-icon">${data.moon.icon}</span>
+      <span class="sunmoon-label">${escHtml(data.moon.name)}</span>
+      <span class="sunmoon-value">${data.moon.illumination}%</span>
+    </div>
+  `;
 }
 
 function renderNotesWidget(w) {
@@ -6290,9 +5976,13 @@ document.getElementById('btn-add-randomwiki').onclick = () => {
   state.widgets.push({ id: uid(), type: 'randomwiki', gridCol: 2 });
   save(); render(); renderDashboard();
 };
-document.getElementById('btn-add-vault').onclick = () => {
-  state.widgets.push({ id: uid(), type: 'vault', gridCol: 0 });
-  save(); render();
+document.getElementById('btn-add-quoteoftheday').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'quoteoftheday', gridCol: 2 });
+  save(); render(); renderDashboard();
+};
+document.getElementById('btn-add-sunmoon').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'sunmoon', city: 'Athens, GA', gridCol: 2 });
+  save(); render(); renderDashboard();
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
 document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);
@@ -6488,10 +6178,11 @@ function switchTab(tab) {
   show('calendar-page',  tab === 'calendar');
   show('services-page',  tab === 'services');
   show('irc-page',       tab === 'irc');
+  show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -6500,6 +6191,8 @@ function switchTab(tab) {
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'services')  { renderServicesPage(); startServicesPolling(); }
   else stopServicesPolling();
+  if (tab === 'logs')      { fetchLogs(); startLogsPolling(); }
+  else stopLogsPolling();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -6522,6 +6215,16 @@ document.getElementById('btn-invidious-toggle').oncontextmenu = (e) => { e.preve
 document.getElementById('btn-invidious-config').onclick = changeInvidiousInstance;
 document.getElementById('btn-add-news-source').onclick = addNewsSource;
 document.getElementById('btn-refresh-services').onclick = fetchServices;
+document.getElementById('btn-refresh-logs').onclick = fetchLogs;
+document.getElementById('logs-service-filter').onchange = fetchLogs;
+document.getElementById('logs-search').oninput = renderLogs;
+document.getElementById('logs-search-clear').onclick = () => {
+  document.getElementById('logs-search').value = '';
+  renderLogs();
+};
+['logs-level-error', 'logs-level-warning', 'logs-level-info'].forEach(id => {
+  document.getElementById(id).onchange = renderLogs;
+});
 document.getElementById('btn-refresh-news').onclick = () => {
   Object.keys(NEWS_CACHE).forEach(k => delete NEWS_CACHE[k]);
   renderNews();
@@ -7286,6 +6989,86 @@ window.removeNewsSource = function(id) {
 };
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// ── LOGS PAGE ─────────────────────────────────────════════════════════════════
+// Combined, leveled, filterable view across all monitored services' logs.
+// Polls every 15 seconds while the tab is active. Client-side text filter and
+// level checkboxes narrow an already-fetched batch without re-fetching.
+// ════════════════════════════════════════════════════════════════════════════
+
+let logsData = [];
+let logsPollTimer = null;
+const LOGS_POLL_MS = 15 * 1000;
+
+async function fetchLogs() {
+  const hasBackend = await checkLocalBackend();
+  const body = document.getElementById('logs-body');
+  if (!hasBackend) {
+    if (body) body.innerHTML = '<div class="logs-error">Log viewing requires the local backend (helm_server.py). Not reachable.</div>';
+    return;
+  }
+  const serviceSel = document.getElementById('logs-service-filter');
+  const service = serviceSel ? serviceSel.value : 'all';
+  try {
+    const resp = await fetch(`/api/logs?service=${encodeURIComponent(service)}&lines=80`, { signal: AbortSignal.timeout(20000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    logsData = data.entries || [];
+    renderLogs();
+    const el = document.getElementById('logs-last-updated');
+    if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch(e) {
+    if (body) body.innerHTML = `<div class="logs-error">Could not fetch logs: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderLogs() {
+  const body = document.getElementById('logs-body');
+  if (!body) return;
+
+  const searchInput = document.getElementById('logs-search');
+  const query = (searchInput?.value || '').toLowerCase().trim();
+  const showError   = document.getElementById('logs-level-error')?.checked   ?? true;
+  const showWarning = document.getElementById('logs-level-warning')?.checked ?? true;
+  const showInfo    = document.getElementById('logs-level-info')?.checked    ?? true;
+
+  const levelAllowed = { error: showError, warning: showWarning, info: showInfo };
+
+  const filtered = logsData.filter(entry => {
+    if (!levelAllowed[entry.level]) return false;
+    if (query && !entry.message.toLowerCase().includes(query)) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<div class="logs-empty">No matching log entries.</div>';
+    return;
+  }
+
+  body.innerHTML = filtered.map(entry => {
+    const time = entry.timestamp
+      ? new Date(entry.timestamp * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '—';
+    return `
+      <div class="log-line log-level-${entry.level}">
+        <span class="log-time">${time}</span>
+        <span class="log-service">${escHtml(entry.serviceLabel || entry.service || '')}</span>
+        <span class="log-level-badge log-level-badge-${entry.level}">${entry.level}</span>
+        <span class="log-message">${escHtml(entry.message)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function startLogsPolling() {
+  if (!logsPollTimer) logsPollTimer = setInterval(fetchLogs, LOGS_POLL_MS);
+}
+
+function stopLogsPolling() {
+  clearInterval(logsPollTimer);
+  logsPollTimer = null;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // ── SERVICES MONITORING PAGE ─────────────────────────────────────════════════
 // Polls /api/services every 2 minutes while the tab is active.
