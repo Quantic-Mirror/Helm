@@ -52,46 +52,12 @@ import ssl
 import threading
 import urllib.request
 import urllib.error
-from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(SCRIPT_DIR, "marks_state.json")
-
-# ── VAULT PROXY ──────────────────────────────────────────────────────────────
-# pass + the GPG agent live on hyperion, not here. Requests to /api/vault/*
-# get forwarded there rather than handled locally. Change VAULT_BACKEND if
-# hyperion's LAN hostname/IP or the vault_server.py port ever changes.
-VAULT_BACKEND = os.environ.get("VAULT_BACKEND_URL", "http://hyperion:8090")
-VAULT_TOKEN_FILE = os.path.join(SCRIPT_DIR, "vault_token.txt")
-
-
-def _vault_token():
-    if os.path.exists(VAULT_TOKEN_FILE):
-        with open(VAULT_TOKEN_FILE) as f:
-            return f.read().strip()
-    return None
-
-
-def proxy_to_vault(method, path_and_query, body_bytes=None):
-    """Forward a request to vault_server.py running on hyperion.
-    Returns (status_code, response_body_bytes)."""
-    token = _vault_token()
-    url = VAULT_BACKEND + path_and_query
-    req = urllib.request.Request(url, data=body_bytes, method=method)
-    if token:
-        req.add_header("X-Vault-Token", token)
-    if body_bytes:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.status, resp.read()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read()
-    except urllib.error.URLError as e:
-        msg = json.dumps({"error": f"Could not reach vault backend on hyperion: {e.reason}"})
-        return 502, msg.encode("utf-8")
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
 
@@ -284,7 +250,6 @@ def gather_system_stats():
 
 
 import subprocess
-
 
 # ── SERVICE MONITORING ────────────────────────────────────────────────────────
 MONITORED_SERVICES = [
@@ -502,6 +467,157 @@ def _get_timer_status(timer_unit, service_unit):
     return {"running": running, "status": active, "uptime": "", "next_run": next_str, "last_run": last_str, "logs": logs_out}
 
 
+# ── LOG VIEWER ────────────────────────────────────────────────────────────────
+# Combines recent log lines across all monitored services into one structured,
+# leveled, chronologically-sorted feed for the Logs page. Systemd units get
+# real severity levels straight from the journal's PRIORITY field; Docker
+# containers have no structured severity, so lines are classified by keyword
+# as a best-effort approximation.
+
+def _parse_journal_json_lines(raw):
+    entries = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except Exception:
+            continue
+    return entries
+
+
+def _priority_to_level(priority):
+    """Map syslog priority (0=emerg .. 7=debug) to a simple 3-level scheme."""
+    try:
+        p = int(priority)
+    except (TypeError, ValueError):
+        return "info"
+    if p <= 3:   # emerg, alert, crit, err
+        return "error"
+    if p == 4:   # warning
+        return "warning"
+    return "info"  # notice, info, debug
+
+
+def _get_systemd_logs(unit, user, lines):
+    cmd = ["journalctl"] + (["--user"] if user else []) + \
+          ["-u", unit, "-n", str(lines), "--no-pager", "-o", "json"]
+    stdout, _, rc = _run(cmd, timeout=15)
+    if rc != 0 or not stdout:
+        return []
+    results = []
+    for obj in _parse_journal_json_lines(stdout):
+        ts_micro = obj.get("__REALTIME_TIMESTAMP")
+        try:
+            ts = float(ts_micro) / 1_000_000 if ts_micro else None
+        except (TypeError, ValueError):
+            ts = None
+        msg = obj.get("MESSAGE", "")
+        if isinstance(msg, list):
+            # journalctl -o json sometimes emits MESSAGE as a byte array for
+            # non-UTF8 output — best-effort decode.
+            try:
+                msg = bytes(msg).decode("utf-8", errors="replace")
+            except Exception:
+                msg = str(msg)
+        results.append({
+            "timestamp": ts,
+            "level": _priority_to_level(obj.get("PRIORITY")),
+            "message": msg,
+        })
+    return results
+
+
+def _classify_docker_line(text):
+    lower = text.lower()
+    if any(k in lower for k in ("error", "fatal", "critical", "panic", "traceback")):
+        return "error"
+    if "warn" in lower:
+        return "warning"
+    return "info"
+
+
+def _get_docker_logs(container, lines):
+    try:
+        conn = _UnixSocketHTTPConnection("/var/run/docker.sock")
+        conn.request(
+            "GET",
+            f"/containers/{container}/logs?stdout=1&stderr=1&tail={lines}&timestamps=1",
+            headers={"Host": "localhost"},
+        )
+        resp = conn.getresponse()
+        raw = resp.read()
+        conn.close()
+    except Exception:
+        return []
+
+    # Strip Docker's 8-byte multiplexed stream frame headers
+    text_parts = []
+    i = 0
+    while i < len(raw):
+        if i + 8 > len(raw):
+            break
+        size = int.from_bytes(raw[i+4:i+8], "big")
+        chunk = raw[i+8:i+8+size].decode("utf-8", errors="replace")
+        text_parts.append(chunk)
+        i += 8 + size
+    full_text = "".join(text_parts)
+
+    from datetime import datetime
+    results = []
+    for line in full_text.splitlines():
+        if not line.strip():
+            continue
+        ts = None
+        msg = line
+        # Docker's --timestamps prefixes each line with an RFC3339 timestamp
+        # followed by a space, e.g. "2026-07-21T12:00:00.123456789Z message"
+        if len(line) > 20 and line[4] == "-" and "T" in line[:20]:
+            try:
+                ts_str, rest = line.split(" ", 1)
+                ts = datetime.strptime(ts_str[:26], "%Y-%m-%dT%H:%M:%S.%f").timestamp()
+                msg = rest
+            except Exception:
+                msg = line
+        results.append({
+            "timestamp": ts,
+            "level": _classify_docker_line(msg),
+            "message": msg,
+        })
+    return results
+
+
+def gather_logs(service_filter=None, lines_per_service=50):
+    """Return a combined, newest-first list of recent log entries across all
+    monitored services, or a single service if service_filter is given."""
+    all_entries = []
+    for svc in MONITORED_SERVICES:
+        if service_filter and service_filter != "all" and svc["id"] != service_filter:
+            continue
+        try:
+            if svc["type"] == "systemd-user":
+                entries = _get_systemd_logs(svc["unit"], user=True, lines=lines_per_service)
+            elif svc["type"] == "systemd":
+                entries = _get_systemd_logs(svc["unit"], user=False, lines=lines_per_service)
+            elif svc["type"] == "docker":
+                entries = _get_docker_logs(svc["container"], lines=lines_per_service)
+            elif svc["type"] == "systemd-timer":
+                entries = _get_systemd_logs(svc["service_unit"], user=True, lines=lines_per_service)
+            else:
+                entries = []
+        except Exception:
+            entries = []
+        for e in entries:
+            e["service"] = svc["id"]
+            e["serviceLabel"] = svc["label"]
+        all_entries.extend(entries)
+
+    # Newest first; entries with no parseable timestamp sink to the bottom
+    all_entries.sort(key=lambda e: (e["timestamp"] is None, -(e["timestamp"] or 0)))
+    return all_entries[:400]  # hard cap so the response stays a reasonable size
+
+
 def gather_services_status():
     results = []
     for svc in MONITORED_SERVICES:
@@ -674,19 +790,19 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"services": gather_services_status()})
             return
 
+        if parsed.path == "/api/logs":
+            qs = parse_qs(parsed.query)
+            service_filter = qs.get("service", ["all"])[0]
+            try:
+                lines_per_service = min(200, max(10, int(qs.get("lines", ["50"])[0])))
+            except ValueError:
+                lines_per_service = 50
+            self.send_json(200, {"entries": gather_logs(service_filter, lines_per_service)})
+            return
+
         if parsed.path == "/api/state":
             with _state_lock:
                 self.send_json(200, dict(_state_cache))
-            return
-
-        if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
-                or parsed.path.startswith("/api/vault/entry/") or parsed.path == "/api/vault/health":
-            status, data = proxy_to_vault("GET", self.path)
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
             return
 
         super().do_GET()
@@ -739,19 +855,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
             ok, msg = control_service(service_id, action)
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
             return
-
-        if parsed.path == "/api/vault/lock" or parsed.path == "/api/vault/generate" \
-                or parsed.path.startswith("/api/vault/entry/"):
-            length = int(self.headers.get("Content-Length", 0))
-            body_bytes = self.rfile.read(length) if length else None
-            status, data = proxy_to_vault("POST", self.path, body_bytes)
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-            return
-
         self.send_json(404, {"error": "Not found"})
 
     def do_OPTIONS(self):
@@ -812,7 +915,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), HelmHandler)
+    server = HTTPServer(("0.0.0.0", PORT), HelmHandler)
 
     use_tls = os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)
     scheme = "http"
@@ -840,9 +943,6 @@ def main():
     print(f"  Static files served from current directory")
     print(f"  Feed proxy available at /api/proxy?url=<encoded-url>")
     print(f"  State sync available at /api/state (GET/PUT)")
-    print(f"  Vault available at /api/vault/* (proxied to {VAULT_BACKEND})")
-    if not os.path.exists(VAULT_TOKEN_FILE):
-        print(f"  !! No vault_token.txt found at {VAULT_TOKEN_FILE} -- vault requests will fail auth on hyperion.")
     print(f"  State persisted to {STATE_FILE}")
     print(f"  Rolling backups (up to {BACKUP_KEEP}, hourly) in {BACKUP_DIR}")
     print("Press Ctrl+C to stop.")
