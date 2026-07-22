@@ -192,6 +192,54 @@ def _signal_get_number():
     return None
 
 
+# ── Contact name resolution ───────────────────────────────────────────────────
+# Sync messages (outgoing messages sent from the phone or any other linked
+# device) only carry the recipient's number, never a display name — Signal's
+# protocol just doesn't include that in the sync envelope. To show a name
+# instead of a bare number for those conversations, look the number up
+# against the account's contact list. Cached for an hour since this rarely
+# changes and every conversation would otherwise trigger its own fetch.
+
+SIGNAL_CONTACTS_TTL = 3600  # seconds
+_signal_contacts_cache = {"ts": 0, "by_number": {}}
+
+
+def _signal_refresh_contacts():
+    number = _signal_get_number()
+    if not number:
+        return
+    data, err = _signal_api_get(f"/v1/contacts/{quote(number, safe='+')}?all_recipients=true")
+    if err or not isinstance(data, list):
+        return
+    by_number = {}
+    for entry in data:
+        num = entry.get("number") or entry.get("recipient")
+        if not num:
+            continue
+        # Try several plausible field names rather than hard-coding one
+        # schema — signal-cli-rest-api's exact contact JSON shape has
+        # shifted across versions, and falling through to the number is
+        # always a safe default if none of these are present.
+        name = entry.get("name") or entry.get("profile_name") or entry.get("profileName")
+        if not name:
+            given = entry.get("given_name") or entry.get("givenName")
+            family = entry.get("family_name") or entry.get("familyName")
+            if given or family:
+                name = " ".join(p for p in [given, family] if p)
+        if name:
+            by_number[num] = name
+    _signal_contacts_cache["by_number"] = by_number
+    _signal_contacts_cache["ts"] = time.time()
+
+
+def _signal_resolve_contact_name(number):
+    if not number:
+        return None
+    if time.time() - _signal_contacts_cache["ts"] > SIGNAL_CONTACTS_TTL:
+        _signal_refresh_contacts()
+    return _signal_contacts_cache["by_number"].get(number)
+
+
 def _signal_extract_attachments(raw_attachments):
     """Normalize signal-cli-rest-api's attachment list into just what the
     frontend needs to display or link to them. The actual bytes stay in the
@@ -298,10 +346,12 @@ def _signal_poll_once():
             })
             if not group_id:
                 conv["peer_number"] = msg["peer_number"]
+                name_is_unresolved = conv["name"] == conv_id or conv["name"] == msg["peer_number"]
                 if msg["peer_name"]:
                     conv["name"] = msg["peer_name"]
-                elif conv["name"] == conv_id:
-                    conv["name"] = msg["peer_number"] or conv_id
+                elif name_is_unresolved:
+                    resolved = _signal_resolve_contact_name(msg["peer_number"])
+                    conv["name"] = resolved or msg["peer_number"] or conv_id
             elif msg["group_name"] and (not conv.get("name") or conv["name"] == conv_id):
                 conv["name"] = msg["group_name"]
 
