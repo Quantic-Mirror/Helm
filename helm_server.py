@@ -47,6 +47,7 @@ Default port is 8080 (or 8443 conventionally for HTTPS, but any port works).
 import sys
 import os
 import json
+import re
 import time
 import ssl
 import threading
@@ -147,6 +148,20 @@ def _signal_api_get(path, timeout=20):
         return None, str(e)
 
 
+def _signal_api_get_raw(path, timeout=20):
+    """Like _signal_api_get but returns raw bytes + content-type instead of
+    JSON-decoding — needed for binary attachment downloads (images, etc.)."""
+    try:
+        req = urllib.request.Request(SIGNAL_API_BASE + path)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            content_type = resp.headers.get("Content-Type", "application/octet-stream")
+            return resp.read(), content_type, None
+    except urllib.error.HTTPError as e:
+        return None, None, f"HTTP {e.code}"
+    except Exception as e:
+        return None, None, str(e)
+
+
 def _signal_api_post(path, payload, timeout=20):
     try:
         body = json.dumps(payload).encode("utf-8")
@@ -177,10 +192,31 @@ def _signal_get_number():
     return None
 
 
+def _signal_extract_attachments(raw_attachments):
+    """Normalize signal-cli-rest-api's attachment list into just what the
+    frontend needs to display or link to them. The actual bytes stay in the
+    container and are fetched on demand via /api/signal/attachment/<id>."""
+    if not raw_attachments:
+        return []
+    out = []
+    for a in raw_attachments:
+        att_id = a.get("id")
+        if not att_id:
+            continue
+        out.append({
+            "id": att_id,
+            "content_type": a.get("contentType", "application/octet-stream"),
+            "filename": a.get("filename"),
+            "size": a.get("size"),
+        })
+    return out
+
+
 def _signal_extract_message(envelope):
     """Normalize both envelope shapes signal-cli-rest-api sends into one
-    common structure. Returns None if this envelope isn't a plain text
-    message (e.g. it's a receipt or typing indicator).
+    common structure. Returns None if this envelope isn't a message worth
+    showing at all (e.g. it's a receipt or typing indicator with neither
+    text nor an attachment).
 
     - dataMessage: an INCOMING message sent to this account. The
       conversation is keyed by the sender.
@@ -190,14 +226,19 @@ def _signal_extract_message(envelope):
       message this way so all linked devices stay consistent. The
       conversation is keyed by the recipient, not the sender (the sender
       is always "this account" in this case).
+
+    A message with a picture and no caption has message == null but a
+    populated attachments array — it must still produce an entry so the
+    picture shows up, not just messages that happen to have text.
     """
     data_msg = envelope.get("dataMessage")
-    if data_msg and data_msg.get("message"):
+    if data_msg and (data_msg.get("message") or data_msg.get("attachments")):
         group_info = data_msg.get("groupInfo") or {}
         group_id = group_info.get("groupId")
         peer = envelope.get("sourceNumber") or envelope.get("source")
         return {
-            "text": data_msg["message"],
+            "text": data_msg.get("message") or "",
+            "attachments": _signal_extract_attachments(data_msg.get("attachments")),
             "group_id": group_id,
             "group_name": group_info.get("groupName"),
             "peer_number": peer,
@@ -207,12 +248,13 @@ def _signal_extract_message(envelope):
         }
 
     sent_msg = (envelope.get("syncMessage") or {}).get("sentMessage")
-    if sent_msg and sent_msg.get("message"):
+    if sent_msg and (sent_msg.get("message") or sent_msg.get("attachments")):
         group_info = sent_msg.get("groupInfo") or {}
         group_id = group_info.get("groupId")
         peer = sent_msg.get("destinationNumber") or sent_msg.get("destination")
         return {
-            "text": sent_msg["message"],
+            "text": sent_msg.get("message") or "",
+            "attachments": _signal_extract_attachments(sent_msg.get("attachments")),
             "group_id": group_id,
             "group_name": group_info.get("groupName"),
             "peer_number": peer,
@@ -273,8 +315,12 @@ def _signal_poll_once():
             # different timestamps (our local clock vs Signal's), exact ID
             # matching won't catch it — so also skip if the most recent
             # message in this conversation is already an outgoing message
-            # with identical text within the last 10 seconds.
-            if msg["outgoing"] and conv["messages"]:
+            # with identical text within the last 10 seconds. Pictures sent
+            # from the widget aren't supported yet (see /api/signal/send),
+            # so this comparison is text-only — it simply won't fire for
+            # attachment-only messages, which is fine since those can only
+            # arrive via sync right now anyway.
+            if msg["outgoing"] and msg["text"] and conv["messages"]:
                 last = conv["messages"][-1]
                 if last["outgoing"] and last["text"] == msg["text"] \
                         and abs(last["timestamp"] - msg["timestamp"]) < 10000:
@@ -284,6 +330,7 @@ def _signal_poll_once():
                 "id": msg_id,
                 "from": "You" if msg["outgoing"] else (msg["peer_name"] or msg["peer_number"] or "?"),
                 "text": msg["text"],
+                "attachments": msg["attachments"],
                 "timestamp": msg["timestamp"],
                 "outgoing": msg["outgoing"],
             })
@@ -1089,6 +1136,26 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 conv = _signal_store["conversations"].get(conv_id)
                 messages = list(conv["messages"]) if conv else []
             self.send_json(200, {"messages": messages})
+            return
+
+        if parsed.path.startswith("/api/signal/attachment/"):
+            att_id = parsed.path[len("/api/signal/attachment/"):]
+            # signal-cli-rest-api attachment IDs are generated filenames —
+            # reject anything that isn't a plain safe token, to rule out
+            # path traversal or SSRF into the container's own API surface.
+            if not att_id or not re.match(r"^[A-Za-z0-9_-]+$", att_id):
+                self.send_json(400, {"error": "Invalid attachment id"})
+                return
+            raw, content_type, err = _signal_api_get_raw(f"/v1/attachments/{att_id}")
+            if err or raw is None:
+                self.send_json(404, {"error": err or "Attachment not found"})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "private, max-age=3600")
+            self.end_headers()
+            self.wfile.write(raw)
             return
 
         super().do_GET()

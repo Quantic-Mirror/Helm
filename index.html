@@ -985,6 +985,25 @@ body {
   white-space: pre-wrap;
 }
 .signal-msg-out .signal-msg-text { background: var(--accent); color: #0D1117; }
+.signal-msg-image {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 10px;
+  margin-top: 4px;
+  object-fit: cover;
+}
+.signal-msg-file {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-top: 4px;
+  text-decoration: none;
+}
+.signal-msg-file:hover { text-decoration: underline; }
 .signal-compose { display: flex; gap: 6px; }
 .signal-compose input {
   flex: 1;
@@ -6644,6 +6663,21 @@ async function loadSignalMessages(widgetId, convId, silent) {
   }
 }
 
+function renderSignalMessageBody(m) {
+  const parts = [];
+  if (m.text) parts.push(`<div class="signal-msg-text">${escHtml(m.text)}</div>`);
+  (m.attachments || []).forEach(a => {
+    const url = '/api/signal/attachment/' + encodeURIComponent(a.id);
+    if (a.content_type && a.content_type.startsWith('image/')) {
+      parts.push(`<a href="${url}" target="_blank" rel="noopener"><img class="signal-msg-image" src="${url}" alt="${escHtml(a.filename || 'photo')}" loading="lazy"></a>`);
+    } else {
+      const label = a.filename || a.content_type || 'attachment';
+      parts.push(`<a class="signal-msg-file" href="${url}" target="_blank" rel="noopener">📎 ${escHtml(label)}</a>`);
+    }
+  });
+  return parts.join('');
+}
+
 function renderSignalThread(widgetId, convId, messages) {
   const contentEl = document.getElementById('signal-content-' + widgetId);
   if (!contentEl) return;
@@ -6668,7 +6702,7 @@ function renderSignalThread(widgetId, convId, messages) {
         : messages.map(m => `
             <div class="signal-msg ${m.outgoing ? 'signal-msg-out' : 'signal-msg-in'}">
               ${!m.outgoing ? `<div class="signal-msg-from">${escHtml(m.from)}</div>` : ''}
-              <div class="signal-msg-text">${escHtml(m.text)}</div>
+              ${renderSignalMessageBody(m)}
             </div>
           `).join('')
       }
