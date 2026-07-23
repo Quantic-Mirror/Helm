@@ -1467,7 +1467,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
      by JS on every poll, regardless of whether it's currently visible. */
   display: none;
 }
-.irc-tab-wrap:hover .irc-alert-dropdown {
+.irc-tab-wrap.irc-hover-active .irc-alert-dropdown {
   display: block;
 }
 .irc-alert-row {
@@ -2430,7 +2430,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <div class="irc-tab-wrap">
       <button class="tab-btn" data-tab="irc">IRC</button>
       <span class="irc-alert-badge" id="irc-alert-badge" style="display:none"></span>
-      <div class="irc-alert-dropdown" id="irc-alert-dropdown" style="display:none"></div>
+      <div class="irc-alert-dropdown" id="irc-alert-dropdown"></div>
     </div>
     <button class="tab-btn" data-tab="logs">Logs</button>
   </nav>
@@ -6855,6 +6855,12 @@ renderUpcomingEvents();
 fetchIrcAlerts();
 ircAlertPollTimer = setInterval(fetchIrcAlerts, IRC_ALERT_POLL_MS);
 
+const ircTabWrap = document.querySelector('.irc-tab-wrap');
+if (ircTabWrap) {
+  ircTabWrap.addEventListener('mouseenter', () => ircTabWrap.classList.add('irc-hover-active'));
+  ircTabWrap.addEventListener('mouseleave', () => ircTabWrap.classList.remove('irc-hover-active'));
+}
+
 // Register service worker for PWA installability and offline app-shell caching.
 // Only works over http(s) — service workers are not available on file:// origins.
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
@@ -7818,10 +7824,10 @@ function renderIrcAlertDropdown(data) {
 async function ackIrcAlerts() {
   // Clear the badge immediately for a snappy feel; the server-side ack
   // happens in the background and doesn't need to block the UI on it.
+  // (Dropdown visibility is purely CSS :hover now — nothing to clear here,
+  // and setting an inline style would permanently override that CSS rule.)
   const badge = document.getElementById('irc-alert-badge');
   if (badge) badge.style.display = 'none';
-  const dropdown = document.getElementById('irc-alert-dropdown');
-  if (dropdown) dropdown.style.display = 'none';
   try {
     await fetch('/api/irc/ack', { method: 'POST', signal: AbortSignal.timeout(8000) });
   } catch (e) { /* best-effort */ }
