@@ -6955,7 +6955,14 @@ function switchTab(tab) {
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.onclick = () => switchTab(btn.dataset.tab);
+  btn.onclick = (e) => {
+    // Belt-and-suspenders: the badge has its own click handler with
+    // stopPropagation, but if that ever fails to fire for any reason,
+    // don't let the click fall through to a tab switch — the badge is
+    // meant to open its dropdown, never navigate.
+    if (e.target.closest('.irc-alert-badge')) return;
+    switchTab(btn.dataset.tab);
+  };
 });
 
 // ── Add channel ───────────────────────────────────────────────────────────────
@@ -7775,10 +7782,14 @@ async function fetchIrcAlerts() {
 function renderIrcAlertBadge(data) {
   const badge = document.getElementById('irc-alert-badge');
   if (!badge) return;
+  const dropdown = document.getElementById('irc-alert-dropdown');
   if (!data.available || !data.total) {
     badge.style.display = 'none';
-    const dropdown = document.getElementById('irc-alert-dropdown');
-    if (dropdown) dropdown.style.display = 'none';
+    // Don't force the dropdown shut here — only explicit user actions
+    // (toggle click, outside click, navigating to IRC) should close it.
+    // If it's open when a poll lands on zero, just update its contents
+    // to say "Nothing new" rather than yanking it away mid-review.
+    if (dropdown && dropdown.style.display !== 'none') renderIrcAlertDropdown(data);
     return;
   }
   const totalDisplay = data.global_capped ? `${data.total}+` : String(data.total);
@@ -7787,7 +7798,6 @@ function renderIrcAlertBadge(data) {
 
   // If the dropdown is currently open, keep it live-updated rather than
   // waiting for the next click to refresh its contents.
-  const dropdown = document.getElementById('irc-alert-dropdown');
   if (dropdown && dropdown.style.display !== 'none') renderIrcAlertDropdown(data);
 }
 
