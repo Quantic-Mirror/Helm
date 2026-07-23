@@ -111,8 +111,41 @@ CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 # only state that needs to persist.
 
 IRC_LOG_DB = os.environ.get("IRC_LOG_DB", "/etc/thelounge/logs/carl.sqlite3")
+IRC_USER_CONFIG = os.environ.get("IRC_USER_CONFIG", "/etc/thelounge/users/carl.json")
 IRC_ACK_STATE_FILE = os.path.join(SCRIPT_DIR, "irc_ack_state.json")
 IRC_ALERT_PREVIEW_LIMIT = 10
+IRC_PER_CHANNEL_CAP = 25   # stop counting a single channel/DM beyond this
+IRC_GLOBAL_CAP = 100       # stop scanning entirely once this many qualify
+IRC_QUERY_ROW_LIMIT = 5000  # hard backstop on rows pulled per poll, regardless of caps above
+IRC_NETWORKS_TTL = 300  # seconds — network list rarely changes
+
+_irc_networks_cache = {"ts": 0, "by_uuid": {}}
+
+
+def _irc_refresh_networks():
+    """Map each network's internal UUID to its display name (e.g. "Libera.Chat"),
+    read from The Lounge's own per-user config. This is the only place that
+    friendly network name lives — the messages table itself only stores the
+    UUID, never the name."""
+    try:
+        with open(IRC_USER_CONFIG) as f:
+            config = json.load(f)
+    except Exception:
+        return
+    by_uuid = {}
+    for net in config.get("networks", []):
+        uuid = net.get("uuid")
+        name = net.get("name")
+        if uuid and name:
+            by_uuid[uuid] = name
+    _irc_networks_cache["by_uuid"] = by_uuid
+    _irc_networks_cache["ts"] = time.time()
+
+
+def _irc_get_network_name(uuid):
+    if time.time() - _irc_networks_cache["ts"] > IRC_NETWORKS_TTL:
+        _irc_refresh_networks()
+    return _irc_networks_cache["by_uuid"].get(uuid, uuid or "unknown network")
 
 
 def _irc_load_ack():
@@ -139,14 +172,17 @@ def _irc_is_channel(name):
 
 
 def get_irc_alerts():
-    """Returns dm_count, highlight_count, total, and a short preview list of
-    qualifying messages since the last acknowledgment."""
+    """Returns dm_count, highlight_count, total, a per-network/per-channel
+    breakdown ("groups"), and a short preview list of qualifying messages
+    since the last acknowledgment."""
     last_ack = _irc_load_ack()
     result = {
         "available": False,
         "dm_count": 0,
         "highlight_count": 0,
+        "channel_count": 0,
         "total": 0,
+        "groups": [],
         "preview": [],
         "last_id": last_ack,
     }
@@ -159,8 +195,8 @@ def get_irc_alerts():
         conn = sqlite3.connect(f"file:{IRC_LOG_DB}?mode=ro", uri=True, timeout=5)
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, channel, msg FROM messages WHERE type='message' AND id > ? ORDER BY id ASC",
-            (last_ack,),
+            "SELECT id, network, channel, msg FROM messages WHERE type='message' AND id > ? ORDER BY id ASC LIMIT ?",
+            (last_ack, IRC_QUERY_ROW_LIMIT),
         )
         rows = cur.fetchall()
         conn.close()
@@ -171,7 +207,14 @@ def get_irc_alerts():
     result["available"] = True
     max_id = last_ack
     preview = []
-    for row_id, channel, msg_json in rows:
+    # groups keyed by (network_name, channel) so repeated activity in the
+    # same channel/DM collapses into one line with a count, rather than
+    # listing every single qualifying message separately.
+    groups = {}
+    total_qualifying = 0
+    global_capped = False
+
+    for row_id, network_uuid, channel, msg_json in rows:
         max_id = max(max_id, row_id)
         try:
             data = json.loads(msg_json)
@@ -182,23 +225,65 @@ def get_irc_alerts():
 
         is_dm = not _irc_is_channel(channel)
         is_highlight = bool(data.get("highlight"))
-        if not (is_dm or is_highlight):
-            continue
+        # Every DM and every channel message counts now — highlight status
+        # no longer gates whether something counts at all, only how it's
+        # colored on the frontend (see "has_highlight" below).
+
+        # Once the global cap is hit, stop doing any further work — we
+        # already know to show "100+" and there's no point scoring every
+        # remaining row in, say, a months-old backlog after a long absence.
+        if total_qualifying >= IRC_GLOBAL_CAP:
+            global_capped = True
+            break
+
+        network_name = _irc_get_network_name(network_uuid)
+        total_qualifying += 1
 
         if is_dm:
             result["dm_count"] += 1
-        else:
+        elif is_highlight:
             result["highlight_count"] += 1
+        else:
+            result["channel_count"] += 1
+
+        group_key = (network_name, channel)
+        if group_key not in groups:
+            groups[group_key] = {
+                "network_name": network_name,
+                "channel": channel,
+                "is_dm": is_dm,
+                "count": 0,
+                "capped": False,
+                "has_highlight": False,
+            }
+        group = groups[group_key]
+        if is_highlight:
+            group["has_highlight"] = True
+        if group["count"] < IRC_PER_CHANNEL_CAP:
+            group["count"] += 1
+        else:
+            group["capped"] = True
 
         preview.append({
             "id": row_id,
+            "network_name": network_name,
             "channel": channel,
             "from": (data.get("from") or {}).get("nick", "?"),
             "text": (data.get("text") or "")[:200],
             "is_dm": is_dm,
+            "is_highlight": is_highlight,
         })
 
-    result["total"] = result["dm_count"] + result["highlight_count"]
+
+    result["total"] = result["dm_count"] + result["highlight_count"] + result["channel_count"]
+    result["global_capped"] = global_capped
+    # Surface DMs and mentions above plain channel chatter, since those are
+    # the ones actually worth interrupting yourself for; within each tier,
+    # busiest first.
+    result["groups"] = sorted(
+        groups.values(),
+        key=lambda g: (not (g["is_dm"] or g["has_highlight"]), -g["count"]),
+    )
     result["preview"] = preview[-IRC_ALERT_PREVIEW_LIMIT:]
     result["scanned_up_to_id"] = max_id
     return result
