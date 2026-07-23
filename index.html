@@ -1426,6 +1426,10 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
+.irc-tab-wrap {
+  position: relative;
+  display: inline-block;
+}
 .irc-alert-badge {
   position: absolute;
   top: -4px;
@@ -1441,6 +1445,58 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   line-height: 16px;
   text-align: center;
   box-shadow: 0 0 0 2px var(--surface-2);
+  cursor: pointer;
+}
+.irc-alert-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 50;
+  padding: 6px;
+}
+.irc-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.irc-alert-row:hover { background: var(--surface-2); }
+.irc-alert-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.irc-alert-row.is-highlight .irc-alert-dot { background: var(--red); }
+.irc-alert-row.is-dm .irc-alert-dot { background: var(--accent); }
+.irc-alert-row.is-plain .irc-alert-dot { background: var(--text-dim); }
+.irc-alert-where {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.irc-alert-row.is-highlight .irc-alert-where { color: var(--red); font-weight: 600; }
+.irc-alert-count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.irc-alert-capped-note {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 6px 4px 2px;
 }
 
 /* ── FEEDS PAGE ─────────────────────────────────────────────────────────────── */
@@ -2364,7 +2420,10 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn" data-tab="news">News</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="services">Services</button>
-    <button class="tab-btn" data-tab="irc">IRC<span class="irc-alert-badge" id="irc-alert-badge" style="display:none"></span></button>
+    <div class="irc-tab-wrap">
+      <button class="tab-btn" data-tab="irc">IRC<span class="irc-alert-badge" id="irc-alert-badge" style="display:none"></span></button>
+      <div class="irc-alert-dropdown" id="irc-alert-dropdown" style="display:none"></div>
+    </div>
     <button class="tab-btn" data-tab="logs">Logs</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
@@ -2733,6 +2792,7 @@ let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
 let ircAlertPollTimer = null;
 const IRC_ALERT_POLL_MS = 8 * 1000;
+let IRC_ALERT_DATA = null;
 
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
@@ -6787,6 +6847,15 @@ renderUpcomingEvents();
 fetchIrcAlerts();
 ircAlertPollTimer = setInterval(fetchIrcAlerts, IRC_ALERT_POLL_MS);
 
+document.getElementById('irc-alert-badge').onclick = toggleIrcAlertDropdown;
+document.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('irc-alert-dropdown');
+  const wrap = document.querySelector('.irc-tab-wrap');
+  if (dropdown && dropdown.style.display !== 'none' && wrap && !wrap.contains(e.target)) {
+    dropdown.style.display = 'none';
+  }
+});
+
 // Register service worker for PWA installability and offline app-shell caching.
 // Only works over http(s) — service workers are not available on file:// origins.
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
@@ -7696,6 +7765,7 @@ async function fetchIrcAlerts() {
     const resp = await fetch('/api/irc/alerts', { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) { badge.style.display = 'none'; return; }
     const data = await resp.json();
+    IRC_ALERT_DATA = data;
     renderIrcAlertBadge(data);
   } catch (e) {
     // Silent — a missed poll shouldn't be noisy, it'll just try again shortly.
@@ -7707,15 +7777,64 @@ function renderIrcAlertBadge(data) {
   if (!badge) return;
   if (!data.available || !data.total) {
     badge.style.display = 'none';
+    const dropdown = document.getElementById('irc-alert-dropdown');
+    if (dropdown) dropdown.style.display = 'none';
     return;
   }
-  badge.textContent = data.total > 99 ? '99+' : String(data.total);
-  badge.title = data.dm_count && data.highlight_count
-    ? `${data.dm_count} direct message${data.dm_count === 1 ? '' : 's'}, ${data.highlight_count} mention${data.highlight_count === 1 ? '' : 's'}`
-    : data.dm_count
-      ? `${data.dm_count} direct message${data.dm_count === 1 ? '' : 's'}`
-      : `${data.highlight_count} mention${data.highlight_count === 1 ? '' : 's'}`;
+  const totalDisplay = data.global_capped ? `${data.total}+` : String(data.total);
+  badge.textContent = data.total > 99 ? '99+' : totalDisplay;
   badge.style.display = '';
+
+  // If the dropdown is currently open, keep it live-updated rather than
+  // waiting for the next click to refresh its contents.
+  const dropdown = document.getElementById('irc-alert-dropdown');
+  if (dropdown && dropdown.style.display !== 'none') renderIrcAlertDropdown(data);
+}
+
+function renderIrcAlertDropdown(data) {
+  const dropdown = document.getElementById('irc-alert-dropdown');
+  if (!dropdown) return;
+  const groups = data.groups || [];
+
+  if (groups.length === 0) {
+    dropdown.innerHTML = '<div class="irc-alert-row">Nothing new</div>';
+    return;
+  }
+
+  dropdown.innerHTML = groups.map(g => {
+    const rowClass = g.is_dm ? 'is-dm' : (g.has_highlight ? 'is-highlight' : 'is-plain');
+    const where = g.is_dm ? `DM · ${escHtml(g.channel)}` : `${escHtml(g.channel)} · ${escHtml(g.network_name)}`;
+    const countDisplay = g.capped ? `${g.count}+` : g.count;
+    return `
+      <div class="irc-alert-row ${rowClass}" data-irc-alert-goto="1">
+        <span class="irc-alert-dot"></span>
+        <span class="irc-alert-where">${where}</span>
+        <span class="irc-alert-count">${countDisplay}</span>
+      </div>
+    `;
+  }).join('') + (data.global_capped
+    ? `<div class="irc-alert-capped-note">showing first ${data.total} — there's more</div>`
+    : '');
+
+  dropdown.querySelectorAll('[data-irc-alert-goto]').forEach(row => {
+    row.onclick = () => {
+      dropdown.style.display = 'none';
+      switchTab('irc');
+    };
+  });
+}
+
+function toggleIrcAlertDropdown(e) {
+  e.stopPropagation();
+  const dropdown = document.getElementById('irc-alert-dropdown');
+  if (!dropdown) return;
+  const isOpen = dropdown.style.display !== 'none';
+  if (isOpen) {
+    dropdown.style.display = 'none';
+  } else {
+    if (IRC_ALERT_DATA) renderIrcAlertDropdown(IRC_ALERT_DATA);
+    dropdown.style.display = '';
+  }
 }
 
 async function ackIrcAlerts() {
@@ -7723,6 +7842,8 @@ async function ackIrcAlerts() {
   // happens in the background and doesn't need to block the UI on it.
   const badge = document.getElementById('irc-alert-badge');
   if (badge) badge.style.display = 'none';
+  const dropdown = document.getElementById('irc-alert-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
   try {
     await fetch('/api/irc/ack', { method: 'POST', signal: AbortSignal.timeout(8000) });
   } catch (e) { /* best-effort */ }
