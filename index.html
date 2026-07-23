@@ -1406,6 +1406,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   flex-shrink: 0;
 }
 .tab-btn {
+  position: relative;
   padding: 4px 14px;
   border-radius: 6px;
   border: none;
@@ -1423,6 +1424,23 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.irc-alert-badge {
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface-2);
 }
 
 /* ── FEEDS PAGE ─────────────────────────────────────────────────────────────── */
@@ -2346,7 +2364,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn" data-tab="news">News</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="services">Services</button>
-    <button class="tab-btn" data-tab="irc">IRC</button>
+    <button class="tab-btn" data-tab="irc">IRC<span class="irc-alert-badge" id="irc-alert-badge" style="display:none"></span></button>
     <button class="tab-btn" data-tab="logs">Logs</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
@@ -2713,6 +2731,8 @@ const SERVICES_POLL_MS = 2 * 60 * 1000;
 let logsData = [];
 let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
+let ircAlertPollTimer = null;
+const IRC_ALERT_POLL_MS = 8 * 1000;
 
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
@@ -6764,6 +6784,8 @@ document.querySelectorAll('[data-calpage-view]').forEach(btn => {
 
 initSync();
 renderUpcomingEvents();
+fetchIrcAlerts();
+ircAlertPollTimer = setInterval(fetchIrcAlerts, IRC_ALERT_POLL_MS);
 
 // Register service worker for PWA installability and offline app-shell caching.
 // Only works over http(s) — service workers are not available on file:// origins.
@@ -6860,6 +6882,7 @@ function switchTab(tab) {
   else stopServicesPolling();
   if (tab === 'logs')      { fetchLogs(); startLogsPolling(); }
   else stopLogsPolling();
+  if (tab === 'irc')       ackIrcAlerts();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -7656,6 +7679,55 @@ window.removeNewsSource = function(id) {
 };
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// ── IRC ALERT BADGE (topbar) ──────────────────────────────────────────────════
+// Runs unconditionally, regardless of which page/tab is currently active —
+// unlike the other per-page polling loops (Services, Logs), this one starts
+// once at page load and never stops, since the whole point is a heads-up
+// that works no matter what you're looking at in Helm.
+// ════════════════════════════════════════════════════════════════════════════
+
+async function fetchIrcAlerts() {
+  const badge = document.getElementById('irc-alert-badge');
+  if (!badge) return;
+  try {
+    const hasBackend = await checkLocalBackend();
+    if (!hasBackend) { badge.style.display = 'none'; return; }
+    const resp = await fetch('/api/irc/alerts', { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) { badge.style.display = 'none'; return; }
+    const data = await resp.json();
+    renderIrcAlertBadge(data);
+  } catch (e) {
+    // Silent — a missed poll shouldn't be noisy, it'll just try again shortly.
+  }
+}
+
+function renderIrcAlertBadge(data) {
+  const badge = document.getElementById('irc-alert-badge');
+  if (!badge) return;
+  if (!data.available || !data.total) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.textContent = data.total > 99 ? '99+' : String(data.total);
+  badge.title = data.dm_count && data.highlight_count
+    ? `${data.dm_count} direct message${data.dm_count === 1 ? '' : 's'}, ${data.highlight_count} mention${data.highlight_count === 1 ? '' : 's'}`
+    : data.dm_count
+      ? `${data.dm_count} direct message${data.dm_count === 1 ? '' : 's'}`
+      : `${data.highlight_count} mention${data.highlight_count === 1 ? '' : 's'}`;
+  badge.style.display = '';
+}
+
+async function ackIrcAlerts() {
+  // Clear the badge immediately for a snappy feel; the server-side ack
+  // happens in the background and doesn't need to block the UI on it.
+  const badge = document.getElementById('irc-alert-badge');
+  if (badge) badge.style.display = 'none';
+  try {
+    await fetch('/api/irc/ack', { method: 'POST', signal: AbortSignal.timeout(8000) });
+  } catch (e) { /* best-effort */ }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // ── LOGS PAGE ─────────────────────────────────────════════════════════════════
 // Combined, leveled, filterable view across all monitored services' logs.
