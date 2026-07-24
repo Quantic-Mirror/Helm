@@ -225,9 +225,8 @@ def get_irc_alerts():
 
         is_dm = not _irc_is_channel(channel)
         is_highlight = bool(data.get("highlight"))
-        # Every DM and every channel message counts now — highlight status
-        # no longer gates whether something counts at all, only how it's
-        # colored on the frontend (see "has_highlight" below).
+        if not (is_dm or is_highlight):
+            continue  # plain channel chatter with no mention doesn't alert
 
         # Once the global cap is hit, stop doing any further work — we
         # already know to show "100+" and there's no point scoring every
@@ -241,10 +240,8 @@ def get_irc_alerts():
 
         if is_dm:
             result["dm_count"] += 1
-        elif is_highlight:
-            result["highlight_count"] += 1
         else:
-            result["channel_count"] += 1
+            result["highlight_count"] += 1
 
         group_key = (network_name, channel)
         if group_key not in groups:
