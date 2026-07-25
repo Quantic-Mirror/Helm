@@ -526,6 +526,20 @@ MONITORED_SERVICES = [
         "service_unit": "popcorn-r2-sync.service",
         "controllable": False,
     },
+    {
+        "id":    "gopherproxy",
+        "label": "Gopher Proxy",
+        "type":  "docker",
+        "container": "gopherproxy",
+        "controllable": True,
+    },
+    {
+        "id":    "gopher-tls-proxy",
+        "label": "Gopher TLS Frontend",
+        "type":  "systemd-user",
+        "unit":  "gopher-tls-proxy.service",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
