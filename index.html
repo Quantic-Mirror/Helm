@@ -1721,11 +1721,19 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   padding: 10px 20px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#gopher-back:disabled, #gopher-forward:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 #gopher-nav-form {
   display: flex;
   gap: 8px;
   max-width: 600px;
+  flex: 1;
 }
 #gopher-address {
   flex: 1;
@@ -1740,6 +1748,58 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   transition: border-color 0.15s;
 }
 #gopher-address:focus { border-color: var(--accent); }
+.gopher-bookmarks-wrap {
+  position: relative;
+}
+.gopher-bookmarks-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 50;
+  padding: 6px;
+}
+.gopher-bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.gopher-bookmark-row:hover { background: var(--surface-2); }
+.gopher-bookmark-label {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gopher-bookmark-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.gopher-bookmark-delete:hover { color: var(--red); background: var(--surface-3); }
+.gopher-bookmarks-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 8px 4px;
+  text-align: center;
+}
 #gopher-frame {
   width: 100%;
   flex: 1;
@@ -2606,10 +2666,17 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 <!-- GOPHER PAGE -->
 <div id="gopher-page" style="display:none">
   <div id="gopher-topbar">
+    <button class="icon-btn" id="gopher-back" title="Back" disabled>←</button>
+    <button class="icon-btn" id="gopher-forward" title="Forward" disabled>→</button>
     <form id="gopher-nav-form" autocomplete="off">
       <input type="text" id="gopher-address" placeholder="gopher.floodgap.com or gopher.floodgap.com/1/some/path" autocomplete="off" spellcheck="false">
       <button class="btn primary" type="submit">Go</button>
     </form>
+    <button class="icon-btn" id="gopher-bookmark-star" title="Bookmark this address">☆</button>
+    <div class="gopher-bookmarks-wrap">
+      <button class="btn" id="gopher-bookmarks-btn">Bookmarks ▾</button>
+      <div class="gopher-bookmarks-dropdown" id="gopher-bookmarks-dropdown" style="display:none"></div>
+    </div>
   </div>
   <iframe id="gopher-frame" src="https://popcorn:9001" allow="fullscreen"></iframe>
 </div>
@@ -2849,6 +2916,8 @@ const LOGS_POLL_MS = 15 * 1000;
 let ircAlertPollTimer = null;
 const IRC_ALERT_POLL_MS = 8 * 1000;
 let IRC_ALERT_DATA = null;
+let GOPHER_HISTORY = [];
+let GOPHER_HISTORY_IDX = -1;
 
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
@@ -2900,6 +2969,7 @@ async function initSync() {
       if (!state.settings) state.settings = {};
       if (!state.feeds) state.feeds = [];
       if (!state.newsSources) state.newsSources = [];
+      if (!state.gopherBookmarks) state.gopherBookmarks = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       // Reset the last-pulled snapshot so mid-session merge logic has a
       // fresh baseline from this startup, not from a stale previous session.
@@ -3011,6 +3081,7 @@ async function pollForRemoteChanges() {
       if (!state.settings) state.settings = {};
       if (!state.feeds) state.feeds = [];
       if (!state.newsSources) state.newsSources = [];
+      if (!state.gopherBookmarks) state.gopherBookmarks = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       render(); // silent — no toast, no dialog
@@ -3029,6 +3100,7 @@ function load() {
   if (!state.settings) state.settings = {};
   if (!state.feeds) state.feeds = [];
   if (!state.newsSources) state.newsSources = [];
+  if (!state.gopherBookmarks) state.gopherBookmarks = [];
   if (!state.calendarEvents) {
     // Initialise calendar events store; migrate any events from old calendar widgets
     state.calendarEvents = {};
@@ -5006,6 +5078,7 @@ async function restoreBackup(filename) {
     if (!state.settings) state.settings = {};
     if (!state.feeds) state.feeds = [];
     if (!state.newsSources) state.newsSources = [];
+    if (!state.gopherBookmarks) state.gopherBookmarks = [];
     localStorage.setItem('marks_v1', JSON.stringify(state));
 
     // Push to backend as a new save (resets version conflict risk)
@@ -6912,15 +6985,119 @@ if (ircTabWrap) {
 document.getElementById('gopher-nav-form').onsubmit = (e) => {
   e.preventDefault();
   const input = document.getElementById('gopher-address');
-  let target = input.value.trim();
+  const target = input.value.trim();
   if (!target) return;
+  navigateGopher(target);
+};
+
+function normalizeGopherTarget(target) {
   // Accept a few common ways people might type this: strip a gopher://
   // prefix and any leading slash, since gopherproxy expects the target
   // host (and optional path) directly as its own URL path, e.g.
   // /gopher.floodgap.com or /gopher.floodgap.com/1/some/menu
-  target = target.replace(/^gopher:\/\//i, '').replace(/^\/+/, '');
-  document.getElementById('gopher-frame').src = 'https://popcorn:9001/' + target;
+  return target.trim().replace(/^gopher:\/\//i, '').replace(/^\/+/, '');
+}
+
+function navigateGopher(target, fromHistory) {
+  const clean = normalizeGopherTarget(target);
+  if (!clean) return;
+  document.getElementById('gopher-frame').src = 'https://popcorn:9001/' + clean;
+  document.getElementById('gopher-address').value = clean;
+
+  if (!fromHistory) {
+    // A fresh navigation truncates any forward history, same as a normal
+    // browser tab — going back then typing a new address abandons the
+    // old "forward" branch rather than trying to preserve it.
+    GOPHER_HISTORY = GOPHER_HISTORY.slice(0, GOPHER_HISTORY_IDX + 1);
+    GOPHER_HISTORY.push(clean);
+    GOPHER_HISTORY_IDX = GOPHER_HISTORY.length - 1;
+  }
+  updateGopherHistoryButtons();
+}
+
+function updateGopherHistoryButtons() {
+  const backBtn = document.getElementById('gopher-back');
+  const forwardBtn = document.getElementById('gopher-forward');
+  if (backBtn) backBtn.disabled = GOPHER_HISTORY_IDX <= 0;
+  if (forwardBtn) forwardBtn.disabled = GOPHER_HISTORY_IDX >= GOPHER_HISTORY.length - 1;
+}
+
+document.getElementById('gopher-back').onclick = () => {
+  if (GOPHER_HISTORY_IDX <= 0) return;
+  GOPHER_HISTORY_IDX--;
+  navigateGopher(GOPHER_HISTORY[GOPHER_HISTORY_IDX], true);
 };
+
+document.getElementById('gopher-forward').onclick = () => {
+  if (GOPHER_HISTORY_IDX >= GOPHER_HISTORY.length - 1) return;
+  GOPHER_HISTORY_IDX++;
+  navigateGopher(GOPHER_HISTORY[GOPHER_HISTORY_IDX], true);
+};
+
+document.getElementById('gopher-bookmark-star').onclick = () => {
+  const current = document.getElementById('gopher-address').value.trim();
+  if (!current) { alert('Navigate somewhere first, then bookmark it.'); return; }
+  const label = prompt('Label for this bookmark:', current);
+  if (label === null) return;
+  if (!state.gopherBookmarks) state.gopherBookmarks = [];
+  state.gopherBookmarks.push({ label: label.trim() || current, address: current });
+  save();
+  renderGopherBookmarks();
+};
+
+function renderGopherBookmarks() {
+  const dropdown = document.getElementById('gopher-bookmarks-dropdown');
+  if (!dropdown) return;
+  const bookmarks = state.gopherBookmarks || [];
+  if (bookmarks.length === 0) {
+    dropdown.innerHTML = '<div class="gopher-bookmarks-empty">No bookmarks yet</div>';
+    return;
+  }
+  dropdown.innerHTML = bookmarks.map((b, i) => `
+    <div class="gopher-bookmark-row" data-gopher-bookmark-idx="${i}">
+      <span class="gopher-bookmark-label" title="${escHtml(b.address)}">${escHtml(b.label)}</span>
+      <button class="gopher-bookmark-delete" data-gopher-bookmark-delete="${i}" title="Remove">✕</button>
+    </div>
+  `).join('');
+
+  dropdown.querySelectorAll('[data-gopher-bookmark-idx]').forEach(row => {
+    row.onclick = (e) => {
+      if (e.target.closest('[data-gopher-bookmark-delete]')) return;
+      const idx = parseInt(row.dataset.gopherBookmarkIdx);
+      navigateGopher(bookmarks[idx].address);
+      document.getElementById('gopher-bookmarks-dropdown').style.display = 'none';
+    };
+  });
+  dropdown.querySelectorAll('[data-gopher-bookmark-delete]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.gopherBookmarkDelete);
+      state.gopherBookmarks.splice(idx, 1);
+      save();
+      renderGopherBookmarks();
+    };
+  });
+}
+
+document.getElementById('gopher-bookmarks-btn').onclick = (e) => {
+  e.stopPropagation();
+  const dropdown = document.getElementById('gopher-bookmarks-dropdown');
+  const isOpen = dropdown.style.display !== 'none';
+  if (isOpen) {
+    dropdown.style.display = 'none';
+  } else {
+    renderGopherBookmarks();
+    dropdown.style.display = '';
+  }
+};
+
+document.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('gopher-bookmarks-dropdown');
+  const wrap = document.querySelector('.gopher-bookmarks-wrap');
+  if (dropdown && dropdown.style.display !== 'none' && wrap && !wrap.contains(e.target)) {
+    dropdown.style.display = 'none';
+  }
+});
 
 // Register service worker for PWA installability and offline app-shell caching.
 // Only works over http(s) — service workers are not available on file:// origins.
@@ -6977,6 +7154,7 @@ const FEEDS_CACHE = {}; // channelId → { items, title, avatar, ts }
 function ensureFeeds() {
   if (!state.feeds) state.feeds = [];
   if (!state.newsSources) state.newsSources = [];
+  if (!state.gopherBookmarks) state.gopherBookmarks = [];
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -7569,6 +7747,7 @@ const NEWS_PAGE_SIZE = 3;
 
 function ensureNewsSources() {
   if (!state.newsSources) state.newsSources = [];
+  if (!state.gopherBookmarks) state.gopherBookmarks = [];
 }
 
 // ── Generic feed parser — handles both RSS 2.0 and Atom ────────────────────────
