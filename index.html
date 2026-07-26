@@ -1714,10 +1714,35 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 #gopher-page {
   height: calc(100vh - 56px);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+#gopher-topbar {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#gopher-nav-form {
+  display: flex;
+  gap: 8px;
+  max-width: 600px;
+}
+#gopher-address {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 7px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+#gopher-address:focus { border-color: var(--accent); }
 #gopher-frame {
   width: 100%;
-  height: 100%;
+  flex: 1;
   border: none;
   display: block;
 }
@@ -2580,6 +2605,12 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 
 <!-- GOPHER PAGE -->
 <div id="gopher-page" style="display:none">
+  <div id="gopher-topbar">
+    <form id="gopher-nav-form" autocomplete="off">
+      <input type="text" id="gopher-address" placeholder="gopher.floodgap.com or gopher.floodgap.com/1/some/path" autocomplete="off" spellcheck="false">
+      <button class="btn primary" type="submit">Go</button>
+    </form>
+  </div>
   <iframe id="gopher-frame" src="https://popcorn:9001" allow="fullscreen"></iframe>
 </div>
 
@@ -6877,6 +6908,19 @@ if (ircTabWrap) {
   ircTabWrap.addEventListener('mouseenter', () => ircTabWrap.classList.add('irc-hover-active'));
   ircTabWrap.addEventListener('mouseleave', () => ircTabWrap.classList.remove('irc-hover-active'));
 }
+
+document.getElementById('gopher-nav-form').onsubmit = (e) => {
+  e.preventDefault();
+  const input = document.getElementById('gopher-address');
+  let target = input.value.trim();
+  if (!target) return;
+  // Accept a few common ways people might type this: strip a gopher://
+  // prefix and any leading slash, since gopherproxy expects the target
+  // host (and optional path) directly as its own URL path, e.g.
+  // /gopher.floodgap.com or /gopher.floodgap.com/1/some/menu
+  target = target.replace(/^gopher:\/\//i, '').replace(/^\/+/, '');
+  document.getElementById('gopher-frame').src = 'https://popcorn:9001/' + target;
+};
 
 // Register service worker for PWA installability and offline app-shell caching.
 // Only works over http(s) — service workers are not available on file:// origins.
