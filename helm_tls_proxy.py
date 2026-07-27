@@ -47,11 +47,17 @@ KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
 # entirely, since Helm runs on a different port and is therefore a
 # different origin as far as the browser is concerned.
 #
-# Rather than stripping that protection blanket (which would let *any* site
-# frame the backend), rewrite it to allow only Helm's own origin. Override
-# via the HELM_FRAME_ORIGIN environment variable if Helm isn't reachable at
-# the default address below.
-ALLOWED_FRAME_ORIGIN = os.environ.get("HELM_FRAME_ORIGIN", "https://popcorn:8081")
+# frame-ancestors requires an EXACT origin match — scheme, host, and port
+# all identical. A hostname and its own IP address are different origins
+# as far as the browser is concerned, even though they reach the same
+# machine — so if Helm might be accessed via either (e.g. hostname on one
+# device, raw IP on another where DNS/hosts resolution isn't set up), both
+# need to be listed, not just one.
+#
+# Override via the HELM_FRAME_ORIGINS environment variable (space or
+# comma-separated) if Helm isn't reachable at the defaults below.
+_default_origins = "https://popcorn:8081 https://192.168.1.168:8081"
+ALLOWED_FRAME_ORIGINS = os.environ.get("HELM_FRAME_ORIGINS", _default_origins).replace(",", " ")
 
 
 def _rewrite_framing_headers(headers):
@@ -72,11 +78,11 @@ def _rewrite_framing_headers(headers):
             # backend's own policy, keep everything else it was doing,
             # then add our own scoped allowance.
             parts = [p.strip() for p in v.split(";") if p.strip() and not p.strip().lower().startswith("frame-ancestors")]
-            parts.append(f"frame-ancestors {ALLOWED_FRAME_ORIGIN}")
+            parts.append(f"frame-ancestors {ALLOWED_FRAME_ORIGINS}")
             v = "; ".join(parts)
         out.append((k, v))
     if not had_csp:
-        out.append(("Content-Security-Policy", f"frame-ancestors {ALLOWED_FRAME_ORIGIN}"))
+        out.append(("Content-Security-Policy", f"frame-ancestors {ALLOWED_FRAME_ORIGINS}"))
     return out
 
 
