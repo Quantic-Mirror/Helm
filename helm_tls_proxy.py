@@ -40,8 +40,53 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
 
+# Many self-hosted apps (Wiki.js, and likely Forgejo/Element/Elk later) ship
+# their own clickjacking protection by default — X-Frame-Options: SAMEORIGIN
+# or DENY, or an equivalent CSP frame-ancestors directive. That's the right
+# default for a standalone app, but it also blocks Helm from framing it
+# entirely, since Helm runs on a different port and is therefore a
+# different origin as far as the browser is concerned.
+#
+# Rather than stripping that protection blanket (which would let *any* site
+# frame the backend), rewrite it to allow only Helm's own origin. Override
+# via the HELM_FRAME_ORIGIN environment variable if Helm isn't reachable at
+# the default address below.
+ALLOWED_FRAME_ORIGIN = os.environ.get("HELM_FRAME_ORIGIN", "https://popcorn:8081")
+
+
+def _rewrite_framing_headers(headers):
+    """Given a list of (name, value) response header tuples, drop any
+    framing-restriction headers from the backend and return the rest
+    unchanged, plus a flag indicating whether the backend had sent its own
+    Content-Security-Policy (so the caller knows whether one still needs to
+    be added)."""
+    out = []
+    had_csp = False
+    for k, v in headers:
+        lk = k.lower()
+        if lk == "x-frame-options":
+            continue  # dropped entirely — replaced by the CSP header below
+        if lk == "content-security-policy":
+            had_csp = True
+            # Strip any existing frame-ancestors directive from the
+            # backend's own policy, keep everything else it was doing,
+            # then add our own scoped allowance.
+            parts = [p.strip() for p in v.split(";") if p.strip() and not p.strip().lower().startswith("frame-ancestors")]
+            parts.append(f"frame-ancestors {ALLOWED_FRAME_ORIGIN}")
+            v = "; ".join(parts)
+        out.append((k, v))
+    if not had_csp:
+        out.append(("Content-Security-Policy", f"frame-ancestors {ALLOWED_FRAME_ORIGIN}"))
+    return out
+
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
+    def _send_headers(self, raw_headers):
+        for k, v in _rewrite_framing_headers(list(raw_headers)):
+            if k.lower() in ("transfer-encoding", "connection"):
+                continue
+            self.send_header(k, v)
+
     def _proxy(self, method):
         url = BACKEND_BASE + self.path
         length = int(self.headers.get("Content-Length", 0))
@@ -56,17 +101,13 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 self.send_response(resp.status)
-                for k, v in resp.getheaders():
-                    if k.lower() not in ("transfer-encoding", "connection"):
-                        self.send_header(k, v)
+                self._send_headers(resp.getheaders())
                 self.end_headers()
                 self.wfile.write(resp.read())
         except urllib.error.HTTPError as e:
             self.send_response(e.code)
             body = e.read()
-            for k, v in e.headers.items():
-                if k.lower() not in ("transfer-encoding", "connection"):
-                    self.send_header(k, v)
+            self._send_headers(e.headers.items())
             self.end_headers()
             self.wfile.write(body)
         except Exception as e:
