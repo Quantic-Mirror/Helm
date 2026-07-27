@@ -554,6 +554,20 @@ MONITORED_SERVICES = [
         "unit":  "wiki-tls-proxy.service",
         "controllable": True,
     },
+    {
+        "id":    "mealie",
+        "label": "Mealie",
+        "type":  "docker",
+        "container": "mealie",
+        "controllable": True,
+    },
+    {
+        "id":    "mealie-tls-proxy",
+        "label": "Mealie TLS Frontend",
+        "type":  "systemd-user",
+        "unit":  "mealie-tls-proxy.service",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
