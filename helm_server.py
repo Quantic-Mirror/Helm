@@ -568,20 +568,6 @@ MONITORED_SERVICES = [
         "unit":  "mealie-tls-proxy.service",
         "controllable": True,
     },
-    {
-        "id":    "rss-bridge",
-        "label": "RSS-Bridge",
-        "type":  "docker",
-        "container": "rss-bridge",
-        "controllable": True,
-    },
-    {
-        "id":    "rss-bridge-tls-proxy",
-        "label": "RSS-Bridge TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "rss-bridge-tls-proxy.service",
-        "controllable": True,
-    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
