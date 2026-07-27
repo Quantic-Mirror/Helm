@@ -1818,6 +1818,17 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   display: block;
 }
 
+#mealie-page {
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+#mealie-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
 /* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
 #upcoming-events-strip {
   margin: 0 0 12px;
@@ -2542,6 +2553,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn" data-tab="logs">Logs</button>
     <button class="tab-btn" data-tab="gopher">Gopher</button>
     <button class="tab-btn" data-tab="wiki">Wiki</button>
+    <button class="tab-btn" data-tab="mealie">Recipes</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -2696,6 +2708,11 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 <!-- WIKI PAGE -->
 <div id="wiki-page" style="display:none">
   <iframe id="wiki-frame" src="https://popcorn:9002" allow="fullscreen"></iframe>
+</div>
+
+<!-- MEALIE PAGE -->
+<div id="mealie-page" style="display:none">
+  <iframe id="mealie-frame" src="https://popcorn:9003" allow="fullscreen"></iframe>
 </div>
 
 <!-- LOGS PAGE -->
@@ -7197,13 +7214,14 @@ function switchTab(tab) {
   show('irc-page',       tab === 'irc');
   show('gopher-page',    tab === 'gopher');
   show('wiki-page',      tab === 'wiki');
+  show('mealie-page',    tab === 'mealie');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki', mealie: 'Helm — Recipes' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
