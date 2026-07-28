@@ -568,6 +568,20 @@ MONITORED_SERVICES = [
         "unit":  "mealie-tls-proxy.service",
         "controllable": True,
     },
+    {
+        "id":    "kineto",
+        "label": "Gemini Proxy (kineto)",
+        "type":  "docker",
+        "container": "kineto",
+        "controllable": True,
+    },
+    {
+        "id":    "gemini-tls-proxy",
+        "label": "Gemini TLS Frontend",
+        "type":  "systemd-user",
+        "unit":  "gemini-tls-proxy.service",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
