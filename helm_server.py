@@ -97,102 +97,6 @@ def proxy_to_vault(method, path_and_query, body_bytes=None):
 
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 
-# ── LOL ESPORTS SCHEDULE ──────────────────────────────────────────────────────
-# Pulls live from the same unofficial API lolesports.com's own website uses
-# to power its schedule page — not the older api.lolesports.com API, which
-# has been dead since 2020. This one is reverse-engineered from the current
-# site's own frontend and uses an API key Riot's own JS bundle embeds
-# client-side (not a private credential — it's the same key the public
-# website itself uses, publicly documented by the community for years).
-# Riot doesn't officially support or guarantee this API's stability.
-#
-# League IDs are resolved dynamically via getLeagues rather than hardcoded,
-# since guessing at numeric IDs risks silently breaking if they're wrong —
-# this way it's self-correcting regardless of what the actual current IDs
-# are, and doesn't need updating if Riot ever changes them.
-
-LOLESPORTS_API_BASE = "https://esports-api.lolesports.com/persisted/gw"
-LOLESPORTS_API_KEY = "0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z"
-LOLESPORTS_LEAGUE_SLUGS = {"lcs": "lcs", "lec": "lec"}
-
-_lolesports_league_ids_cache = {"ts": 0, "by_slug": {}}
-_lolesports_schedule_cache = {}  # slug -> {"ts": float, "data": [...]}
-LOLESPORTS_LEAGUE_IDS_TTL = 24 * 60 * 60  # league IDs essentially never change
-LOLESPORTS_SCHEDULE_TTL = 5 * 60  # refresh schedule data every 5 minutes
-
-
-def _lolesports_get(path, params=None):
-    qs = "&".join(f"{k}={quote(str(v))}" for k, v in (params or {}).items())
-    url = f"{LOLESPORTS_API_BASE}/{path}" + (f"?{qs}" if qs else "")
-    req = urllib.request.Request(url, headers={"x-api-key": LOLESPORTS_API_KEY})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8")), None
-    except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code}"
-    except Exception as e:
-        return None, str(e)
-
-
-def _lolesports_resolve_league_ids():
-    if time.time() - _lolesports_league_ids_cache["ts"] < LOLESPORTS_LEAGUE_IDS_TTL \
-            and _lolesports_league_ids_cache["by_slug"]:
-        return
-    data, err = _lolesports_get("getLeagues", {"hl": "en-US"})
-    if err or not data:
-        return
-    leagues = (data.get("data") or {}).get("leagues") or []
-    by_slug = {}
-    for league in leagues:
-        slug = (league.get("slug") or "").lower()
-        if slug in LOLESPORTS_LEAGUE_SLUGS.values():
-            by_slug[slug] = league.get("id")
-    if by_slug:
-        _lolesports_league_ids_cache["by_slug"] = by_slug
-        _lolesports_league_ids_cache["ts"] = time.time()
-
-
-def get_lolesports_schedule(league_slug):
-    """Returns a normalized list of matches for the given league slug
-    ('lcs' or 'lec'), cached for a few minutes to avoid hammering the
-    upstream API on every poll."""
-    cached = _lolesports_schedule_cache.get(league_slug)
-    if cached and time.time() - cached["ts"] < LOLESPORTS_SCHEDULE_TTL:
-        return cached["data"], None
-
-    _lolesports_resolve_league_ids()
-    league_id = _lolesports_league_ids_cache["by_slug"].get(league_slug)
-    if not league_id:
-        return None, f"Could not resolve a league ID for '{league_slug}'"
-
-    data, err = _lolesports_get("getSchedule", {"hl": "en-US", "leagueId": league_id})
-    if err:
-        return None, err
-
-    events = ((data.get("data") or {}).get("schedule") or {}).get("events") or []
-    matches = []
-    for ev in events:
-        match = ev.get("match") or {}
-        teams = match.get("teams") or []
-        matches.append({
-            "start_time": ev.get("startTime"),
-            "state": ev.get("state"),  # "unstarted" | "inProgress" | "completed"
-            "block_name": ev.get("blockName"),
-            "teams": [
-                {
-                    "name": t.get("name"),
-                    "code": t.get("code"),
-                    "image": t.get("image"),
-                    "result": (t.get("result") or {}).get("outcome"),
-                }
-                for t in teams
-            ],
-        })
-    _lolesports_schedule_cache[league_slug] = {"ts": time.time(), "data": matches}
-    return matches, None
-
-
-
 # ── IRC ALERTS (topbar badge) ────────────────────────────────────────────────
 # Reads directly from The Lounge's own SQLite message log rather than trying
 # to reach into the IRC iframe — that's a different origin (different port),
@@ -1189,19 +1093,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/irc/alerts":
             self.send_json(200, get_irc_alerts())
-            return
-
-        if parsed.path == "/api/lolesports/schedule":
-            qs = parse_qs(parsed.query)
-            league = qs.get("league", [""])[0].lower()
-            if league not in LOLESPORTS_LEAGUE_SLUGS:
-                self.send_json(400, {"error": "league must be 'lcs' or 'lec'"})
-                return
-            matches, err = get_lolesports_schedule(league)
-            if err:
-                self.send_json(502, {"error": err})
-                return
-            self.send_json(200, {"matches": matches})
             return
 
         if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \

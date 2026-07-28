@@ -1829,94 +1829,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   display: block;
 }
 
-/* ── LOL ESPORTS PAGE ─────────────────────────────────────────────────────────── */
-#lolesports-page {
-  padding: 20px 24px;
-  min-height: calc(100vh - 56px);
-}
-#lolesports-topbar {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 20px;
-}
-#lolesports-last-updated { font-size: 11px; color: var(--text-dim); margin-left: auto; }
-#lolesports-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 20px;
-  align-items: start;
-}
-.lolesports-league-heading {
-  font-family: var(--font-display);
-  font-size: 14px; font-weight: 600; color: var(--text);
-  margin: 0 0 10px;
-}
-.lolesports-schedule-list {
-  display: flex; flex-direction: column; gap: 8px;
-}
-.lolesports-match {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 12px;
-}
-.lolesports-match-teams {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 4px;
-}
-.lolesports-team {
-  display: flex; align-items: center; gap: 6px;
-  color: var(--text); font-weight: 600;
-  min-width: 0;
-}
-.lolesports-team img { width: 18px; height: 18px; object-fit: contain; flex-shrink: 0; }
-.lolesports-team-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lolesports-team.won { color: var(--green); }
-.lolesports-team.lost { color: var(--text-dim); }
-.lolesports-vs { color: var(--text-dim); font-size: 10px; flex-shrink: 0; }
-.lolesports-match-meta {
-  display: flex; justify-content: space-between;
-  font-size: 10px; color: var(--text-dim);
-}
-.lolesports-live-badge {
-  color: var(--red); font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.lolesports-empty {
-  font-size: 11px; color: var(--text-dim); padding: 12px 2px; text-align: center;
-}
-
-.lolesports-links-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
-}
-.lolesports-links-list {
-  display: flex; flex-direction: column; gap: 6px;
-}
-.lolesports-link-row {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 12px;
-}
-.lolesports-link-team {
-  font-weight: 600; color: var(--text);
-  flex-shrink: 0; min-width: 70px;
-}
-.lolesports-link-url {
-  flex: 1; color: var(--accent); text-decoration: none;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.lolesports-link-url:hover { text-decoration: underline; }
-.lolesports-link-delete {
-  flex-shrink: 0; background: none; border: none;
-  color: var(--text-dim); cursor: pointer; font-size: 11px;
-  padding: 2px 4px; border-radius: 4px;
-}
-.lolesports-link-delete:hover { color: var(--red); background: var(--surface-3); }
-
 /* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
 #upcoming-events-strip {
   margin: 0 0 12px;
@@ -2642,7 +2554,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     <button class="tab-btn" data-tab="gopher">Gopher</button>
     <button class="tab-btn" data-tab="wiki">Wiki</button>
     <button class="tab-btn" data-tab="mealie">Recipes</button>
-    <button class="tab-btn" data-tab="lolesports">LoL Esports</button>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -2802,31 +2713,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 <!-- MEALIE PAGE -->
 <div id="mealie-page" style="display:none">
   <iframe id="mealie-frame" src="https://popcorn:9003" allow="fullscreen"></iframe>
-</div>
-
-<!-- LOL ESPORTS PAGE -->
-<div id="lolesports-page" style="display:none">
-  <div id="lolesports-topbar">
-    <button class="btn" id="btn-refresh-lolesports">↺ Refresh</button>
-    <span id="lolesports-last-updated"></span>
-  </div>
-  <div id="lolesports-body">
-    <div class="lolesports-schedule-col">
-      <h3 class="lolesports-league-heading">LCS</h3>
-      <div id="lolesports-lcs-schedule" class="lolesports-schedule-list"></div>
-    </div>
-    <div class="lolesports-schedule-col">
-      <h3 class="lolesports-league-heading">LEC</h3>
-      <div id="lolesports-lec-schedule" class="lolesports-schedule-list"></div>
-    </div>
-    <div class="lolesports-schedule-col">
-      <div class="lolesports-links-header">
-        <h3 class="lolesports-league-heading">Team Links</h3>
-        <button class="btn" id="btn-add-team-link">+ Add</button>
-      </div>
-      <div id="lolesports-team-links" class="lolesports-links-list"></div>
-    </div>
-  </div>
 </div>
 
 <!-- LOGS PAGE -->
@@ -3118,7 +3004,6 @@ async function initSync() {
       if (!state.feeds) state.feeds = [];
       if (!state.newsSources) state.newsSources = [];
       if (!state.gopherBookmarks) state.gopherBookmarks = [];
-      if (!state.lolTeamLinks) state.lolTeamLinks = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       // Reset the last-pulled snapshot so mid-session merge logic has a
       // fresh baseline from this startup, not from a stale previous session.
@@ -3231,7 +3116,6 @@ async function pollForRemoteChanges() {
       if (!state.feeds) state.feeds = [];
       if (!state.newsSources) state.newsSources = [];
       if (!state.gopherBookmarks) state.gopherBookmarks = [];
-      if (!state.lolTeamLinks) state.lolTeamLinks = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       render(); // silent — no toast, no dialog
@@ -3251,7 +3135,6 @@ function load() {
   if (!state.feeds) state.feeds = [];
   if (!state.newsSources) state.newsSources = [];
   if (!state.gopherBookmarks) state.gopherBookmarks = [];
-  if (!state.lolTeamLinks) state.lolTeamLinks = [];
   if (!state.calendarEvents) {
     // Initialise calendar events store; migrate any events from old calendar widgets
     state.calendarEvents = {};
@@ -5230,7 +5113,6 @@ async function restoreBackup(filename) {
     if (!state.feeds) state.feeds = [];
     if (!state.newsSources) state.newsSources = [];
     if (!state.gopherBookmarks) state.gopherBookmarks = [];
-    if (!state.lolTeamLinks) state.lolTeamLinks = [];
     localStorage.setItem('marks_v1', JSON.stringify(state));
 
     // Push to backend as a new save (resets version conflict risk)
@@ -7192,7 +7074,6 @@ document.getElementById('gopher-bookmark-star').onclick = () => {
   const label = prompt('Label for this bookmark:', current);
   if (label === null) return;
   if (!state.gopherBookmarks) state.gopherBookmarks = [];
-  if (!state.lolTeamLinks) state.lolTeamLinks = [];
   state.gopherBookmarks.push({ label: label.trim() || current, address: current });
   save();
   renderGopherBookmarks();
@@ -7308,7 +7189,6 @@ function ensureFeeds() {
   if (!state.feeds) state.feeds = [];
   if (!state.newsSources) state.newsSources = [];
   if (!state.gopherBookmarks) state.gopherBookmarks = [];
-  if (!state.lolTeamLinks) state.lolTeamLinks = [];
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
@@ -7335,14 +7215,13 @@ function switchTab(tab) {
   show('gopher-page',    tab === 'gopher');
   show('wiki-page',      tab === 'wiki');
   show('mealie-page',    tab === 'mealie');
-  show('lolesports-page', tab === 'lolesports');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki', mealie: 'Helm — Recipes', lolesports: 'Helm — LoL Esports' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki', mealie: 'Helm — Recipes' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -7354,7 +7233,6 @@ function switchTab(tab) {
   if (tab === 'logs')      { fetchLogs(); startLogsPolling(); }
   else stopLogsPolling();
   if (tab === 'irc')       ackIrcAlerts();
-  if (tab === 'lolesports') { fetchLolEsportsSchedule(); renderLolTeamLinks(); }
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -7906,7 +7784,6 @@ const NEWS_PAGE_SIZE = 3;
 function ensureNewsSources() {
   if (!state.newsSources) state.newsSources = [];
   if (!state.gopherBookmarks) state.gopherBookmarks = [];
-  if (!state.lolTeamLinks) state.lolTeamLinks = [];
 }
 
 // ── Generic feed parser — handles both RSS 2.0 and Atom ────────────────────────
@@ -8232,129 +8109,6 @@ async function ackIrcAlerts() {
     await fetch('/api/irc/ack', { method: 'POST', signal: AbortSignal.timeout(8000) });
   } catch (e) { /* best-effort */ }
 }
-
-// ════════════════════════════════════════════════════════════════════════════
-// ── LOL ESPORTS PAGE ─────────────────────────────────────════════════════════
-// Schedule is pulled live from the real lolesports.com API on every open (and
-// on manual refresh) — always current, no hardcoded team/roster data needed.
-// Team social links are a small user-maintained list, same pattern as the
-// Gopher bookmarks, since rosters and org names change too often to safely
-// hardcode from memory.
-// ════════════════════════════════════════════════════════════════════════════
-
-async function fetchLolEsportsSchedule() {
-  const updated = document.getElementById('lolesports-last-updated');
-  await Promise.all([
-    fetchLolEsportsLeague('lcs', 'lolesports-lcs-schedule'),
-    fetchLolEsportsLeague('lec', 'lolesports-lec-schedule'),
-  ]);
-  if (updated) updated.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-async function fetchLolEsportsLeague(league, elementId) {
-  const container = document.getElementById(elementId);
-  if (!container) return;
-  container.innerHTML = '<div class="lolesports-empty">Loading…</div>';
-  try {
-    const hasBackend = await checkLocalBackend();
-    if (!hasBackend) {
-      container.innerHTML = '<div class="lolesports-empty">Requires the local backend.</div>';
-      return;
-    }
-    const resp = await fetch('/api/lolesports/schedule?league=' + league, { signal: AbortSignal.timeout(15000) });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error || ('HTTP ' + resp.status));
-    }
-    const data = await resp.json();
-    renderLolEsportsMatches(container, data.matches || []);
-  } catch (e) {
-    container.innerHTML = `<div class="lolesports-empty">Could not load schedule: ${escHtml(e.message)}</div>`;
-  }
-}
-
-function renderLolEsportsMatches(container, matches) {
-  if (matches.length === 0) {
-    container.innerHTML = '<div class="lolesports-empty">No scheduled matches found.</div>';
-    return;
-  }
-
-  // Show only upcoming/live matches, nearest first — completed matches
-  // aren't what a schedule tab is for.
-  const relevant = matches
-    .filter(m => m.state !== 'completed')
-    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))
-    .slice(0, 8);
-
-  if (relevant.length === 0) {
-    container.innerHTML = '<div class="lolesports-empty">No upcoming matches scheduled.</div>';
-    return;
-  }
-
-  container.innerHTML = relevant.map(m => {
-    const isLive = m.state === 'inProgress';
-    const teamsHtml = (m.teams || []).map(t => {
-      const resultClass = t.result === 'win' ? 'won' : (t.result === 'loss' ? 'lost' : '');
-      return `
-        <span class="lolesports-team ${resultClass}">
-          ${t.image ? `<img src="${escHtml(t.image)}" alt="" loading="lazy">` : ''}
-          <span class="lolesports-team-name">${escHtml(t.code || t.name || 'TBD')}</span>
-        </span>`;
-    }).join('<span class="lolesports-vs">vs</span>');
-
-    const when = m.start_time
-      ? new Date(m.start_time).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : 'TBD';
-
-    return `
-      <div class="lolesports-match">
-        <div class="lolesports-match-teams">${teamsHtml}</div>
-        <div class="lolesports-match-meta">
-          <span>${escHtml(m.block_name || '')}</span>
-          <span>${isLive ? '<span class="lolesports-live-badge">Live</span>' : escHtml(when)}</span>
-        </div>
-      </div>`;
-  }).join('');
-}
-
-function renderLolTeamLinks() {
-  const container = document.getElementById('lolesports-team-links');
-  if (!container) return;
-  const links = state.lolTeamLinks || [];
-  if (links.length === 0) {
-    container.innerHTML = '<div class="lolesports-empty">No team links saved yet — click + Add to start building your list.</div>';
-    return;
-  }
-  container.innerHTML = links.map((l, i) => `
-    <div class="lolesports-link-row">
-      <span class="lolesports-link-team">${escHtml(l.team)}</span>
-      <a class="lolesports-link-url" href="${escHtml(l.url)}" target="_blank" rel="noopener">${escHtml(l.url)}</a>
-      <button class="lolesports-link-delete" data-lol-link-delete="${i}" title="Remove">✕</button>
-    </div>
-  `).join('');
-
-  container.querySelectorAll('[data-lol-link-delete]').forEach(btn => {
-    btn.onclick = () => {
-      const idx = parseInt(btn.dataset.lolLinkDelete);
-      state.lolTeamLinks.splice(idx, 1);
-      save();
-      renderLolTeamLinks();
-    };
-  });
-}
-
-document.getElementById('btn-refresh-lolesports').onclick = fetchLolEsportsSchedule;
-
-document.getElementById('btn-add-team-link').onclick = () => {
-  const team = prompt('Team name (e.g. "G2 Esports" or "Cloud9"):');
-  if (!team || !team.trim()) return;
-  const url = prompt('Social media URL for ' + team.trim() + ':');
-  if (!url || !url.trim()) return;
-  if (!state.lolTeamLinks) state.lolTeamLinks = [];
-  state.lolTeamLinks.push({ team: team.trim(), url: url.trim() });
-  save();
-  renderLolTeamLinks();
-};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ── LOGS PAGE ─────────────────────────────────────════════════════════════════
