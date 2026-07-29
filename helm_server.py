@@ -864,7 +864,7 @@ def _get_docker_logs(container, lines):
         i += 8 + size
     full_text = "".join(text_parts)
 
-    from datetime import datetime
+    from datetime import datetime, timezone
     results = []
     for line in full_text.splitlines():
         if not line.strip():
@@ -873,10 +873,16 @@ def _get_docker_logs(container, lines):
         msg = line
         # Docker's --timestamps prefixes each line with an RFC3339 timestamp
         # followed by a space, e.g. "2026-07-21T12:00:00.123456789Z message"
+        # The trailing Z means UTC — parsing this into a naive datetime and
+        # calling .timestamp() on it directly is a real bug: Python then
+        # assumes the naive datetime is in the *system's local timezone*,
+        # silently shifting every entry by popcorn's UTC offset. Explicitly
+        # attaching UTC tzinfo before calling .timestamp() avoids that.
         if len(line) > 20 and line[4] == "-" and "T" in line[:20]:
             try:
                 ts_str, rest = line.split(" ", 1)
-                ts = datetime.strptime(ts_str[:26], "%Y-%m-%dT%H:%M:%S.%f").timestamp()
+                dt = datetime.strptime(ts_str[:26], "%Y-%m-%dT%H:%M:%S.%f")
+                ts = dt.replace(tzinfo=timezone.utc).timestamp()
                 msg = rest
             except Exception:
                 msg = line
