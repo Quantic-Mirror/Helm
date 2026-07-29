@@ -1407,6 +1407,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 }
 .tab-btn {
   position: relative;
+  display: inline-block;
   padding: 4px 14px;
   border-radius: 6px;
   border: none;
@@ -1415,11 +1416,13 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   font-family: var(--font-body);
   font-size: 12px;
   font-weight: 500;
+  text-decoration: none;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   white-space: nowrap;
 }
 .tab-btn:hover { color: var(--text); }
+.tab-btn:visited { color: var(--text-muted); }
 .tab-btn.active {
   background: var(--surface);
   color: var(--text);
@@ -2562,22 +2565,22 @@ body.compact .add-bm-btn { padding: 4px 8px; }
     Helm
   </h1>
   <nav id="tab-nav">
-    <button class="tab-btn" data-tab="bookmarks">Bookmarks</button>
-    <button class="tab-btn" data-tab="feeds">YouTube Feeds</button>
-    <button class="tab-btn" data-tab="news">News</button>
-    <button class="tab-btn" data-tab="calendar">Calendar</button>
-    <button class="tab-btn" data-tab="services">Services</button>
+    <a class="tab-btn" href="#bookmarks" data-tab="bookmarks">Bookmarks</a>
+    <a class="tab-btn" href="#feeds" data-tab="feeds">YouTube Feeds</a>
+    <a class="tab-btn" href="#news" data-tab="news">News</a>
+    <a class="tab-btn" href="#calendar" data-tab="calendar">Calendar</a>
+    <a class="tab-btn" href="#services" data-tab="services">Services</a>
     <div class="irc-tab-wrap">
-      <button class="tab-btn" data-tab="irc">IRC</button>
+      <a class="tab-btn" href="#irc" data-tab="irc">IRC</a>
       <span class="irc-alert-badge" id="irc-alert-badge" style="display:none"></span>
       <div class="irc-alert-dropdown" id="irc-alert-dropdown"></div>
     </div>
-    <button class="tab-btn" data-tab="logs">Logs</button>
-    <button class="tab-btn" data-tab="gopher">Gopher</button>
-    <button class="tab-btn" data-tab="wiki">Wiki</button>
-    <button class="tab-btn" data-tab="mealie">Recipes</button>
-    <button class="tab-btn" data-tab="kiwix">Wikipedia</button>
-    <button class="tab-btn" data-tab="gemini">Gemini</button>
+    <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
+    <a class="tab-btn" href="#gopher" data-tab="gopher">Gopher</a>
+    <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
+    <a class="tab-btn" href="#mealie" data-tab="mealie">Recipes</a>
+    <a class="tab-btn" href="#kiwix" data-tab="kiwix">Wikipedia</a>
+    <a class="tab-btn" href="#gemini" data-tab="gemini">Gemini</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -6967,7 +6970,14 @@ document.getElementById('bm-title-input').oninput = function() {
 load();
 render();
 updateInvidiousButton();
-switchTab('dashboard');
+
+// If a new tab/window was opened via middle-click (or the page was just
+// bookmarked/refreshed) with a specific tab's hash in the URL, honor it
+// instead of always landing on Dashboard — but only if it's a real,
+// known tab, so a stray or malformed hash doesn't switch to nothing.
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'irc', 'logs', 'gopher', 'wiki', 'mealie', 'kiwix', 'gemini'];
+const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
+switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
 // ── Topbar dropdown menus (Data / Widgets / Tools) ──────────────────────────
 document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
@@ -7234,6 +7244,15 @@ function switchTab(tab) {
   const logo = document.getElementById('helm-logo');
   if (logo) logo.classList.toggle('logo-active', tab === 'dashboard');
 
+  // Keep the address bar's hash in sync so the current tab survives a
+  // refresh and middle-clicking a different tab from here opens the right
+  // place. replaceState (not pushState) avoids piling up a back/forward
+  // history entry per tab switch, matching how a tab UI should behave.
+  const newHash = '#' + tab;
+  if (location.hash !== newHash) {
+    history.replaceState(null, '', newHash);
+  }
+
   const show = (id, condition) => {
     const el = document.getElementById(id);
     if (el) el.style.display = condition ? '' : 'none';
@@ -7272,7 +7291,16 @@ function switchTab(tab) {
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.onclick = () => switchTab(btn.dataset.tab);
+  btn.addEventListener('click', (e) => {
+    // Let the browser handle middle-click, ctrl/cmd+click, and shift+click
+    // natively — those are how a real link opens in a new tab or window,
+    // and now that these are real <a href="#..."> links, that just works.
+    // Only a plain left click gets intercepted for the normal in-place,
+    // no-reload tab switch.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    switchTab(btn.dataset.tab);
+  });
 });
 
 // ── Add channel ───────────────────────────────────────────────────────────────
