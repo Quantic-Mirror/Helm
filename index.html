@@ -2990,6 +2990,24 @@ let IRC_ALERT_DATA = null;
 let GOPHER_HISTORY = [];
 let GOPHER_HISTORY_IDX = -1;
 
+// Moved up from later in the file — switchTab() can now run this early
+// (via the startup hash check, for a tab opened via middle-click) and
+// calls renderFeeds()/renderNews(), which touch all five of these. They
+// used to be safe declared later, back when Feeds/News were only ever
+// rendered in response to a later user click, by which point the whole
+// script had already finished its first pass.
+const FEEDS_CACHE = {};     // channelId → { items, title, avatar, ts }
+const VIDEO_CAROUSEL_IDX = {};
+const CORS_PROXIES = [
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+const NEWS_CACHE = {};      // sourceId → { items, title, link, ts }
+const NEWS_EXPANDED = {};   // sourceId → bool
+const NEWS_PAGE_SIZE = 3;
+
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
   scheduleSyncPush();
@@ -7225,8 +7243,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 // We fetch via a CORS proxy (rss2json.com, free for public feeds).
 // Users can add channels by URL, handle (@name), or channel ID.
 
-const FEEDS_CACHE = {}; // channelId → { items, title, avatar, ts }
-// Per-channel carousel index — see VIDEO_CAROUSEL_IDX below
+// FEEDS_CACHE declared earlier now (see top-of-file early declarations)
 
 // ── State: channels stored in state.feeds ────────────────────────────────────
 function ensureFeeds() {
@@ -7577,12 +7594,7 @@ async function checkLocalBackend() {
   return LOCAL_BACKEND_AVAILABLE;
 }
 
-const CORS_PROXIES = [
-  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${url}`,
-];
+// CORS_PROXIES declared earlier now (see top-of-file early declarations)
 
 async function fetchViaProxy(targetUrl) {
   // Try the local backend first, if available
@@ -7791,8 +7803,7 @@ function toInvidiousUrl(youtubeUrl) {
   return youtubeUrl;
 }
 
-// Per-channel carousel index (in memory only — always starts at 0 on page load)
-const VIDEO_CAROUSEL_IDX = {};
+// VIDEO_CAROUSEL_IDX declared earlier now (see top-of-file early declarations)
 
 function renderVideoList(ch, cache) {
   const listEl = document.getElementById('vlist-' + ch.id);
@@ -7841,9 +7852,7 @@ window.collapseChannel = id => { const c = FEEDS_CACHE[id]; if (c) renderVideoLi
 // and a combined chronological timeline view.
 // ════════════════════════════════════════════════════════════════════════════
 
-const NEWS_CACHE = {};      // sourceId → { items, title, link, ts }
-const NEWS_EXPANDED = {};   // sourceId → bool
-const NEWS_PAGE_SIZE = 3;
+// NEWS_CACHE, NEWS_EXPANDED, NEWS_PAGE_SIZE declared earlier now (see top-of-file early declarations)
 
 function ensureNewsSources() {
   if (!state.newsSources) state.newsSources = [];
