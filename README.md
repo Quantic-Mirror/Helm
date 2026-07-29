@@ -19,13 +19,31 @@ A self-hosted personal dashboard. Bookmarks, YouTube feeds, calendar, news feeds
 - **YouTube Feeds** - add channels by ID or handle, video carousel per channel, Invidious support, sort by manual/alphabetical/recently active
 - **News Feeds** - RSS 2.0 and Atom sources, per-source cards and a combined chronological timeline, auto-detection of feed URL from a site URL
 - **Calendar** - calendar page with event scheduler and configurable reminder
-- **Widgets** - search (Startpage, priv.au, YouTube), weather (Open-Meteo, no API key), notes, digital clock, system resource monitor
 - **Multi-device sync** - the Python backend is the canonical store; changes push and pull silently across all devices on the network
 - **Rolling backups** - the server automatically snapshots state on every save, keeping the 10 most recent
 - **Encrypted config export** - AES-256-GCM via the browser's Web Crypto API; no external library
 - **In-app article reader** - click any news headline to open a clean reader pane without leaving the page
 - **HTTPS** - auto-detected from `cert.pem` / `key.pem` next to the server script
 - **Browser extension** - save any page to Helm from the toolbar, with folder selection and already-bookmarked indicator
+- **Services page** - shows status of running systemd units and docker containters
+- **IRC tab** - connected to TheLounge IRC client on host for always-on IRC connection
+- **Log viewer** - shows realtime logs of the services running (services page), filterable per service
+- **Gopherspace browser** - Browse Gopher!
+- **Wiki.JS** - locally hosted Wiki 
+- **Recipe tracker** - locally hosted dockerized Mealie instance for recipes
+- **Wikipedia (offline)** - Wikipedia. All of it. Yes, all of it. Running via Kiwix-serve.
+- **Gemini** - Another way to browse Gopherspace
+- **Weather widget**
+- **On This Day Widget** - random fact for the current date with link to article
+- **Sun & Moon Widget**
+- **To-Do Widget**
+- **Clock / Timer Widget**
+- **Search Widget** - Search via SearX (locally hosted), Startpage, YouTube
+- **Notes Widget**
+- **Random Wikipedia Article Widget**
+- **Host Stats Widget** - Shows CPU, Memory, Disk usage
+- **Quote Of The Day Widget**
+
 
 ---
 
