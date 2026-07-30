@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#0D1117">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -44,7 +44,106 @@ body {
   overflow-x: hidden;
 }
 
+/* ── TERMINAL THEME ───────────────────────────────────────────────────────────
+   Applied via body.theme-terminal, with a color variant class alongside it
+   (theme-color-green / theme-color-amber / theme-color-white). Overrides the
+   same CSS variables every component already uses, so this re-skins the
+   whole app without needing per-component changes. Box-drawing is used only
+   decoratively on widget headers (see .column-title below) rather than
+   literally redrawing every border as ASCII art — a deliberately lighter
+   touch than a full box-drawing overhaul. */
+body.theme-terminal {
+  --font-body: 'IBM Plex Mono', monospace;
+  --font-display: 'IBM Plex Mono', monospace;
+  --bg: #0a0a0a;
+  --surface: #0d0f0d;
+  --surface-2: #111411;
+  --surface-3: #171b17;
+  --radius: 2px;
+}
+body.theme-terminal.theme-color-green {
+  --border: #1a3d1a;
+  --border-hover: #33ff33;
+  --text: #33ff33;
+  --text-muted: #22bb22;
+  --text-dim: #175517;
+  --accent: #33ff33;
+  --accent-dim: rgba(51,255,51,0.12);
+  --green: #33ff33;
+  --green-dim: rgba(51,255,51,0.12);
+}
+body.theme-terminal.theme-color-amber {
+  --border: #3d2a10;
+  --border-hover: #ffb000;
+  --text: #ffb000;
+  --text-muted: #cc8c00;
+  --text-dim: #5c4200;
+  --accent: #ffb000;
+  --accent-dim: rgba(255,176,0,0.12);
+  --green: #ffb000;
+  --green-dim: rgba(255,176,0,0.12);
+}
+body.theme-terminal.theme-color-white {
+  --border: #333333;
+  --border-hover: #e8e8e8;
+  --text: #e8e8e8;
+  --text-muted: #aaaaaa;
+  --text-dim: #5a5a5a;
+  --accent: #e8e8e8;
+  --accent-dim: rgba(232,232,232,0.12);
+  --green: #e8e8e8;
+  --green-dim: rgba(232,232,232,0.12);
+}
+/* A faint phosphor glow, using currentColor so it works across all three variants */
+body.theme-terminal .column-title,
+body.theme-terminal #topbar h1 {
+  text-shadow: 0 0 4px currentColor;
+}
+/* Decorative box-drawing prefix on widget/section headers — a light touch,
+   not a full literal box around every element. */
+body.theme-terminal .column-title::before {
+  content: '── ';
+  opacity: 0.7;
+}
+
 /* TOP BAR */
+#terminal-login-banner {
+  display: none;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 24px;
+  position: relative;
+}
+body.theme-terminal #terminal-login-banner.visible {
+  display: block;
+}
+#terminal-banner-content {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  text-shadow: 0 0 4px currentColor;
+  margin: 0;
+  white-space: pre-wrap;
+}
+#terminal-banner-dismiss {
+  position: absolute;
+  top: 10px;
+  right: 24px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+#terminal-banner-dismiss:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
 #topbar {
   position: sticky;
   top: 0;
@@ -849,6 +948,69 @@ body {
 .timer-ctrl-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .timer-ctrl-btn:disabled { opacity: 0.4; cursor: default; }
 
+/* Comics widget */
+.comics-nav {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 6px 10px 0;
+}
+.comics-current-label { font-size: 10px; color: var(--text-dim); }
+.comics-body { padding: 8px 14px 14px; text-align: center; }
+.comics-loading, .comics-error, .comics-empty {
+  font-size: 12px; color: var(--text-dim); padding: 12px 0;
+}
+.comics-image {
+  max-width: 100%; height: auto; border-radius: 8px;
+  background: #fff; padding: 4px;
+}
+.comics-title { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+.comics-manage {
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+}
+.comics-manage-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.comics-manage-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; padding: 4px 6px;
+  background: var(--surface-2); border-radius: 6px;
+}
+.comics-manage-label { color: var(--text); }
+.comics-manage-delete {
+  background: none; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 10px; padding: 2px 4px; border-radius: 4px;
+}
+.comics-manage-delete:hover { color: var(--red); background: var(--surface-3); }
+.comics-manage-actions { display: flex; gap: 6px; }
+
+/* Package Updates widget */
+.pkgupdates-body { padding: 14px; }
+.pkgupdates-loading, .pkgupdates-error {
+  font-size: 12px; color: var(--text-dim); padding: 8px 0;
+}
+.pkgupdates-uptodate {
+  font-size: 12px; color: var(--green); padding: 8px 0;
+}
+.pkgupdates-count {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  margin-bottom: 8px;
+}
+.pkgupdates-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 220px; overflow-y: auto;
+}
+.pkgupdates-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; font-size: 11px;
+  padding: 3px 0; border-bottom: 1px solid var(--border);
+}
+.pkgupdates-row:last-child { border-bottom: none; }
+.pkgupdates-name { color: var(--text); font-weight: 500; flex-shrink: 0; }
+.pkgupdates-version {
+  color: var(--text-dim); font-size: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pkgupdates-more { font-size: 10px; color: var(--text-dim); padding-top: 6px; text-align: center; }
+.pkgupdates-method { font-size: 9px; color: var(--text-dim); margin-top: 8px; opacity: 0.7; }
+
 /* Quote of the Day widget */
 .quote-body { padding: 14px; }
 .quote-loading, .quote-error {
@@ -1178,6 +1340,10 @@ body {
   height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden;
 }
 .sysstats-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+.sysstats-ascii-bar {
+  font-family: var(--font-body); font-size: 12px; letter-spacing: -1px;
+  line-height: 1; white-space: nowrap; overflow: hidden;
+}
 .sysstats-uptime { font-size: 10px; color: var(--text-dim); margin-top: 8px; }
 
 /* Weather widget */
@@ -2116,6 +2282,14 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 .svc-dot-ok  { background: var(--green); color: var(--green); }
 .svc-dot-err { background: var(--red);   color: var(--red); }
 
+/* Terminal theme: bracket-text status instead of a colored dot */
+body.theme-terminal .svc-dot {
+  width: auto; height: auto; border-radius: 0; background: none !important;
+  box-shadow: none; font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+}
+body.theme-terminal .svc-dot-ok::before  { content: '[OK]'; }
+body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red); }
+
 .svc-name {
   font-family: var(--font-display);
   font-size: 14px; font-weight: 600; color: var(--text); flex: 1;
@@ -2559,6 +2733,10 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 </head>
 <body>
 
+<div id="terminal-login-banner" style="display:none">
+  <pre id="terminal-banner-content"></pre>
+  <button id="terminal-banner-dismiss" title="Dismiss for this session">[dismiss]</button>
+</div>
 <div id="topbar">
   <h1 id="helm-logo" title="Dashboard" style="cursor:pointer">
     <span>⚑</span>
@@ -2619,6 +2797,8 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
           <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
+          <button class="dropdown-item" id="btn-add-pkgupdates">Package Updates</button>
+          <button class="dropdown-item" id="btn-add-comics">Comics</button>
           <button class="dropdown-item" id="btn-add-vault">Password Vault</button>
         </div>
       </div>
@@ -2628,6 +2808,12 @@ body.compact .add-bm-btn { padding: 4px 8px; }
           <button class="dropdown-item" id="btn-sort">Sort a folder</button>
           <button class="dropdown-item" id="btn-bg">Background</button>
           <button class="dropdown-item" id="btn-density">Toggle density</button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-theme-default">Theme: Default</button>
+          <button class="dropdown-item" id="btn-theme-terminal">Theme: Terminal</button>
+          <button class="dropdown-item" id="btn-theme-color-green">　　Terminal color: Green</button>
+          <button class="dropdown-item" id="btn-theme-color-amber">　　Terminal color: Amber</button>
+          <button class="dropdown-item" id="btn-theme-color-white">　　Terminal color: White</button>
           <div class="dropdown-divider"></div>
           <button class="dropdown-item" id="btn-bookmarklet">Bookmarklet</button>
           <button class="dropdown-item" id="btn-extension">Browser extension</button>
@@ -2990,6 +3176,19 @@ let IRC_ALERT_DATA = null;
 let GOPHER_HISTORY = [];
 let GOPHER_HISTORY_IDX = -1;
 
+// Moved up from later in the file — applyTheme() now runs immediately after
+// load() at startup, and if the saved theme is already 'terminal' from a
+// previous session, it synchronously reaches loadTerminalBanner(), which
+// references this before any await. Same TDZ trap as FEEDS_CACHE earlier.
+const TERMINAL_MOTD_LINES = [
+  "Remember: there is no place like 127.0.0.1",
+  "A watched pot never boils, but a watched log always scrolls.",
+  "Uptime is a virtue. So is a good backup.",
+  "May your builds be green and your disks never full.",
+  "The best time to check for updates was yesterday. The second best time is now.",
+  "Home is where you self-host it.",
+];
+
 // Moved up from later in the file — switchTab() can now run this early
 // (via the startup hash check, for a tab opened via middle-click) and
 // calls renderFeeds()/renderNews(), which touch all five of these. They
@@ -3316,6 +3515,8 @@ function renderDashboard() {
     randomwiki: renderRandomWikiWidget,
     quoteoftheday: renderQuoteWidget,
     sunmoon: renderSunMoonWidget,
+    pkgupdates: renderPackageUpdatesWidget,
+    comics: renderComicsWidget,
   };
 
   // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
@@ -3820,17 +4021,26 @@ async function loadSysStats(w) {
 function renderStatBar(label, pct, valueText) {
   const safePct = pct == null ? 0 : Math.min(100, Math.max(0, pct));
   const barColor = safePct > 85 ? 'var(--red)' : safePct > 65 ? 'var(--amber)' : 'var(--green)';
+  const isTerminal = document.body.classList.contains('theme-terminal');
+  const barHtml = isTerminal
+    ? `<div class="sysstats-ascii-bar" style="color:${barColor}">${asciiBar(safePct, 20)}</div>`
+    : `<div class="sysstats-bar-track">
+        <div class="sysstats-bar-fill" style="width:${safePct}%;background:${barColor}"></div>
+      </div>`;
   return `
     <div class="sysstats-row">
       <div class="sysstats-row-label">
         <span>${label}</span>
         <span class="sysstats-row-value">${valueText}</span>
       </div>
-      <div class="sysstats-bar-track">
-        <div class="sysstats-bar-fill" style="width:${safePct}%;background:${barColor}"></div>
-      </div>
+      ${barHtml}
     </div>
   `;
+}
+
+function asciiBar(pct, width) {
+  const filled = Math.round((pct / 100) * width);
+  return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
 // ── CALENDAR WIDGET ───────────────────────────────────────────────────────────
@@ -6544,6 +6754,283 @@ async function loadRandomWiki(widgetId) {
 
 const QUOTE_CACHE = { dateKey: null, quote: null };
 
+function renderPackageUpdatesWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card pkgupdates-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#DB6D28"></span>
+      <span class="column-title" style="cursor:default">Package Updates</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Refresh" data-pkgupdates-refresh="${w.id}">↺</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="pkgupdates-body" id="pkgupdates-${w.id}">
+      <div class="pkgupdates-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    const refreshBtn = el.querySelector('[data-pkgupdates-refresh]');
+    if (refreshBtn) refreshBtn.onclick = () => loadPackageUpdates(w.id);
+
+    loadPackageUpdates(w.id);
+  }, 0);
+
+  return el;
+}
+
+async function loadPackageUpdates(widgetId) {
+  const body = document.getElementById('pkgupdates-' + widgetId);
+  if (!body) return;
+  body.innerHTML = '<div class="pkgupdates-loading">Checking…</div>';
+  try {
+    const hasBackend = await checkLocalBackend();
+    if (!hasBackend) {
+      body.innerHTML = '<div class="pkgupdates-error">Requires the local backend.</div>';
+      return;
+    }
+    const resp = await fetch('/api/package-updates', { signal: AbortSignal.timeout(30000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    renderPackageUpdatesList(body, data);
+  } catch (e) {
+    body.innerHTML = `<div class="pkgupdates-error">Could not check for updates: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderPackageUpdatesList(body, data) {
+  if (data.count === 0) {
+    body.innerHTML = '<div class="pkgupdates-uptodate">✓ System is up to date</div>';
+    return;
+  }
+  const rows = data.packages.slice(0, 20).map(p => `
+    <div class="pkgupdates-row">
+      <span class="pkgupdates-name">${escHtml(p.name)}</span>
+      ${p.from && p.to
+        ? `<span class="pkgupdates-version">${escHtml(p.from)} → ${escHtml(p.to)}</span>`
+        : ''}
+    </div>
+  `).join('');
+  const more = data.count > 20 ? `<div class="pkgupdates-more">+ ${data.count - 20} more</div>` : '';
+  body.innerHTML = `
+    <div class="pkgupdates-count">${data.count} update${data.count === 1 ? '' : 's'} available</div>
+    <div class="pkgupdates-list">${rows}</div>
+    ${more}
+    <div class="pkgupdates-method">via ${escHtml(data.method)}</div>
+  `;
+}
+
+function renderComicsWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card comics-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  if (!w.comics || w.comics.length === 0) {
+    w.comics = [{ type: 'xkcd', label: 'XKCD' }];
+  }
+  if (typeof w.comicIdx !== 'number') w.comicIdx = 0;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#A371F7"></span>
+      <span class="column-title" style="cursor:default">Comics</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Manage comics" data-comics-manage="${w.id}">⚙</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="comics-nav">
+      <button class="icon-btn" title="Previous comic" data-comics-prev="${w.id}">‹</button>
+      <span class="comics-current-label" id="comics-label-${w.id}"></span>
+      <button class="icon-btn" title="Next comic" data-comics-next="${w.id}">›</button>
+    </div>
+    <div class="comics-body" id="comics-${w.id}">
+      <div class="comics-loading">Loading…</div>
+    </div>
+    <div class="comics-manage" id="comics-manage-${w.id}" style="display:none"></div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    el.querySelector('[data-comics-prev]').onclick = () => navigateComics(w.id, -1);
+    el.querySelector('[data-comics-next]').onclick = () => navigateComics(w.id, 1);
+    el.querySelector('[data-comics-manage]').onclick = () => toggleComicsManage(w.id);
+
+    loadComicsWidget(w.id);
+  }, 0);
+
+  return el;
+}
+
+function findWidget(widgetId) {
+  return state.widgets.find(x => x.id === widgetId);
+}
+
+function navigateComics(widgetId, dir) {
+  const w = findWidget(widgetId);
+  if (!w || !w.comics || w.comics.length === 0) return;
+  w.comicIdx = (w.comicIdx + dir + w.comics.length) % w.comics.length;
+  save();
+  loadComicsWidget(widgetId);
+}
+
+async function loadComicsWidget(widgetId) {
+  const w = findWidget(widgetId);
+  const body = document.getElementById('comics-' + widgetId);
+  const label = document.getElementById('comics-label-' + widgetId);
+  if (!w || !body) return;
+  if (!w.comics || w.comics.length === 0) {
+    body.innerHTML = '<div class="comics-empty">No comics configured — click ⚙ to add one.</div>';
+    if (label) label.textContent = '';
+    return;
+  }
+
+  const current = w.comics[w.comicIdx || 0];
+  if (label) label.textContent = `${(w.comicIdx || 0) + 1}/${w.comics.length} · ${current.label || current.type}`;
+  body.innerHTML = '<div class="comics-loading">Loading…</div>';
+
+  try {
+    const hasBackend = await checkLocalBackend();
+    if (!hasBackend) {
+      body.innerHTML = '<div class="comics-error">Requires the local backend.</div>';
+      return;
+    }
+    const comic = current.type === 'xkcd'
+      ? await fetchXkcdComic()
+      : await fetchRssComicImage(current.url);
+    body.innerHTML = `
+      <a href="${escHtml(comic.link || '#')}" target="_blank" rel="noopener">
+        <img class="comics-image" src="${escHtml(comic.img)}" alt="${escHtml(comic.alt || comic.title || '')}" title="${escHtml(comic.alt || '')}" loading="lazy">
+      </a>
+      <div class="comics-title">${escHtml(comic.title || '')}</div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="comics-error">Could not load comic: ${escHtml(e.message)}</div>`;
+  }
+}
+
+async function fetchXkcdComic() {
+  const resp = await fetch('/api/proxy?url=' + encodeURIComponent('https://xkcd.com/info.0.json'), { signal: AbortSignal.timeout(10000) });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const data = await resp.json();
+  return { title: data.title, img: data.img, alt: data.alt, link: `https://xkcd.com/${data.num}/` };
+}
+
+async function fetchRssComicImage(feedUrl) {
+  const resp = await fetch('/api/proxy?url=' + encodeURIComponent(feedUrl), { signal: AbortSignal.timeout(10000) });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const xml = await resp.text();
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'text/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Could not parse feed');
+
+  // Deliberately do NOT use parseGenericFeed here — it strips HTML tags from
+  // descriptions for News's plain-text rendering, which would destroy the
+  // embedded <img> tag comics actually need. Pull the raw content directly.
+  const isAtom = doc.querySelector('feed') !== null;
+  const latestEntry = isAtom
+    ? doc.querySelector('entry')
+    : doc.querySelector('item');
+  if (!latestEntry) throw new Error('Feed has no entries');
+
+  const title = latestEntry.querySelector('title')?.textContent?.trim() || '';
+  const link = isAtom
+    ? (latestEntry.querySelector('link[rel="alternate"]')?.getAttribute('href') || latestEntry.querySelector('link')?.getAttribute('href') || '')
+    : (latestEntry.querySelector('link')?.textContent?.trim() || '');
+
+  // Try the common places a webcomic's image shows up: content:encoded,
+  // description/summary, or an explicit <enclosure>.
+  const rawContent =
+    latestEntry.getElementsByTagName('content:encoded')[0]?.textContent ||
+    latestEntry.querySelector('description')?.textContent ||
+    latestEntry.querySelector('summary')?.textContent ||
+    latestEntry.querySelector('content')?.textContent || '';
+
+  const imgMatch = rawContent.match(/<img[^>]+src=["']([^"']+)["']/i);
+  let img = imgMatch ? imgMatch[1] : '';
+  if (!img) {
+    const enclosure = latestEntry.querySelector('enclosure[type^="image"]');
+    if (enclosure) img = enclosure.getAttribute('url') || '';
+  }
+  if (!img) throw new Error('No image found in latest entry');
+
+  return { title, img, link };
+}
+
+function toggleComicsManage(widgetId) {
+  const panel = document.getElementById('comics-manage-' + widgetId);
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  if (isOpen) {
+    panel.style.display = 'none';
+  } else {
+    renderComicsManage(widgetId);
+    panel.style.display = '';
+  }
+}
+
+function renderComicsManage(widgetId) {
+  const w = findWidget(widgetId);
+  const panel = document.getElementById('comics-manage-' + widgetId);
+  if (!w || !panel) return;
+  const comics = w.comics || [];
+  panel.innerHTML = `
+    <div class="comics-manage-list">
+      ${comics.map((c, i) => `
+        <div class="comics-manage-row">
+          <span class="comics-manage-label">${escHtml(c.label || c.type)}</span>
+          <button class="comics-manage-delete" data-comics-delete="${i}" title="Remove">✕</button>
+        </div>
+      `).join('') || '<div class="comics-empty">No comics yet</div>'}
+    </div>
+    <div class="comics-manage-actions">
+      <button class="btn" data-comics-add-xkcd="1">+ XKCD</button>
+      <button class="btn" data-comics-add-rss="1">+ RSS feed…</button>
+    </div>
+  `;
+
+  panel.querySelectorAll('[data-comics-delete]').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.comicsDelete);
+      w.comics.splice(idx, 1);
+      if (w.comicIdx >= w.comics.length) w.comicIdx = Math.max(0, w.comics.length - 1);
+      save();
+      renderComicsManage(widgetId);
+      loadComicsWidget(widgetId);
+    };
+  });
+  panel.querySelector('[data-comics-add-xkcd]').onclick = () => {
+    w.comics.push({ type: 'xkcd', label: 'XKCD' });
+    save();
+    renderComicsManage(widgetId);
+    loadComicsWidget(widgetId);
+  };
+  panel.querySelector('[data-comics-add-rss]').onclick = () => {
+    const url = prompt('RSS/Atom feed URL for the comic:');
+    if (!url || !url.trim()) return;
+    const label = prompt('Label for this comic:', 'Comic') || 'Comic';
+    w.comics.push({ type: 'rss', url: url.trim(), label: label.trim() });
+    save();
+    renderComicsManage(widgetId);
+    loadComicsWidget(widgetId);
+  };
+}
+
 function renderQuoteWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card quote-widget';
@@ -6943,6 +7430,14 @@ document.getElementById('btn-add-sunmoon').onclick = () => {
   state.widgets.push({ id: uid(), type: 'sunmoon', city: 'Athens, GA', gridCol: 2 });
   save(); render(); renderDashboard();
 };
+document.getElementById('btn-add-pkgupdates').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'pkgupdates', gridCol: 1 });
+  save(); render(); renderDashboard();
+};
+document.getElementById('btn-add-comics').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'comics', comics: [{ type: 'xkcd', label: 'XKCD' }], comicIdx: 0, gridCol: 2 });
+  save(); render(); renderDashboard();
+};
 document.getElementById('btn-add-vault').onclick = () => {
   state.widgets.push({ id: uid(), type: 'vault', gridCol: 0 });
   save(); render();
@@ -6986,6 +7481,7 @@ document.getElementById('bm-title-input').oninput = function() {
 
 
 load();
+applyTheme();
 render();
 updateInvidiousButton();
 
@@ -8181,6 +8677,95 @@ async function ackIrcAlerts() {
     await fetch('/api/irc/ack', { method: 'POST', signal: AbortSignal.timeout(8000) });
   } catch (e) { /* best-effort */ }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// ── TERMINAL THEME ───────────────────────────────────────────────────════════
+// Applies body.theme-terminal + a color variant class based on
+// state.settings, and manages the dismissible login banner (uptime/load
+// average/MOTD), shown once per browser session — sessionStorage, not
+// localStorage, since it should reappear on the next fresh session rather
+// than staying dismissed forever.
+// ════════════════════════════════════════════════════════════════════════════
+
+// TERMINAL_MOTD_LINES declared earlier now (see top-of-file early declarations)
+
+function applyTheme() {
+  if (!state.settings) state.settings = {};
+  const theme = state.settings.theme || 'default';
+  const color = state.settings.terminalColor || 'green';
+
+  document.body.classList.toggle('theme-terminal', theme === 'terminal');
+  document.body.classList.remove('theme-color-green', 'theme-color-amber', 'theme-color-white');
+  if (theme === 'terminal') {
+    document.body.classList.add('theme-color-' + color);
+  }
+
+  updateTerminalBannerVisibility();
+}
+
+function setTheme(theme) {
+  if (!state.settings) state.settings = {};
+  state.settings.theme = theme;
+  save();
+  applyTheme();
+}
+
+function setTerminalColor(color) {
+  if (!state.settings) state.settings = {};
+  state.settings.terminalColor = color;
+  save();
+  applyTheme();
+}
+
+function updateTerminalBannerVisibility() {
+  const banner = document.getElementById('terminal-login-banner');
+  if (!banner) return;
+  const theme = (state.settings && state.settings.theme) || 'default';
+  const dismissed = sessionStorage.getItem('helm_terminal_banner_dismissed') === '1';
+  if (theme === 'terminal' && !dismissed) {
+    banner.classList.add('visible');
+    loadTerminalBanner();
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
+async function loadTerminalBanner() {
+  const content = document.getElementById('terminal-banner-content');
+  if (!content) return;
+  const motd = TERMINAL_MOTD_LINES[Math.floor(Math.random() * TERMINAL_MOTD_LINES.length)];
+  let uptimeStr = '—';
+  let loadStr = '—';
+  try {
+    const hasBackend = await checkLocalBackend();
+    if (hasBackend) {
+      const resp = await fetch('/api/sysstats', { signal: AbortSignal.timeout(5000) });
+      const s = await resp.json();
+      uptimeStr = formatUptime(s.uptimeSeconds);
+      if (s.loadAvg && s.loadAvg.length === 3) {
+        loadStr = s.loadAvg.map(n => n.toFixed(2)).join(', ');
+      }
+    }
+  } catch (e) { /* banner still shows with placeholders if this fails */ }
+
+  content.textContent =
+`HELM TERMINAL — welcome back
+Uptime: ${uptimeStr}    Load average: ${loadStr}
+
+${motd}`;
+}
+
+function dismissTerminalBanner() {
+  sessionStorage.setItem('helm_terminal_banner_dismissed', '1');
+  updateTerminalBannerVisibility();
+}
+
+document.getElementById('btn-theme-default').onclick = () => setTheme('default');
+document.getElementById('btn-theme-terminal').onclick = () => setTheme('terminal');
+document.getElementById('btn-theme-color-green').onclick = () => setTerminalColor('green');
+document.getElementById('btn-theme-color-amber').onclick = () => setTerminalColor('amber');
+document.getElementById('btn-theme-color-white').onclick = () => setTerminalColor('white');
+document.getElementById('terminal-banner-dismiss').onclick = dismissTerminalBanner;
 
 // ════════════════════════════════════════════════════════════════════════════
 // ── LOGS PAGE ─────────────────────────────────────════════════════════════════

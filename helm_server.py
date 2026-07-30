@@ -97,6 +97,47 @@ def proxy_to_vault(method, path_and_query, body_bytes=None):
 
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 
+# ── PACKAGE UPDATES WIDGET ────────────────────────────────────────────────────
+# Prefers `checkupdates` (from pacman-contrib) over `pacman -Qu` directly:
+# checkupdates syncs a throwaway copy of the package database rather than
+# touching the system's real one, so it never races with an actual pacman
+# operation happening at the same time and never needs root. Falls back to
+# `pacman -Qu` if pacman-contrib isn't installed, with a note that its
+# result may be stale until the next real `pacman -Sy`.
+
+PACKAGE_UPDATES_CACHE = {"ts": 0, "data": None}
+PACKAGE_UPDATES_TTL = 30 * 60  # checking involves a real network sync — don't hammer mirrors
+
+
+def get_package_updates():
+    now = time.time()
+    if PACKAGE_UPDATES_CACHE["data"] is not None and now - PACKAGE_UPDATES_CACHE["ts"] < PACKAGE_UPDATES_TTL:
+        return PACKAGE_UPDATES_CACHE["data"]
+
+    stdout, stderr, rc = _run(["checkupdates"], timeout=30)
+    method = "checkupdates"
+    if "not found" in stderr.lower() or "no such file" in stderr.lower():
+        # pacman-contrib isn't installed — fall back, but this only reflects
+        # whatever the last real `pacman -Sy` last saw, not necessarily current.
+        stdout, stderr, rc = _run(["pacman", "-Qu"], timeout=15)
+        method = "pacman -Qu (stale until next pacman -Sy)"
+
+    packages = []
+    if rc == 0 and stdout:
+        for line in stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 4 and parts[2] == "->":
+                packages.append({"name": parts[0], "from": parts[1], "to": parts[3]})
+            elif parts:
+                packages.append({"name": parts[0], "from": None, "to": None})
+
+    result = {"count": len(packages), "packages": packages, "method": method}
+    PACKAGE_UPDATES_CACHE["data"] = result
+    PACKAGE_UPDATES_CACHE["ts"] = now
+    return result
+
+
+
 # ── IRC ALERTS (topbar badge) ────────────────────────────────────────────────
 # Reads directly from The Lounge's own SQLite message log rather than trying
 # to reach into the IRC iframe — that's a different origin (different port),
@@ -479,6 +520,10 @@ def gather_system_stats():
     mem_used, mem_total = _get_memory()
     disk_used, disk_total = _get_disk()
     uptime = _get_uptime_seconds()
+    try:
+        load_avg = list(os.getloadavg())
+    except (AttributeError, OSError):
+        load_avg = None  # not available on this platform (e.g. Windows)
 
     return {
         "hostname": platform.node(),
@@ -490,6 +535,7 @@ def gather_system_stats():
         "diskUsedBytes": disk_used,
         "diskTotalBytes": disk_total,
         "uptimeSeconds": uptime,
+        "loadAvg": load_avg,
     }
 
 
@@ -1113,6 +1159,10 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/irc/alerts":
             self.send_json(200, get_irc_alerts())
+            return
+
+        if parsed.path == "/api/package-updates":
+            self.send_json(200, get_package_updates())
             return
 
         if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
