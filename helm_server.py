@@ -115,13 +115,18 @@ def get_package_updates(force_refresh=False):
             and now - PACKAGE_UPDATES_CACHE["ts"] < PACKAGE_UPDATES_TTL:
         return PACKAGE_UPDATES_CACHE["data"]
 
-    stdout, stderr, rc = _run(["checkupdates"], timeout=30)
-    method = "checkupdates"
-    if "not found" in stderr.lower() or "no such file" in stderr.lower():
-        # pacman-contrib isn't installed — fall back, but this only reflects
-        # whatever the last real `pacman -Sy` last saw, not necessarily current.
+    # Check whether the binary actually exists on PATH, rather than trying
+    # to infer that from checkupdates' own stderr text — checkupdates can
+    # legitimately print messages mentioning "no such file" during normal
+    # operation (e.g. about a cache file not existing yet on a fresh sync),
+    # which caused a false-positive fallback to pacman -Qu even when
+    # checkupdates was installed and working correctly.
+    if shutil.which("checkupdates"):
+        stdout, stderr, rc = _run(["checkupdates"], timeout=45)
+        method = "checkupdates"
+    else:
         stdout, stderr, rc = _run(["pacman", "-Qu"], timeout=15)
-        method = "pacman -Qu (stale until next pacman -Sy)"
+        method = "pacman -Qu (pacman-contrib not installed; stale until next pacman -Sy)"
 
     packages = []
     skipped_lines = []
