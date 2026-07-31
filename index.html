@@ -1010,6 +1010,14 @@ body.theme-terminal #terminal-login-banner.visible {
 }
 .pkgupdates-more { font-size: 10px; color: var(--text-dim); padding-top: 6px; text-align: center; }
 .pkgupdates-method { font-size: 9px; color: var(--text-dim); margin-top: 8px; opacity: 0.7; }
+.pkgupdates-skipped {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--amber);
+}
+.pkgupdates-skipped-line {
+  font-family: monospace; color: var(--text-dim);
+  white-space: pre-wrap; margin-top: 2px;
+}
 
 /* Quote of the Day widget */
 .quote-body { padding: 14px; }
@@ -2797,7 +2805,6 @@ body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red);
           <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
           <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
-          <button class="dropdown-item" id="btn-add-pkgupdates">Package Updates</button>
           <button class="dropdown-item" id="btn-add-comics">Comics</button>
           <button class="dropdown-item" id="btn-add-vault">Password Vault</button>
         </div>
@@ -2892,6 +2899,7 @@ body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red);
     <button class="btn" id="btn-refresh-services">↺ Refresh</button>
   </div>
   <div id="network-info-section"></div>
+  <div id="services-pkgupdates-section"></div>
   <div id="services-grid"></div>
 </div>
 
@@ -3515,7 +3523,6 @@ function renderDashboard() {
     randomwiki: renderRandomWikiWidget,
     quoteoftheday: renderQuoteWidget,
     sunmoon: renderSunMoonWidget,
-    pkgupdates: renderPackageUpdatesWidget,
     comics: renderComicsWidget,
   };
 
@@ -6754,82 +6761,6 @@ async function loadRandomWiki(widgetId) {
 
 const QUOTE_CACHE = { dateKey: null, quote: null };
 
-function renderPackageUpdatesWidget(w) {
-  const el = document.createElement('div');
-  el.className = 'folder-card widget-card pkgupdates-widget';
-  el.dataset.widgetId = w.id;
-  el.draggable = false;
-
-  el.innerHTML = `
-    <div class="folder-header widget-header">
-      <span class="col-dot" style="background:#DB6D28"></span>
-      <span class="column-title" style="cursor:default">Package Updates</span>
-      <div class="col-actions" style="opacity:1">
-        <button class="icon-btn" title="Refresh" data-pkgupdates-refresh="${w.id}">↺</button>
-        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
-      </div>
-    </div>
-    <div class="pkgupdates-body" id="pkgupdates-${w.id}">
-      <div class="pkgupdates-loading">Loading…</div>
-    </div>
-  `;
-
-  setTimeout(() => {
-    const header = el.querySelector('.widget-header');
-    if (header) header.onmousedown = () => { el.draggable = true; };
-    el.addEventListener('dragend', () => { el.draggable = false; });
-    document.addEventListener('mouseup', () => { el.draggable = false; });
-
-    const refreshBtn = el.querySelector('[data-pkgupdates-refresh]');
-    if (refreshBtn) refreshBtn.onclick = () => loadPackageUpdates(w.id);
-
-    loadPackageUpdates(w.id);
-  }, 0);
-
-  return el;
-}
-
-async function loadPackageUpdates(widgetId) {
-  const body = document.getElementById('pkgupdates-' + widgetId);
-  if (!body) return;
-  body.innerHTML = '<div class="pkgupdates-loading">Checking…</div>';
-  try {
-    const hasBackend = await checkLocalBackend();
-    if (!hasBackend) {
-      body.innerHTML = '<div class="pkgupdates-error">Requires the local backend.</div>';
-      return;
-    }
-    const resp = await fetch('/api/package-updates', { signal: AbortSignal.timeout(30000) });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    renderPackageUpdatesList(body, data);
-  } catch (e) {
-    body.innerHTML = `<div class="pkgupdates-error">Could not check for updates: ${escHtml(e.message)}</div>`;
-  }
-}
-
-function renderPackageUpdatesList(body, data) {
-  if (data.count === 0) {
-    body.innerHTML = '<div class="pkgupdates-uptodate">✓ System is up to date</div>';
-    return;
-  }
-  const rows = data.packages.slice(0, 20).map(p => `
-    <div class="pkgupdates-row">
-      <span class="pkgupdates-name">${escHtml(p.name)}</span>
-      ${p.from && p.to
-        ? `<span class="pkgupdates-version">${escHtml(p.from)} → ${escHtml(p.to)}</span>`
-        : ''}
-    </div>
-  `).join('');
-  const more = data.count > 20 ? `<div class="pkgupdates-more">+ ${data.count - 20} more</div>` : '';
-  body.innerHTML = `
-    <div class="pkgupdates-count">${data.count} update${data.count === 1 ? '' : 's'} available</div>
-    <div class="pkgupdates-list">${rows}</div>
-    ${more}
-    <div class="pkgupdates-method">via ${escHtml(data.method)}</div>
-  `;
-}
-
 function renderComicsWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card comics-widget';
@@ -7428,10 +7359,6 @@ document.getElementById('btn-add-quoteoftheday').onclick = () => {
 };
 document.getElementById('btn-add-sunmoon').onclick = () => {
   state.widgets.push({ id: uid(), type: 'sunmoon', city: 'Athens, GA', gridCol: 2 });
-  save(); render(); renderDashboard();
-};
-document.getElementById('btn-add-pkgupdates').onclick = () => {
-  state.widgets.push({ id: uid(), type: 'pkgupdates', gridCol: 1 });
   save(); render(); renderDashboard();
 };
 document.getElementById('btn-add-comics').onclick = () => {
@@ -8857,10 +8784,65 @@ async function fetchServices() {
       '<div class="svc-error">Services monitoring requires the local backend (helm_server.py). Not reachable.</div>';
     return;
   }
-  // Fetch both in parallel
-  const [,] = await Promise.all([fetchNetworkInfo(), fetchServiceStatus()]);
+  // Fetch all three in parallel
+  const [,,] = await Promise.all([fetchNetworkInfo(), fetchServiceStatus(), fetchPackageUpdatesSection()]);
   const el = document.getElementById('services-last-updated');
   if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+async function fetchPackageUpdatesSection(forceRefresh) {
+  const el = document.getElementById('services-pkgupdates-section');
+  if (!el) return;
+  try {
+    const url = '/api/package-updates' + (forceRefresh ? '?refresh=1' : '');
+    const resp = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    renderPackageUpdatesSection(data);
+  } catch (e) {
+    el.innerHTML = `<div class="net-card"><div class="net-header"><span class="net-title">📦 Package Updates</span></div><div class="svc-error">Could not check for updates: ${escHtml(e.message)}</div></div>`;
+  }
+}
+
+function renderPackageUpdatesSection(data) {
+  const el = document.getElementById('services-pkgupdates-section');
+  if (!el) return;
+
+  const body = data.count === 0
+    ? '<div class="pkgupdates-uptodate">✓ System is up to date</div>'
+    : `
+      <div class="pkgupdates-count">${data.count} update${data.count === 1 ? '' : 's'} available</div>
+      <div class="pkgupdates-list">
+        ${data.packages.slice(0, 30).map(p => `
+          <div class="pkgupdates-row">
+            <span class="pkgupdates-name">${escHtml(p.name)}</span>
+            ${p.from && p.to ? `<span class="pkgupdates-version">${escHtml(p.from)} → ${escHtml(p.to)}</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+      ${data.count > 30 ? `<div class="pkgupdates-more">+ ${data.count - 30} more</div>` : ''}
+    `;
+
+  el.innerHTML = `
+    <div class="net-card">
+      <div class="net-header">
+        <span class="net-title">📦 Package Updates</span>
+        <button class="icon-btn" id="btn-refresh-pkgupdates" title="Force a fresh check">↺</button>
+      </div>
+      <div class="net-body">
+        ${body}
+        <div class="pkgupdates-method">via ${escHtml(data.method)}</div>
+        ${data.skipped_lines && data.skipped_lines.length ? `
+          <div class="pkgupdates-skipped">
+            <div>⚠ ${data.skipped_lines.length} line(s) from the command's output didn't match the expected format and were excluded from the count:</div>
+            ${data.skipped_lines.map(l => `<div class="pkgupdates-skipped-line">${escHtml(l)}</div>`).join('')}
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+  const refreshBtn = document.getElementById('btn-refresh-pkgupdates');
+  if (refreshBtn) refreshBtn.onclick = () => fetchPackageUpdatesSection(true);
 }
 
 async function fetchNetworkInfo() {
