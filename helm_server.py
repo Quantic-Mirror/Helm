@@ -109,9 +109,10 @@ PACKAGE_UPDATES_CACHE = {"ts": 0, "data": None}
 PACKAGE_UPDATES_TTL = 30 * 60  # checking involves a real network sync — don't hammer mirrors
 
 
-def get_package_updates():
+def get_package_updates(force_refresh=False):
     now = time.time()
-    if PACKAGE_UPDATES_CACHE["data"] is not None and now - PACKAGE_UPDATES_CACHE["ts"] < PACKAGE_UPDATES_TTL:
+    if not force_refresh and PACKAGE_UPDATES_CACHE["data"] is not None \
+            and now - PACKAGE_UPDATES_CACHE["ts"] < PACKAGE_UPDATES_TTL:
         return PACKAGE_UPDATES_CACHE["data"]
 
     stdout, stderr, rc = _run(["checkupdates"], timeout=30)
@@ -123,15 +124,29 @@ def get_package_updates():
         method = "pacman -Qu (stale until next pacman -Sy)"
 
     packages = []
+    skipped_lines = []
     if rc == 0 and stdout:
         for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
             parts = line.split()
+            # Only count lines that actually look like "name oldver -> newver"
+            # (checkupdates' real format) or a bare "name version" (pacman -Qu's
+            # format). Anything else — stray warnings, sync messages, whatever
+            # else a given pacman-contrib version might print to stdout — gets
+            # discarded rather than blindly counted as a package. Treating any
+            # non-empty line as a package is what inflated the count before.
             if len(parts) >= 4 and parts[2] == "->":
                 packages.append({"name": parts[0], "from": parts[1], "to": parts[3]})
-            elif parts:
-                packages.append({"name": parts[0], "from": None, "to": None})
+            elif len(parts) == 2:
+                packages.append({"name": parts[0], "from": None, "to": parts[1]})
+            else:
+                skipped_lines.append(line)
 
     result = {"count": len(packages), "packages": packages, "method": method}
+    if skipped_lines:
+        result["skipped_lines"] = skipped_lines[:10]  # surfaced for debugging, not silently dropped
     PACKAGE_UPDATES_CACHE["data"] = result
     PACKAGE_UPDATES_CACHE["ts"] = now
     return result
@@ -1162,7 +1177,9 @@ class HelmHandler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/package-updates":
-            self.send_json(200, get_package_updates())
+            qs = parse_qs(parsed.query)
+            force_refresh = qs.get("refresh", ["0"])[0] == "1"
+            self.send_json(200, get_package_updates(force_refresh=force_refresh))
             return
 
         if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
