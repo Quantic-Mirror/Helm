@@ -97,66 +97,6 @@ def proxy_to_vault(method, path_and_query, body_bytes=None):
 
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 
-# ── PACKAGE UPDATES WIDGET ────────────────────────────────────────────────────
-# Prefers `checkupdates` (from pacman-contrib) over `pacman -Qu` directly:
-# checkupdates syncs a throwaway copy of the package database rather than
-# touching the system's real one, so it never races with an actual pacman
-# operation happening at the same time and never needs root. Falls back to
-# `pacman -Qu` if pacman-contrib isn't installed, with a note that its
-# result may be stale until the next real `pacman -Sy`.
-
-PACKAGE_UPDATES_CACHE = {"ts": 0, "data": None}
-PACKAGE_UPDATES_TTL = 30 * 60  # checking involves a real network sync — don't hammer mirrors
-
-
-def get_package_updates(force_refresh=False):
-    now = time.time()
-    if not force_refresh and PACKAGE_UPDATES_CACHE["data"] is not None \
-            and now - PACKAGE_UPDATES_CACHE["ts"] < PACKAGE_UPDATES_TTL:
-        return PACKAGE_UPDATES_CACHE["data"]
-
-    # Check whether the binary actually exists on PATH, rather than trying
-    # to infer that from checkupdates' own stderr text — checkupdates can
-    # legitimately print messages mentioning "no such file" during normal
-    # operation (e.g. about a cache file not existing yet on a fresh sync),
-    # which caused a false-positive fallback to pacman -Qu even when
-    # checkupdates was installed and working correctly.
-    if shutil.which("checkupdates"):
-        stdout, stderr, rc = _run(["checkupdates"], timeout=45)
-        method = "checkupdates"
-    else:
-        stdout, stderr, rc = _run(["pacman", "-Qu"], timeout=15)
-        method = "pacman -Qu (pacman-contrib not installed; stale until next pacman -Sy)"
-
-    packages = []
-    skipped_lines = []
-    if rc == 0 and stdout:
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            # Only count lines that actually look like "name oldver -> newver"
-            # (checkupdates' real format) or a bare "name version" (pacman -Qu's
-            # format). Anything else — stray warnings, sync messages, whatever
-            # else a given pacman-contrib version might print to stdout — gets
-            # discarded rather than blindly counted as a package. Treating any
-            # non-empty line as a package is what inflated the count before.
-            if len(parts) >= 4 and parts[2] == "->":
-                packages.append({"name": parts[0], "from": parts[1], "to": parts[3]})
-            elif len(parts) == 2:
-                packages.append({"name": parts[0], "from": None, "to": parts[1]})
-            else:
-                skipped_lines.append(line)
-
-    result = {"count": len(packages), "packages": packages, "method": method}
-    if skipped_lines:
-        result["skipped_lines"] = skipped_lines[:10]  # surfaced for debugging, not silently dropped
-    PACKAGE_UPDATES_CACHE["data"] = result
-    PACKAGE_UPDATES_CACHE["ts"] = now
-    return result
-
-
 
 # ── IRC ALERTS (topbar badge) ────────────────────────────────────────────────
 # Reads directly from The Lounge's own SQLite message log rather than trying
@@ -1181,12 +1121,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, get_irc_alerts())
             return
 
-        if parsed.path == "/api/package-updates":
-            qs = parse_qs(parsed.query)
-            force_refresh = qs.get("refresh", ["0"])[0] == "1"
-            self.send_json(200, get_package_updates(force_refresh=force_refresh))
-            return
-
         if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
                 or parsed.path.startswith("/api/vault/entry/") or parsed.path == "/api/vault/health":
             status, data = proxy_to_vault("GET", self.path)
@@ -1366,3 +1300,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

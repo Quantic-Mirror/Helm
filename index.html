@@ -981,43 +981,6 @@ body.theme-terminal #terminal-login-banner.visible {
 .comics-manage-delete:hover { color: var(--red); background: var(--surface-3); }
 .comics-manage-actions { display: flex; gap: 6px; }
 
-/* Package Updates widget */
-.pkgupdates-body { padding: 14px; }
-.pkgupdates-loading, .pkgupdates-error {
-  font-size: 12px; color: var(--text-dim); padding: 8px 0;
-}
-.pkgupdates-uptodate {
-  font-size: 12px; color: var(--green); padding: 8px 0;
-}
-.pkgupdates-count {
-  font-size: 12px; font-weight: 600; color: var(--text);
-  margin-bottom: 8px;
-}
-.pkgupdates-list {
-  display: flex; flex-direction: column; gap: 4px;
-  max-height: 220px; overflow-y: auto;
-}
-.pkgupdates-row {
-  display: flex; justify-content: space-between; align-items: baseline;
-  gap: 8px; font-size: 11px;
-  padding: 3px 0; border-bottom: 1px solid var(--border);
-}
-.pkgupdates-row:last-child { border-bottom: none; }
-.pkgupdates-name { color: var(--text); font-weight: 500; flex-shrink: 0; }
-.pkgupdates-version {
-  color: var(--text-dim); font-size: 10px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pkgupdates-more { font-size: 10px; color: var(--text-dim); padding-top: 6px; text-align: center; }
-.pkgupdates-method { font-size: 9px; color: var(--text-dim); margin-top: 8px; opacity: 0.7; }
-.pkgupdates-skipped {
-  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
-  font-size: 10px; color: var(--amber);
-}
-.pkgupdates-skipped-line {
-  font-family: monospace; color: var(--text-dim);
-  white-space: pre-wrap; margin-top: 2px;
-}
 
 /* Quote of the Day widget */
 .quote-body { padding: 14px; }
@@ -2899,7 +2862,6 @@ body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red);
     <button class="btn" id="btn-refresh-services">↺ Refresh</button>
   </div>
   <div id="network-info-section"></div>
-  <div id="services-pkgupdates-section"></div>
   <div id="services-grid"></div>
 </div>
 
@@ -8785,65 +8747,11 @@ async function fetchServices() {
     return;
   }
   // Fetch all three in parallel
-  const [,,] = await Promise.all([fetchNetworkInfo(), fetchServiceStatus(), fetchPackageUpdatesSection()]);
+  const [,] = await Promise.all([fetchNetworkInfo(), fetchServiceStatus()]);
   const el = document.getElementById('services-last-updated');
   if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-async function fetchPackageUpdatesSection(forceRefresh) {
-  const el = document.getElementById('services-pkgupdates-section');
-  if (!el) return;
-  try {
-    const url = '/api/package-updates' + (forceRefresh ? '?refresh=1' : '');
-    const resp = await fetch(url, { signal: AbortSignal.timeout(30000) });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    renderPackageUpdatesSection(data);
-  } catch (e) {
-    el.innerHTML = `<div class="net-card"><div class="net-header"><span class="net-title">📦 Package Updates</span></div><div class="svc-error">Could not check for updates: ${escHtml(e.message)}</div></div>`;
-  }
-}
-
-function renderPackageUpdatesSection(data) {
-  const el = document.getElementById('services-pkgupdates-section');
-  if (!el) return;
-
-  const body = data.count === 0
-    ? '<div class="pkgupdates-uptodate">✓ System is up to date</div>'
-    : `
-      <div class="pkgupdates-count">${data.count} update${data.count === 1 ? '' : 's'} available</div>
-      <div class="pkgupdates-list">
-        ${data.packages.slice(0, 30).map(p => `
-          <div class="pkgupdates-row">
-            <span class="pkgupdates-name">${escHtml(p.name)}</span>
-            ${p.from && p.to ? `<span class="pkgupdates-version">${escHtml(p.from)} → ${escHtml(p.to)}</span>` : ''}
-          </div>
-        `).join('')}
-      </div>
-      ${data.count > 30 ? `<div class="pkgupdates-more">+ ${data.count - 30} more</div>` : ''}
-    `;
-
-  el.innerHTML = `
-    <div class="net-card">
-      <div class="net-header">
-        <span class="net-title">📦 Package Updates</span>
-        <button class="icon-btn" id="btn-refresh-pkgupdates" title="Force a fresh check">↺</button>
-      </div>
-      <div class="net-body">
-        ${body}
-        <div class="pkgupdates-method">via ${escHtml(data.method)}</div>
-        ${data.skipped_lines && data.skipped_lines.length ? `
-          <div class="pkgupdates-skipped">
-            <div>⚠ ${data.skipped_lines.length} line(s) from the command's output didn't match the expected format and were excluded from the count:</div>
-            ${data.skipped_lines.map(l => `<div class="pkgupdates-skipped-line">${escHtml(l)}</div>`).join('')}
-          </div>
-        ` : ''}
-      </div>
-    </div>
-  `;
-  const refreshBtn = document.getElementById('btn-refresh-pkgupdates');
-  if (refreshBtn) refreshBtn.onclick = () => fetchPackageUpdatesSection(true);
-}
 
 async function fetchNetworkInfo() {
   try {
