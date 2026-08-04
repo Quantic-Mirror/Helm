@@ -4784,7 +4784,7 @@ function attachEvents() {
         clearInterval(TIMER_STATE[w.id].interval);
         TIMER_STATE[w.id].running = false;
       }
-      save(); render();
+      save(); render(); renderDashboard();
     };
   });
 
