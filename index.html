@@ -7374,6 +7374,31 @@ applyTheme();
 render();
 updateInvidiousButton();
 
+// Handle bookmarklet: #bml&url=...&title=...&colId=...
+// The optional colId param is added by the browser extension when the user
+// has selected a specific folder — in that case we save silently without
+// opening the modal (same as saveToFolder() called via executeScript).
+// This MUST run before the tab-restoration logic below, since switchTab()
+// writes the current tab back into location.hash — if that runs first, it
+// overwrites #bml&url=... with #dashboard before this ever gets to read it.
+let bmlPending = null;
+(function() {
+  const hash = location.hash;
+  if (!hash.startsWith('#bml')) return;
+  const raw = hash.slice(1);
+  const pairs = {};
+  raw.split('&').forEach(part => {
+    const eq = part.indexOf('=');
+    if (eq > -1) pairs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
+  });
+  const url   = pairs.url   || '';
+  const title = pairs.title || '';
+  const colId = pairs.colId || '';
+  if (!url) return;
+  history.replaceState({}, '', location.pathname);
+  bmlPending = { url, title, colId };
+})();
+
 // If a new tab/window was opened via middle-click (or the page was just
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
@@ -7381,6 +7406,25 @@ updateInvidiousButton();
 const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'irc', 'logs', 'gopher', 'wiki', 'mealie', 'kiwix', 'gemini'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
+
+// Now that the tab has switched (and possibly rewritten the hash), actually
+// act on the bookmarklet data we captured above, if there was any.
+if (bmlPending) {
+  const { url, title, colId } = bmlPending;
+  setTimeout(() => {
+    if (colId && typeof saveToFolder === 'function') {
+      // Silent save directly to the chosen folder — no modal
+      const saved = saveToFolder(url, title || url, colId);
+      if (saved) toast('Saved to ' + (state.columns.find(c => c.id === colId)?.title || 'folder'));
+      // If already exists in that folder, fall through to modal so user can see it
+      else { openModal(null, colId, { url, title }); }
+    } else {
+      // No folder specified — open the modal pre-filled as before
+      const firstCol = state.columns[0];
+      openModal(null, firstCol ? firstCol.id : null, { url, title });
+    }
+  }, 200);
+}
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
 // ── Topbar dropdown menus (Data / Widgets / Tools) ──────────────────────────
 document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
@@ -7587,40 +7631,6 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     console.log('[Helm] Service worker registration failed:', err.message);
   });
 }
-
-// Handle bookmarklet: #bml&url=...&title=...&colId=...
-// The optional colId param is added by the browser extension when the user
-// has selected a specific folder — in that case we save silently without
-// opening the modal (same as saveToFolder() called via executeScript).
-(function() {
-  const hash = location.hash;
-  if (!hash.startsWith('#bml')) return;
-  const raw = hash.slice(1);
-  const pairs = {};
-  raw.split('&').forEach(part => {
-    const eq = part.indexOf('=');
-    if (eq > -1) pairs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
-  });
-  const url   = pairs.url   || '';
-  const title = pairs.title || '';
-  const colId = pairs.colId || '';
-  if (!url) return;
-  history.replaceState({}, '', location.pathname);
-
-  setTimeout(() => {
-    if (colId && typeof saveToFolder === 'function') {
-      // Silent save directly to the chosen folder — no modal
-      const saved = saveToFolder(url, title || url, colId);
-      if (saved) toast('Saved to ' + (state.columns.find(c => c.id === colId)?.title || 'folder'));
-      // If already exists in that folder, fall through to modal so user can see it
-      else { openModal(null, colId, { url, title }); }
-    } else {
-      // No folder specified — open the modal pre-filled as before
-      const firstCol = state.columns[0];
-      openModal(null, firstCol ? firstCol.id : null, { url, title });
-    }
-  }, 200);
-})();
 
 // ── YOUTUBE FEEDS PAGE ────────────────────────────────────────────────────────
 // YouTube exposes public Atom feeds per channel, no API key needed:
