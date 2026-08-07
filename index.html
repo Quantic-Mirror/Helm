@@ -5230,6 +5230,43 @@ function closeModal() {
   editingBm = null; activeColId = null;
 }
 
+// ── Silent bookmark save (no modal) — used by the browser extension's
+// direct-injection path, and by the #bml&... hash handler when a specific
+// folder was pre-selected in the extension popup. Mirrors saveModal()'s own
+// bookmark shape exactly, just without the UI. Returns false (rather than
+// throwing) if the URL already exists in that folder, so callers can fall
+// back to opening the modal for the user to review instead.
+function saveToFolder(url, title, colId) {
+  if (!url || !colId) return false;
+  const col = state.columns.find(c => c.id === colId);
+  if (!col) return false;
+
+  let fullUrl = url;
+  if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
+
+  const normalize = u => u.split('#')[0].replace(/\/$/, '').toLowerCase();
+  const norm = normalize(fullUrl);
+  const existing = state.bookmarks.find(b => b.colId === colId && normalize(b.url) === norm);
+  if (existing) return false;
+
+  const colBms = colBooksmarks(colId);
+  state.bookmarks.push({
+    id: uid(), colId, url: fullUrl,
+    title: (title || fullUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]),
+    tag: null, order: colBms.length, addedAt: Date.now(),
+  });
+  save(); render();
+  return true;
+}
+
+// Used when the extension has no specific folder selected — defaults to
+// the first folder rather than silently doing nothing.
+function saveAsBookmark(url, title) {
+  const firstCol = state.columns[0];
+  if (!firstCol) return false;
+  return saveToFolder(url, title, firstCol.id);
+}
+
 function saveModal() {
   const url = document.getElementById('bm-url-input').value.trim();
   if (!url) { document.getElementById('bm-url-input').focus(); return; }
@@ -7374,31 +7411,6 @@ applyTheme();
 render();
 updateInvidiousButton();
 
-// Handle bookmarklet: #bml&url=...&title=...&colId=...
-// The optional colId param is added by the browser extension when the user
-// has selected a specific folder — in that case we save silently without
-// opening the modal (same as saveToFolder() called via executeScript).
-// This MUST run before the tab-restoration logic below, since switchTab()
-// writes the current tab back into location.hash — if that runs first, it
-// overwrites #bml&url=... with #dashboard before this ever gets to read it.
-let bmlPending = null;
-(function() {
-  const hash = location.hash;
-  if (!hash.startsWith('#bml')) return;
-  const raw = hash.slice(1);
-  const pairs = {};
-  raw.split('&').forEach(part => {
-    const eq = part.indexOf('=');
-    if (eq > -1) pairs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
-  });
-  const url   = pairs.url   || '';
-  const title = pairs.title || '';
-  const colId = pairs.colId || '';
-  if (!url) return;
-  history.replaceState({}, '', location.pathname);
-  bmlPending = { url, title, colId };
-})();
-
 // If a new tab/window was opened via middle-click (or the page was just
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
@@ -7406,25 +7418,6 @@ let bmlPending = null;
 const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'irc', 'logs', 'gopher', 'wiki', 'mealie', 'kiwix', 'gemini'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
-
-// Now that the tab has switched (and possibly rewritten the hash), actually
-// act on the bookmarklet data we captured above, if there was any.
-if (bmlPending) {
-  const { url, title, colId } = bmlPending;
-  setTimeout(() => {
-    if (colId && typeof saveToFolder === 'function') {
-      // Silent save directly to the chosen folder — no modal
-      const saved = saveToFolder(url, title || url, colId);
-      if (saved) toast('Saved to ' + (state.columns.find(c => c.id === colId)?.title || 'folder'));
-      // If already exists in that folder, fall through to modal so user can see it
-      else { openModal(null, colId, { url, title }); }
-    } else {
-      // No folder specified — open the modal pre-filled as before
-      const firstCol = state.columns[0];
-      openModal(null, firstCol ? firstCol.id : null, { url, title });
-    }
-  }, 200);
-}
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
 // ── Topbar dropdown menus (Data / Widgets / Tools) ──────────────────────────
 document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
@@ -7632,6 +7625,40 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   });
 }
 
+// Handle bookmarklet: #bml&url=...&title=...&colId=...
+// The optional colId param is added by the browser extension when the user
+// has selected a specific folder — in that case we save silently without
+// opening the modal (same as saveToFolder() called via executeScript).
+(function() {
+  const hash = location.hash;
+  if (!hash.startsWith('#bml')) return;
+  const raw = hash.slice(1);
+  const pairs = {};
+  raw.split('&').forEach(part => {
+    const eq = part.indexOf('=');
+    if (eq > -1) pairs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
+  });
+  const url   = pairs.url   || '';
+  const title = pairs.title || '';
+  const colId = pairs.colId || '';
+  if (!url) return;
+  history.replaceState({}, '', location.pathname);
+
+  setTimeout(() => {
+    if (colId && typeof saveToFolder === 'function') {
+      // Silent save directly to the chosen folder — no modal
+      const saved = saveToFolder(url, title || url, colId);
+      if (saved) toast('Saved to ' + (state.columns.find(c => c.id === colId)?.title || 'folder'));
+      // If already exists in that folder, fall through to modal so user can see it
+      else { openModal(null, colId, { url, title }); }
+    } else {
+      // No folder specified — open the modal pre-filled as before
+      const firstCol = state.columns[0];
+      openModal(null, firstCol ? firstCol.id : null, { url, title });
+    }
+  }, 200);
+})();
+
 // ── YOUTUBE FEEDS PAGE ────────────────────────────────────────────────────────
 // YouTube exposes public Atom feeds per channel, no API key needed:
 // https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID
@@ -7659,9 +7686,20 @@ function switchTab(tab) {
   // refresh and middle-clicking a different tab from here opens the right
   // place. replaceState (not pushState) avoids piling up a back/forward
   // history entry per tab switch, matching how a tab UI should behave.
-  const newHash = '#' + tab;
-  if (location.hash !== newHash) {
-    history.replaceState(null, '', newHash);
+  //
+  // Exception: never touch the hash while a #bml&... bookmark-save payload
+  // (from the browser extension / bookmarklet) is still sitting in it and
+  // hasn't been processed yet — overwriting it here would destroy the
+  // pending save before its own handler further down the script ever gets
+  // a chance to read it. This was a real, self-inflicted bug: the
+  // extension's fallback save path always appeared to "work" (the tab
+  // navigation itself succeeded) while silently never actually saving
+  // anything, because this exact line was clobbering the hash first.
+  if (!location.hash.startsWith('#bml')) {
+    const newHash = '#' + tab;
+    if (location.hash !== newHash) {
+      history.replaceState(null, '', newHash);
+    }
   }
 
   const show = (id, condition) => {
