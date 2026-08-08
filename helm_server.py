@@ -561,20 +561,6 @@ MONITORED_SERVICES = [
         "controllable": True,
     },
     {
-        "id":    "mealie",
-        "label": "Mealie",
-        "type":  "docker",
-        "container": "mealie",
-        "controllable": True,
-    },
-    {
-        "id":    "mealie-tls-proxy",
-        "label": "Mealie TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "mealie-tls-proxy.service",
-        "controllable": True,
-    },
-    {
         "id":    "kineto",
         "label": "Gemini Proxy (kineto)",
         "type":  "docker",
@@ -1300,4 +1286,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
