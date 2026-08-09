@@ -68,6 +68,13 @@ def _rewrite_framing_headers(headers):
     be added)."""
     out = []
     had_csp = False
+    # 'self' is always included alongside Helm's own origins, not just
+    # replaced by them — some apps embed their own content in their own
+    # nested same-origin iframes internally (kiwix-serve's viewer loading
+    # its own /content/ page is exactly this), and completely replacing
+    # their frame-ancestors with only Helm's origins silently breaks that
+    # internal same-origin embedding while fixing Helm's external one.
+    frame_ancestors_value = f"'self' {ALLOWED_FRAME_ORIGINS}"
     for k, v in headers:
         lk = k.lower()
         if lk == "x-frame-options":
@@ -76,14 +83,40 @@ def _rewrite_framing_headers(headers):
             had_csp = True
             # Strip any existing frame-ancestors directive from the
             # backend's own policy, keep everything else it was doing,
-            # then add our own scoped allowance.
+            # then add our own scoped allowance (plus 'self', see above).
             parts = [p.strip() for p in v.split(";") if p.strip() and not p.strip().lower().startswith("frame-ancestors")]
-            parts.append(f"frame-ancestors {ALLOWED_FRAME_ORIGINS}")
+            parts.append(f"frame-ancestors {frame_ancestors_value}")
             v = "; ".join(parts)
         out.append((k, v))
     if not had_csp:
-        out.append(("Content-Security-Policy", f"frame-ancestors {ALLOWED_FRAME_ORIGINS}"))
+        out.append(("Content-Security-Policy", f"frame-ancestors {frame_ancestors_value}"))
     return out
+
+
+def _rewrite_cookie_for_iframe(cookie_value):
+    """Rewrite a Set-Cookie header value so the cookie survives being used
+    inside Helm's cross-origin iframe. Browsers require SameSite=None
+    (explicitly allowing cross-site/third-party iframe use) plus Secure
+    (a mandatory pairing — browsers reject SameSite=None without it) on
+    any cookie that needs to work in this context. Most self-hosted apps
+    don't ship this by default, since they were never designed to be
+    iframed cross-origin at all — which is exactly the failure mode this
+    fixes: a login can succeed server-side while the browser silently
+    discards the session cookie immediately afterward, since it lacks
+    these attributes, making every subsequent request look logged-out
+    again despite the login itself having worked."""
+    parts = [p.strip() for p in cookie_value.split(";")]
+    kept = []
+    for p in parts:
+        low = p.lower()
+        if low.startswith("samesite="):
+            continue
+        if low == "secure":
+            continue
+        kept.append(p)
+    kept.append("SameSite=None")
+    kept.append("Secure")
+    return "; ".join(kept)
 
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
@@ -91,6 +124,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         for k, v in _rewrite_framing_headers(list(raw_headers)):
             if k.lower() in ("transfer-encoding", "connection"):
                 continue
+            if k.lower() == "set-cookie":
+                v = _rewrite_cookie_for_iframe(v)
             self.send_header(k, v)
 
     def _proxy(self, method):
