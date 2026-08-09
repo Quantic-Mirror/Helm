@@ -588,6 +588,13 @@ MONITORED_SERVICES = [
         "unit":  "adguard-tls-proxy.service",
         "controllable": True,
     },
+    {
+        "id":    "unbound",
+        "label": "Unbound (recursive resolver)",
+        "type":  "docker",
+        "container": "unbound",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
