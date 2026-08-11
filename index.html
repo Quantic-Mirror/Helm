@@ -8014,17 +8014,28 @@ window.removeChannel = function(id) {
 // if the local server isn't running (e.g. opened as file:// or server not started).
 
 async function checkLocalBackend() {
-  if (LOCAL_BACKEND_AVAILABLE !== null) return LOCAL_BACKEND_AVAILABLE;
-  if (!location.protocol.startsWith('http')) { LOCAL_BACKEND_AVAILABLE = false; return false; }
+  // Only memoize a SUCCESSFUL check permanently — once confirmed available,
+  // it's very unlikely to become unavailable mid-session. A FAILED check
+  // must NOT be cached the same way: at page load, a lot of requests fire
+  // at once (every widget, every feed, this check itself), and if this one
+  // specific check happens to queue behind others or catch a slow moment,
+  // it can miss the timeout even though the backend is completely fine —
+  // caching that as a permanent "false" used to poison every widget for
+  // the rest of that page load, long after the backend was actually
+  // responding normally again.
+  if (LOCAL_BACKEND_AVAILABLE === true) return true;
+  if (!location.protocol.startsWith('http')) return false;
   try {
-    const resp = await fetch('/api/health', { signal: AbortSignal.timeout(1500) });
+    const resp = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
     const data = await resp.json();
-    LOCAL_BACKEND_AVAILABLE = resp.ok && data.service === 'marks-local-server';
+    const ok = resp.ok && data.service === 'marks-local-server';
+    if (ok) LOCAL_BACKEND_AVAILABLE = true; // only the success gets memoized
+    console.log('[Helm] Local backend available:', ok);
+    return ok;
   } catch {
-    LOCAL_BACKEND_AVAILABLE = false;
+    console.log('[Helm] Local backend check failed (will retry on next call, not cached as permanently down)');
+    return false;
   }
-  console.log('[Helm] Local backend available:', LOCAL_BACKEND_AVAILABLE);
-  return LOCAL_BACKEND_AVAILABLE;
 }
 
 // CORS_PROXIES declared earlier now (see top-of-file early declarations)
