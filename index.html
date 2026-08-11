@@ -8033,15 +8033,31 @@ async function checkLocalBackend() {
   if (BACKEND_CHECK_PROMISE) return BACKEND_CHECK_PROMISE;
 
   BACKEND_CHECK_PROMISE = (async () => {
-    try {
+    const attempt = async () => {
       const resp = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
       const data = await resp.json();
-      const ok = resp.ok && data.service === 'marks-local-server';
-      if (ok) LOCAL_BACKEND_AVAILABLE = true; // only the success gets memoized
-      console.log('[Helm] Local backend available:', ok);
+      return resp.ok && data.service === 'marks-local-server';
+    };
+    try {
+      const ok = await attempt();
+      if (ok) { LOCAL_BACKEND_AVAILABLE = true; console.log('[Helm] Local backend available: true'); return true; }
+    } catch { /* fall through to retry below */ }
+
+    // The first attempt failing is very often transient page-load
+    // contention (a burst of many widgets all opening connections at
+    // once), not a genuine outage — a widget that gave up permanently
+    // on this first failure would keep showing an error long after the
+    // backend was actually fine again. One short, delayed retry catches
+    // that common case without meaningfully delaying the genuine-outage
+    // case, which still resolves to false either way.
+    await new Promise(r => setTimeout(r, 800));
+    try {
+      const ok = await attempt();
+      if (ok) LOCAL_BACKEND_AVAILABLE = true;
+      console.log('[Helm] Local backend available (after retry):', ok);
       return ok;
     } catch {
-      console.log('[Helm] Local backend check failed (will retry on next call, not cached as permanently down)');
+      console.log('[Helm] Local backend check failed on retry too (will try again on next call)');
       return false;
     } finally {
       BACKEND_CHECK_PROMISE = null; // allow a fresh check next time, once this one settles
