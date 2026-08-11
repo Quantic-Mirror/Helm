@@ -11,5 +11,5 @@ marks_state.json
 __pycache__/
 *.bak
 vault_token.txt
-Claude.md
+CLAUDE.md
 vault_token.txt
