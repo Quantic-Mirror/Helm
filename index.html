@@ -4779,11 +4779,10 @@ function attachEvents() {
       const w = state.widgets.find(x => x.id === btn.dataset.widgetId);
       if (!w) return;
       w.clockView = btn.dataset.clockTab;
-      // Clear running timer interval if leaving timer tab
-      if (w.clockView === 'clock' && TIMER_STATE[w.id]?.running) {
-        clearInterval(TIMER_STATE[w.id].interval);
-        TIMER_STATE[w.id].running = false;
-      }
+      // Don't stop TIMER_STATE[w.id]'s interval here — it must keep counting
+      // down while the Clock tab is showing (tickTimer/updateTimerDisplay
+      // already no-op safely when the timer DOM isn't mounted), otherwise
+      // the timer freezes at whatever it read when you switched away.
       save(); render(); renderDashboard();
     };
   });
