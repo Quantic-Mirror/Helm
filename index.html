@@ -1958,22 +1958,22 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   display: block;
 }
 
-#mealie-page {
+#gemini-page {
   height: calc(100vh - 56px);
   overflow: hidden;
 }
-#mealie-frame {
+#gemini-frame {
   width: 100%;
   height: 100%;
   border: none;
   display: block;
 }
 
-#gemini-page {
+#adguard-page {
   height: calc(100vh - 56px);
   overflow: hidden;
 }
-#gemini-frame {
+#adguard-frame {
   width: 100%;
   height: 100%;
   border: none;
@@ -2727,9 +2727,9 @@ body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red);
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#gopher" data-tab="gopher">Gopher</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
-    <a class="tab-btn" href="#mealie" data-tab="mealie">Recipes</a>
     <a class="tab-btn" href="#kiwix" data-tab="kiwix">Wikipedia</a>
     <a class="tab-btn" href="#gemini" data-tab="gemini">Gemini</a>
+    <a class="tab-btn" href="#adguard" data-tab="adguard">AdGuard</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -2894,13 +2894,15 @@ body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red);
 </div>
 
 <!-- MEALIE PAGE -->
-<div id="mealie-page" style="display:none">
-  <iframe id="mealie-frame" src="https://popcorn:9003" allow="fullscreen"></iframe>
-</div>
 
 <!-- GEMINI PAGE -->
 <div id="gemini-page" style="display:none">
   <iframe id="gemini-frame" src="https://popcorn:9004" allow="fullscreen"></iframe>
+</div>
+
+<!-- ADGUARD PAGE -->
+<div id="adguard-page" style="display:none">
+  <iframe id="adguard-frame" src="https://popcorn:9006" allow="fullscreen"></iframe>
 </div>
 
 <!-- KIWIX PAGE -->
@@ -5229,6 +5231,43 @@ function closeModal() {
   editingBm = null; activeColId = null;
 }
 
+// ── Silent bookmark save (no modal) — used by the browser extension's
+// direct-injection path, and by the #bml&... hash handler when a specific
+// folder was pre-selected in the extension popup. Mirrors saveModal()'s own
+// bookmark shape exactly, just without the UI. Returns false (rather than
+// throwing) if the URL already exists in that folder, so callers can fall
+// back to opening the modal for the user to review instead.
+function saveToFolder(url, title, colId) {
+  if (!url || !colId) return false;
+  const col = state.columns.find(c => c.id === colId);
+  if (!col) return false;
+
+  let fullUrl = url;
+  if (!/^https?:\/\//i.test(fullUrl)) fullUrl = 'https://' + fullUrl;
+
+  const normalize = u => u.split('#')[0].replace(/\/$/, '').toLowerCase();
+  const norm = normalize(fullUrl);
+  const existing = state.bookmarks.find(b => b.colId === colId && normalize(b.url) === norm);
+  if (existing) return false;
+
+  const colBms = colBooksmarks(colId);
+  state.bookmarks.push({
+    id: uid(), colId, url: fullUrl,
+    title: (title || fullUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]),
+    tag: null, order: colBms.length, addedAt: Date.now(),
+  });
+  save(); render();
+  return true;
+}
+
+// Used when the extension has no specific folder selected — defaults to
+// the first folder rather than silently doing nothing.
+function saveAsBookmark(url, title) {
+  const firstCol = state.columns[0];
+  if (!firstCol) return false;
+  return saveToFolder(url, title, firstCol.id);
+}
+
 function saveModal() {
   const url = document.getElementById('bm-url-input').value.trim();
   if (!url) { document.getElementById('bm-url-input').focus(); return; }
@@ -7373,36 +7412,11 @@ applyTheme();
 render();
 updateInvidiousButton();
 
-// Handle bookmarklet: #bml&url=...&title=...&colId=...
-// The optional colId param is added by the browser extension when the user
-// has selected a specific folder — in that case we save silently without
-// opening the modal (same as saveToFolder() called via executeScript).
-// This MUST run before the tab-restoration logic below, since switchTab()
-// writes the current tab back into location.hash — if that runs first, it
-// overwrites #bml&url=... with #dashboard before this ever gets to read it.
-let bmlPending = null;
-(function() {
-  const hash = location.hash;
-  if (!hash.startsWith('#bml')) return;
-  const raw = hash.slice(1);
-  const pairs = {};
-  raw.split('&').forEach(part => {
-    const eq = part.indexOf('=');
-    if (eq > -1) pairs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
-  });
-  const url   = pairs.url   || '';
-  const title = pairs.title || '';
-  const colId = pairs.colId || '';
-  if (!url) return;
-  history.replaceState({}, '', location.pathname);
-  bmlPending = { url, title, colId };
-})();
-
 // If a new tab/window was opened via middle-click (or the page was just
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'irc', 'logs', 'gopher', 'wiki', 'mealie', 'kiwix', 'gemini'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'irc', 'logs', 'gopher', 'wiki', 'kiwix', 'gemini', 'adguard'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -7476,31 +7490,7 @@ document.querySelectorAll('[data-calpage-view]').forEach(btn => {
   btn.onclick = () => { calPageView = btn.dataset.calpageView; renderCalendarPage(); };
 });
 
-initSync().then(() => {
-  // Act on any bookmarklet data captured before initial tab restoration ran
-  // (see the #bml handler near the top of this script). Deliberately runs
-  // AFTER initSync() has genuinely finished loading real state from the
-  // server, rather than on a guessed timeout — a fixed delay here raced
-  // against initSync's real network fetch and lost often enough (especially
-  // on a fresh tab's cold connection) that saves silently failed with no
-  // visible error, since state.columns was still the empty startup shell
-  // when the guessed timeout fired.
-  if (!bmlPending) return;
-  const { url, title, colId } = bmlPending;
-  if (colId && typeof saveToFolder === 'function') {
-    // Silent save directly to the chosen folder — no modal
-    const saved = saveToFolder(url, title || url, colId);
-    if (saved) toast('Saved to ' + (state.columns.find(c => c.id === colId)?.title || 'folder'));
-    // If already exists in that folder (or colId no longer exists), fall
-    // through to the modal so the user can see what happened rather than
-    // the save just silently doing nothing.
-    else { openModal(null, colId, { url, title }); }
-  } else {
-    // No folder specified — open the modal pre-filled as before
-    const firstCol = state.columns[0];
-    openModal(null, firstCol ? firstCol.id : null, { url, title });
-  }
-});
+initSync();
 renderUpcomingEvents();
 fetchIrcAlerts();
 ircAlertPollTimer = setInterval(fetchIrcAlerts, IRC_ALERT_POLL_MS);
@@ -7636,6 +7626,40 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   });
 }
 
+// Handle bookmarklet: #bml&url=...&title=...&colId=...
+// The optional colId param is added by the browser extension when the user
+// has selected a specific folder — in that case we save silently without
+// opening the modal (same as saveToFolder() called via executeScript).
+(function() {
+  const hash = location.hash;
+  if (!hash.startsWith('#bml')) return;
+  const raw = hash.slice(1);
+  const pairs = {};
+  raw.split('&').forEach(part => {
+    const eq = part.indexOf('=');
+    if (eq > -1) pairs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1).replace(/\+/g, ' '));
+  });
+  const url   = pairs.url   || '';
+  const title = pairs.title || '';
+  const colId = pairs.colId || '';
+  if (!url) return;
+  history.replaceState({}, '', location.pathname);
+
+  setTimeout(() => {
+    if (colId && typeof saveToFolder === 'function') {
+      // Silent save directly to the chosen folder — no modal
+      const saved = saveToFolder(url, title || url, colId);
+      if (saved) toast('Saved to ' + (state.columns.find(c => c.id === colId)?.title || 'folder'));
+      // If already exists in that folder, fall through to modal so user can see it
+      else { openModal(null, colId, { url, title }); }
+    } else {
+      // No folder specified — open the modal pre-filled as before
+      const firstCol = state.columns[0];
+      openModal(null, firstCol ? firstCol.id : null, { url, title });
+    }
+  }, 200);
+})();
+
 // ── YOUTUBE FEEDS PAGE ────────────────────────────────────────────────────────
 // YouTube exposes public Atom feeds per channel, no API key needed:
 // https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID
@@ -7663,9 +7687,20 @@ function switchTab(tab) {
   // refresh and middle-clicking a different tab from here opens the right
   // place. replaceState (not pushState) avoids piling up a back/forward
   // history entry per tab switch, matching how a tab UI should behave.
-  const newHash = '#' + tab;
-  if (location.hash !== newHash) {
-    history.replaceState(null, '', newHash);
+  //
+  // Exception: never touch the hash while a #bml&... bookmark-save payload
+  // (from the browser extension / bookmarklet) is still sitting in it and
+  // hasn't been processed yet — overwriting it here would destroy the
+  // pending save before its own handler further down the script ever gets
+  // a chance to read it. This was a real, self-inflicted bug: the
+  // extension's fallback save path always appeared to "work" (the tab
+  // navigation itself succeeded) while silently never actually saving
+  // anything, because this exact line was clobbering the hash first.
+  if (!location.hash.startsWith('#bml')) {
+    const newHash = '#' + tab;
+    if (location.hash !== newHash) {
+      history.replaceState(null, '', newHash);
+    }
   }
 
   const show = (id, condition) => {
@@ -7682,8 +7717,8 @@ function switchTab(tab) {
   show('irc-page',       tab === 'irc');
   show('gopher-page',    tab === 'gopher');
   show('wiki-page',      tab === 'wiki');
-  show('mealie-page',    tab === 'mealie');
   show('gemini-page',    tab === 'gemini');
+  show('adguard-page',   tab === 'adguard');
   show('kiwix-page',     tab === 'kiwix');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
@@ -7691,7 +7726,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki', mealie: 'Helm — Recipes', gemini: 'Helm — Gemini', kiwix: 'Helm — Wikipedia' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', irc: 'Helm — IRC', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki', gemini: 'Helm — Gemini', adguard: 'Helm — AdGuard', kiwix: 'Helm — Wikipedia' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
