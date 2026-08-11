@@ -3133,6 +3133,7 @@ let syncDebounceTimer = null;
 let syncPollTimer = null;
 let syncPushPending = false; // true while a push is queued or in flight
 let LOCAL_BACKEND_AVAILABLE = null; // null = unchecked, true/false once confirmed
+let BACKEND_CHECK_PROMISE = null; // in-flight de-dupe for concurrent checkLocalBackend() callers
 let currentTab = 'dashboard';       // active tab — declared here to avoid TDZ errors
 let calPageView = 'month';
 let calPageYear = new Date().getFullYear();
@@ -8018,26 +8019,36 @@ window.removeChannel = function(id) {
 async function checkLocalBackend() {
   // Only memoize a SUCCESSFUL check permanently — once confirmed available,
   // it's very unlikely to become unavailable mid-session. A FAILED check
-  // must NOT be cached the same way: at page load, a lot of requests fire
-  // at once (every widget, every feed, this check itself), and if this one
-  // specific check happens to queue behind others or catch a slow moment,
-  // it can miss the timeout even though the backend is completely fine —
-  // caching that as a permanent "false" used to poison every widget for
-  // the rest of that page load, long after the backend was actually
-  // responding normally again.
+  // must NOT be cached the same way (see below for why).
   if (LOCAL_BACKEND_AVAILABLE === true) return true;
   if (!location.protocol.startsWith('http')) return false;
-  try {
-    const resp = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
-    const data = await resp.json();
-    const ok = resp.ok && data.service === 'marks-local-server';
-    if (ok) LOCAL_BACKEND_AVAILABLE = true; // only the success gets memoized
-    console.log('[Helm] Local backend available:', ok);
-    return ok;
-  } catch {
-    console.log('[Helm] Local backend check failed (will retry on next call, not cached as permanently down)');
-    return false;
-  }
+
+  // De-duplicate concurrent callers: at page load, many widgets call this
+  // within the same instant, and each used to fire its own independent
+  // /api/health request — needless redundant traffic competing for the
+  // browser's limited per-origin connection slots at exactly the moment
+  // things are already most contended. Now, if a check is already in
+  // flight, every other caller just awaits that same one instead of
+  // starting a new request of their own.
+  if (BACKEND_CHECK_PROMISE) return BACKEND_CHECK_PROMISE;
+
+  BACKEND_CHECK_PROMISE = (async () => {
+    try {
+      const resp = await fetch('/api/health', { signal: AbortSignal.timeout(5000) });
+      const data = await resp.json();
+      const ok = resp.ok && data.service === 'marks-local-server';
+      if (ok) LOCAL_BACKEND_AVAILABLE = true; // only the success gets memoized
+      console.log('[Helm] Local backend available:', ok);
+      return ok;
+    } catch {
+      console.log('[Helm] Local backend check failed (will retry on next call, not cached as permanently down)');
+      return false;
+    } finally {
+      BACKEND_CHECK_PROMISE = null; // allow a fresh check next time, once this one settles
+    }
+  })();
+
+  return BACKEND_CHECK_PROMISE;
 }
 
 // CORS_PROXIES declared earlier now (see top-of-file early declarations)
