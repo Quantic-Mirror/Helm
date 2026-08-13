@@ -140,7 +140,14 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             if k.lower() not in skip:
                 req.add_header(k, v)
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            # 120s, not 30s — some backends do genuinely heavy work per
+            # request (e.g. Kiwix's full-text search across a large
+            # Wikipedia archive can legitimately take a while on modest
+            # hardware, especially before its search index has anything
+            # warmed up in memory). A longer timeout costs nothing in the
+            # normal case; it only matters when something would otherwise
+            # be wrongly cut off mid-computation.
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 self.send_response(resp.status)
                 self._send_headers(resp.getheaders())
                 self.end_headers()
