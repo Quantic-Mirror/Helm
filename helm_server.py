@@ -98,6 +98,25 @@ def proxy_to_vault(method, path_and_query, body_bytes=None):
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 
 
+# ── BACKUP EVENTS (Backup Pipeline tab) ─────────────────────────────────────
+# backup_event_worker.py (a separate long-running process, also on popcorn)
+# drains the RabbitMQ backup.events queue and writes this file atomically.
+# This endpoint just reads it straight off disk -- no proxy needed here,
+# unlike /api/vault/*, because the worker and helm_server.py both run on
+# popcorn. See emit_event.py / backup_event_worker.py for the producer side.
+BACKUP_EVENTS_FILE = os.path.join(SCRIPT_DIR, "backup_events.json")
+
+
+def get_backup_events():
+    if not os.path.exists(BACKUP_EVENTS_FILE):
+        return {"events": [], "updated_at": None}
+    try:
+        with open(BACKUP_EVENTS_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {"events": [], "updated_at": None}
+
+
 # ── IRC ALERTS (topbar badge) ────────────────────────────────────────────────
 # Reads directly from The Lounge's own SQLite message log rather than trying
 # to reach into the IRC iframe — that's a different origin (different port),
@@ -1126,6 +1145,10 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/irc/alerts":
             self.send_json(200, get_irc_alerts())
+            return
+
+        if parsed.path == "/api/backup-events":
+            self.send_json(200, get_backup_events())
             return
 
         if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
