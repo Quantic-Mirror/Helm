@@ -1568,86 +1568,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
-.irc-tab-wrap {
-  position: relative;
-  display: inline-block;
-}
-.irc-alert-badge {
-  position: absolute;
-  top: -4px;
-  right: -2px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--red);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
-  text-align: center;
-  box-shadow: 0 0 0 2px var(--surface-2);
-}
-.irc-alert-dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 240px;
-  max-width: 320px;
-  max-height: 320px;
-  overflow-y: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  z-index: 50;
-  padding: 6px;
-  /* Visibility is controlled purely by :hover below — no JS click handling
-     involved at all, which sidesteps any click-target/event-dispatch
-     quirks entirely. The dropdown's HTML content is still kept up to date
-     by JS on every poll, regardless of whether it's currently visible. */
-  display: none;
-}
-.irc-tab-wrap.irc-hover-active .irc-alert-dropdown {
-  display: block;
-}
-.irc-alert-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.irc-alert-row:hover { background: var(--surface-2); }
-.irc-alert-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-}
-.irc-alert-row.is-highlight .irc-alert-dot { background: var(--red); }
-.irc-alert-row.is-dm .irc-alert-dot { background: var(--accent); }
-.irc-alert-row.is-plain .irc-alert-dot { background: var(--text-dim); }
-.irc-alert-where {
-  flex: 1;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.irc-alert-row.is-highlight .irc-alert-where { color: var(--red); font-weight: 600; }
-.irc-alert-count {
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-.irc-alert-capped-note {
-  font-size: 10px;
-  color: var(--text-dim);
-  text-align: center;
-  padding: 6px 4px 2px;
-}
-
 /* ── FEEDS PAGE ─────────────────────────────────────────────────────────────── */
 #feeds-page {
   padding: 20px 24px;
@@ -1840,18 +1760,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   align-items: center;
 }
 .backup-restore-btn { padding: 4px 10px; font-size: 11px; }
-
-/* ── IRC PAGE ─────────────────────────────────────────────────────────────────── */
-#irc-page {
-  height: calc(100vh - 56px);
-  overflow: hidden;
-}
-#irc-frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
 
 #gopher-page {
   height: calc(100vh - 56px);
@@ -2801,11 +2709,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#calendar" data-tab="calendar">Calendar</a>
     <a class="tab-btn" href="#services" data-tab="services">Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">Backup Pipeline</a>
-    <div class="irc-tab-wrap">
-      <a class="tab-btn" href="#irc" data-tab="irc">IRC</a>
-      <span class="irc-alert-badge" id="irc-alert-badge" style="display:none"></span>
-      <div class="irc-alert-dropdown" id="irc-alert-dropdown"></div>
-    </div>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#gopher" data-tab="gopher">Gopher</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
@@ -2957,11 +2860,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   <div id="backups-events"></div>
 </div>
 
-<!-- IRC PAGE -->
-<div id="irc-page" style="display:none">
-  <iframe id="irc-frame" src="https://popcorn:9000" allow="fullscreen"></iframe>
-</div>
-
 <!-- GOPHER PAGE -->
 <div id="gopher-page" style="display:none">
   <div id="gopher-topbar">
@@ -3008,7 +2906,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <select id="logs-service-filter" class="btn" style="cursor:pointer">
       <option value="all">All services</option>
       <option value="helm">Helm</option>
-      <option value="thelounge">The Lounge (IRC)</option>
       <option value="searxng-core">SearXNG</option>
       <option value="r2-sync">Cloudflare R2 Sync</option>
     </select>
@@ -3238,9 +3135,6 @@ const BACKUPS_POLL_MS = 30 * 1000;
 let logsData = [];
 let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
-let ircAlertPollTimer = null;
-const IRC_ALERT_POLL_MS = 8 * 1000;
-let IRC_ALERT_DATA = null;
 let GOPHER_HISTORY = [];
 let GOPHER_HISTORY_IDX = -1;
 
@@ -7512,7 +7406,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'irc', 'logs', 'gopher', 'wiki', 'kiwix', 'gemini', 'adguard'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'gopher', 'wiki', 'kiwix', 'gemini', 'adguard'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -7588,14 +7482,6 @@ document.querySelectorAll('[data-calpage-view]').forEach(btn => {
 
 initSync();
 renderUpcomingEvents();
-fetchIrcAlerts();
-ircAlertPollTimer = setInterval(fetchIrcAlerts, IRC_ALERT_POLL_MS);
-
-const ircTabWrap = document.querySelector('.irc-tab-wrap');
-if (ircTabWrap) {
-  ircTabWrap.addEventListener('mouseenter', () => ircTabWrap.classList.add('irc-hover-active'));
-  ircTabWrap.addEventListener('mouseleave', () => ircTabWrap.classList.remove('irc-hover-active'));
-}
 
 document.getElementById('gopher-nav-form').onsubmit = (e) => {
   e.preventDefault();
@@ -7811,7 +7697,6 @@ function switchTab(tab) {
   show('calendar-page',  tab === 'calendar');
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
-  show('irc-page',       tab === 'irc');
   show('gopher-page',    tab === 'gopher');
   show('wiki-page',      tab === 'wiki');
   show('gemini-page',    tab === 'gemini');
@@ -7823,7 +7708,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', irc: 'Helm — IRC', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki', gemini: 'Helm — Gemini', adguard: 'Helm — AdGuard', kiwix: 'Helm — Wikipedia' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', logs: 'Helm — Logs', gopher: 'Helm — Gopher', wiki: 'Helm — Wiki', gemini: 'Helm — Gemini', adguard: 'Helm — AdGuard', kiwix: 'Helm — Wikipedia' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -7836,7 +7721,6 @@ function switchTab(tab) {
   else stopBackupsPolling();
   if (tab === 'logs')      { fetchLogs(); startLogsPolling(); }
   else stopLogsPolling();
-  if (tab === 'irc')       ackIrcAlerts();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -8673,85 +8557,6 @@ window.removeNewsSource = function(id) {
 };
 
 // ── Sorting ───────────────────────────────────────────────────────────────────
-// ════════════════════════════════════════════════════════════════════════════
-// ── IRC ALERT BADGE (topbar) ──────────────────────────────────────────────════
-// Runs unconditionally, regardless of which page/tab is currently active —
-// unlike the other per-page polling loops (Services, Logs), this one starts
-// once at page load and never stops, since the whole point is a heads-up
-// that works no matter what you're looking at in Helm.
-// ════════════════════════════════════════════════════════════════════════════
-
-async function fetchIrcAlerts() {
-  const badge = document.getElementById('irc-alert-badge');
-  if (!badge) return;
-  try {
-    const hasBackend = await checkLocalBackend();
-    if (!hasBackend) { badge.style.display = 'none'; return; }
-    const resp = await fetch('/api/irc/alerts', { signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) { badge.style.display = 'none'; return; }
-    const data = await resp.json();
-    IRC_ALERT_DATA = data;
-    renderIrcAlertBadge(data);
-  } catch (e) {
-    // Silent — a missed poll shouldn't be noisy, it'll just try again shortly.
-  }
-}
-
-function renderIrcAlertBadge(data) {
-  const badge = document.getElementById('irc-alert-badge');
-  if (!badge) return;
-  if (!data.available || !data.total) {
-    badge.style.display = 'none';
-    renderIrcAlertDropdown(data); // keep content fresh even while hidden
-    return;
-  }
-  const totalDisplay = data.global_capped ? `${data.total}+` : String(data.total);
-  badge.textContent = data.total > 99 ? '99+' : totalDisplay;
-  badge.style.display = '';
-  renderIrcAlertDropdown(data);
-}
-
-function renderIrcAlertDropdown(data) {
-  const dropdown = document.getElementById('irc-alert-dropdown');
-  if (!dropdown) return;
-  const groups = data.groups || [];
-
-  if (groups.length === 0) {
-    dropdown.innerHTML = '<div class="irc-alert-row">Nothing new</div>';
-    return;
-  }
-
-  dropdown.innerHTML = groups.map(g => {
-    const rowClass = g.is_dm ? 'is-dm' : (g.has_highlight ? 'is-highlight' : 'is-plain');
-    const where = g.is_dm ? `DM · ${escHtml(g.channel)}` : `${escHtml(g.channel)} · ${escHtml(g.network_name)}`;
-    const countDisplay = g.capped ? `${g.count}+` : g.count;
-    return `
-      <div class="irc-alert-row ${rowClass}" data-irc-alert-goto="1">
-        <span class="irc-alert-dot"></span>
-        <span class="irc-alert-where">${where}</span>
-        <span class="irc-alert-count">${countDisplay}</span>
-      </div>
-    `;
-  }).join('') + (data.global_capped
-    ? `<div class="irc-alert-capped-note">showing first ${data.total} — there's more</div>`
-    : '');
-
-  dropdown.querySelectorAll('[data-irc-alert-goto]').forEach(row => {
-    row.onclick = () => switchTab('irc');
-  });
-}
-
-async function ackIrcAlerts() {
-  // Clear the badge immediately for a snappy feel; the server-side ack
-  // happens in the background and doesn't need to block the UI on it.
-  // (Dropdown visibility is purely CSS :hover now — nothing to clear here,
-  // and setting an inline style would permanently override that CSS rule.)
-  const badge = document.getElementById('irc-alert-badge');
-  if (badge) badge.style.display = 'none';
-  try {
-    await fetch('/api/irc/ack', { method: 'POST', signal: AbortSignal.timeout(8000) });
-  } catch (e) { /* best-effort */ }
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // ── TERMINAL THEME ───────────────────────────────────────────────────════════
