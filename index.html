@@ -1772,17 +1772,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   display: block;
 }
 
-#adguard-page {
-  height: calc(100vh - 56px);
-  overflow: hidden;
-}
-#adguard-frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
-
 /* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
 #upcoming-events-strip {
   margin: 0 0 12px;
@@ -2593,7 +2582,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#backups" data-tab="backups">Backup Pipeline</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
-    <a class="tab-btn" href="#adguard" data-tab="adguard">AdGuard</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -2745,11 +2733,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 </div>
 
 <!-- MEALIE PAGE -->
-
-<!-- ADGUARD PAGE -->
-<div id="adguard-page" style="display:none">
-  <iframe id="adguard-frame" src="https://popcorn:9006" allow="fullscreen"></iframe>
-</div>
 
 <!-- LOGS PAGE -->
 <div id="logs-page" style="display:none">
@@ -7251,7 +7234,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'adguard'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -7425,14 +7408,13 @@ function switchTab(tab) {
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
   show('wiki-page',      tab === 'wiki');
-  show('adguard-page',   tab === 'adguard');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', logs: 'Helm — Logs', wiki: 'Helm — Wiki', adguard: 'Helm — AdGuard' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', logs: 'Helm — Logs', wiki: 'Helm — Wiki' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();

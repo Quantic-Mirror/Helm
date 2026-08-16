@@ -352,20 +352,6 @@ MONITORED_SERVICES = [
         "controllable": True,
     },
     {
-        "id":    "adguardhome",
-        "label": "AdGuard Home",
-        "type":  "docker",
-        "container": "adguardhome",
-        "controllable": True,
-    },
-    {
-        "id":    "adguard-tls-proxy",
-        "label": "AdGuard TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "adguard-tls-proxy.service",
-        "controllable": True,
-    },
-    {
         "id":    "unbound",
         "label": "Unbound (recursive resolver)",
         "type":  "docker",
