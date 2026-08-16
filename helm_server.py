@@ -352,20 +352,6 @@ MONITORED_SERVICES = [
         "controllable": True,
     },
     {
-        "id":    "kineto",
-        "label": "Gemini Proxy (kineto)",
-        "type":  "docker",
-        "container": "kineto",
-        "controllable": True,
-    },
-    {
-        "id":    "gemini-tls-proxy",
-        "label": "Gemini TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "gemini-tls-proxy.service",
-        "controllable": True,
-    },
-    {
         "id":    "adguardhome",
         "label": "AdGuard Home",
         "type":  "docker",
