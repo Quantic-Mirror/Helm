@@ -48,7 +48,6 @@ import sys
 import os
 import json
 import time
-import sqlite3
 import ssl
 import threading
 import urllib.request
@@ -115,212 +114,6 @@ def get_backup_events():
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {"events": [], "updated_at": None}
-
-
-# ── IRC ALERTS (topbar badge) ────────────────────────────────────────────────
-# Reads directly from The Lounge's own SQLite message log rather than trying
-# to reach into the IRC iframe — that's a different origin (different port),
-# so the browser blocks any DOM access into it regardless of same-host
-# proximity. The Lounge already computes highlight/mention status itself
-# (stored per-message as JSON), so there's no need to reimplement
-# nickname-matching logic here.
-#
-# No background thread needed: unlike the Signal integration (whose source
-# API drains its queue on every read), this is just a growing SQLite table
-# we can query fresh on every poll — the "last acknowledged" cursor is the
-# only state that needs to persist.
-
-IRC_LOG_DB = os.environ.get("IRC_LOG_DB", "/etc/thelounge/logs/carl.sqlite3")
-IRC_USER_CONFIG = os.environ.get("IRC_USER_CONFIG", "/etc/thelounge/users/carl.json")
-IRC_ACK_STATE_FILE = os.path.join(SCRIPT_DIR, "irc_ack_state.json")
-IRC_ALERT_PREVIEW_LIMIT = 10
-IRC_PER_CHANNEL_CAP = 25   # stop counting a single channel/DM beyond this
-IRC_GLOBAL_CAP = 100       # stop scanning entirely once this many qualify
-IRC_QUERY_ROW_LIMIT = 5000  # hard backstop on rows pulled per poll, regardless of caps above
-IRC_NETWORKS_TTL = 300  # seconds — network list rarely changes
-
-_irc_networks_cache = {"ts": 0, "by_uuid": {}}
-
-
-def _irc_refresh_networks():
-    """Map each network's internal UUID to its display name (e.g. "Libera.Chat"),
-    read from The Lounge's own per-user config. This is the only place that
-    friendly network name lives — the messages table itself only stores the
-    UUID, never the name."""
-    try:
-        with open(IRC_USER_CONFIG) as f:
-            config = json.load(f)
-    except Exception:
-        return
-    by_uuid = {}
-    for net in config.get("networks", []):
-        uuid = net.get("uuid")
-        name = net.get("name")
-        if uuid and name:
-            by_uuid[uuid] = name
-    _irc_networks_cache["by_uuid"] = by_uuid
-    _irc_networks_cache["ts"] = time.time()
-
-
-def _irc_get_network_name(uuid):
-    if time.time() - _irc_networks_cache["ts"] > IRC_NETWORKS_TTL:
-        _irc_refresh_networks()
-    return _irc_networks_cache["by_uuid"].get(uuid, uuid or "unknown network")
-
-
-def _irc_load_ack():
-    if os.path.exists(IRC_ACK_STATE_FILE):
-        try:
-            with open(IRC_ACK_STATE_FILE) as f:
-                return json.load(f).get("last_acknowledged_id", 0)
-        except Exception:
-            pass
-    return 0
-
-
-def _irc_save_ack(message_id):
-    tmp = IRC_ACK_STATE_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump({"last_acknowledged_id": message_id}, f)
-    os.replace(tmp, IRC_ACK_STATE_FILE)
-
-
-def _irc_is_channel(name):
-    # IRC channel names conventionally start with # (standard) or & (rare,
-    # server-local channels). Anything else is a private query/DM.
-    return bool(name) and name[0] in ("#", "&")
-
-
-def get_irc_alerts():
-    """Returns dm_count, highlight_count, total, a per-network/per-channel
-    breakdown ("groups"), and a short preview list of qualifying messages
-    since the last acknowledgment."""
-    last_ack = _irc_load_ack()
-    result = {
-        "available": False,
-        "dm_count": 0,
-        "highlight_count": 0,
-        "channel_count": 0,
-        "total": 0,
-        "groups": [],
-        "preview": [],
-        "last_id": last_ack,
-    }
-    if not os.path.exists(IRC_LOG_DB):
-        return result
-
-    try:
-        # Read-only connection — this is The Lounge's own database, Helm has
-        # no business ever writing to it.
-        conn = sqlite3.connect(f"file:{IRC_LOG_DB}?mode=ro", uri=True, timeout=5)
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, network, channel, msg FROM messages WHERE type='message' AND id > ? ORDER BY id ASC LIMIT ?",
-            (last_ack, IRC_QUERY_ROW_LIMIT),
-        )
-        rows = cur.fetchall()
-        conn.close()
-    except Exception as e:
-        result["error"] = str(e)
-        return result
-
-    result["available"] = True
-    max_id = last_ack
-    preview = []
-    # groups keyed by (network_name, channel) so repeated activity in the
-    # same channel/DM collapses into one line with a count, rather than
-    # listing every single qualifying message separately.
-    groups = {}
-    total_qualifying = 0
-    global_capped = False
-
-    for row_id, network_uuid, channel, msg_json in rows:
-        max_id = max(max_id, row_id)
-        try:
-            data = json.loads(msg_json)
-        except Exception:
-            continue
-        if data.get("self"):
-            continue  # messages we sent ourselves are never an "alert"
-
-        is_dm = not _irc_is_channel(channel)
-        is_highlight = bool(data.get("highlight"))
-        if not (is_dm or is_highlight):
-            continue  # plain channel chatter with no mention doesn't alert
-
-        # Once the global cap is hit, stop doing any further work — we
-        # already know to show "100+" and there's no point scoring every
-        # remaining row in, say, a months-old backlog after a long absence.
-        if total_qualifying >= IRC_GLOBAL_CAP:
-            global_capped = True
-            break
-
-        network_name = _irc_get_network_name(network_uuid)
-        total_qualifying += 1
-
-        if is_dm:
-            result["dm_count"] += 1
-        else:
-            result["highlight_count"] += 1
-
-        group_key = (network_name, channel)
-        if group_key not in groups:
-            groups[group_key] = {
-                "network_name": network_name,
-                "channel": channel,
-                "is_dm": is_dm,
-                "count": 0,
-                "capped": False,
-                "has_highlight": False,
-            }
-        group = groups[group_key]
-        if is_highlight:
-            group["has_highlight"] = True
-        if group["count"] < IRC_PER_CHANNEL_CAP:
-            group["count"] += 1
-        else:
-            group["capped"] = True
-
-        preview.append({
-            "id": row_id,
-            "network_name": network_name,
-            "channel": channel,
-            "from": (data.get("from") or {}).get("nick", "?"),
-            "text": (data.get("text") or "")[:200],
-            "is_dm": is_dm,
-            "is_highlight": is_highlight,
-        })
-
-
-    result["total"] = result["dm_count"] + result["highlight_count"] + result["channel_count"]
-    result["global_capped"] = global_capped
-    # Surface DMs and mentions above plain channel chatter, since those are
-    # the ones actually worth interrupting yourself for; within each tier,
-    # busiest first.
-    result["groups"] = sorted(
-        groups.values(),
-        key=lambda g: (not (g["is_dm"] or g["has_highlight"]), -g["count"]),
-    )
-    result["preview"] = preview[-IRC_ALERT_PREVIEW_LIMIT:]
-    result["scanned_up_to_id"] = max_id
-    return result
-
-
-def ack_irc_alerts():
-    """Mark everything currently in the log as seen."""
-    if not os.path.exists(IRC_LOG_DB):
-        return 0
-    try:
-        conn = sqlite3.connect(f"file:{IRC_LOG_DB}?mode=ro", uri=True, timeout=5)
-        cur = conn.cursor()
-        cur.execute("SELECT MAX(id) FROM messages")
-        row = cur.fetchone()
-        conn.close()
-        max_id = row[0] or 0
-    except Exception:
-        max_id = _irc_load_ack()
-    _irc_save_ack(max_id)
-    return max_id
 
 
 KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
@@ -530,13 +323,6 @@ MONITORED_SERVICES = [
         "controllable": True,
     },
     {
-        "id":    "thelounge",
-        "label": "The Lounge (IRC)",
-        "type":  "systemd",
-        "unit":  "thelounge.service",
-        "controllable": True,
-    },
-    {
         "id":    "searxng-core",
         "label": "SearXNG",
         "type":  "docker",
@@ -552,20 +338,6 @@ MONITORED_SERVICES = [
         "controllable": False,
     },
     {
-        "id":    "gopherproxy",
-        "label": "Gopher Proxy",
-        "type":  "docker",
-        "container": "gopherproxy",
-        "controllable": True,
-    },
-    {
-        "id":    "gopher-tls-proxy",
-        "label": "Gopher TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "gopher-tls-proxy.service",
-        "controllable": True,
-    },
-    {
         "id":    "wikijs",
         "label": "Wiki.js",
         "type":  "docker",
@@ -577,34 +349,6 @@ MONITORED_SERVICES = [
         "label": "Wiki TLS Frontend",
         "type":  "systemd-user",
         "unit":  "wiki-tls-proxy.service",
-        "controllable": True,
-    },
-    {
-        "id":    "kineto",
-        "label": "Gemini Proxy (kineto)",
-        "type":  "docker",
-        "container": "kineto",
-        "controllable": True,
-    },
-    {
-        "id":    "gemini-tls-proxy",
-        "label": "Gemini TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "gemini-tls-proxy.service",
-        "controllable": True,
-    },
-    {
-        "id":    "adguardhome",
-        "label": "AdGuard Home",
-        "type":  "docker",
-        "container": "adguardhome",
-        "controllable": True,
-    },
-    {
-        "id":    "adguard-tls-proxy",
-        "label": "AdGuard TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "adguard-tls-proxy.service",
         "controllable": True,
     },
     {
@@ -1143,10 +887,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 self.send_json(200, dict(_state_cache))
             return
 
-        if parsed.path == "/api/irc/alerts":
-            self.send_json(200, get_irc_alerts())
-            return
-
         if parsed.path == "/api/backup-events":
             self.send_json(200, get_backup_events())
             return
@@ -1199,11 +939,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-
-        if parsed.path == "/api/irc/ack":
-            new_ack_id = ack_irc_alerts()
-            self.send_json(200, {"ok": True, "acknowledged_up_to": new_ack_id})
-            return
 
         parts  = parsed.path.strip("/").split("/")
         if len(parts) == 3 and parts[0] == "api" and parts[1] == "services":
