@@ -1794,17 +1794,6 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   display: block;
 }
 
-#kiwix-page {
-  height: calc(100vh - 56px);
-  overflow: hidden;
-}
-#kiwix-frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
-
 /* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
 #upcoming-events-strip {
   margin: 0 0 12px;
@@ -2615,7 +2604,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#backups" data-tab="backups">Backup Pipeline</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
-    <a class="tab-btn" href="#kiwix" data-tab="kiwix">Wikipedia</a>
     <a class="tab-btn" href="#gemini" data-tab="gemini">Gemini</a>
     <a class="tab-btn" href="#adguard" data-tab="adguard">AdGuard</a>
   </nav>
@@ -2778,11 +2766,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 <!-- ADGUARD PAGE -->
 <div id="adguard-page" style="display:none">
   <iframe id="adguard-frame" src="https://popcorn:9006" allow="fullscreen"></iframe>
-</div>
-
-<!-- KIWIX PAGE -->
-<div id="kiwix-page" style="display:none">
-  <iframe id="kiwix-frame" src="https://hyperion:9005" allow="fullscreen"></iframe>
 </div>
 
 <!-- LOGS PAGE -->
@@ -7285,7 +7268,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'kiwix', 'gemini', 'adguard'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'gemini', 'adguard'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -7461,14 +7444,13 @@ function switchTab(tab) {
   show('wiki-page',      tab === 'wiki');
   show('gemini-page',    tab === 'gemini');
   show('adguard-page',   tab === 'adguard');
-  show('kiwix-page',     tab === 'kiwix');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', logs: 'Helm — Logs', wiki: 'Helm — Wiki', gemini: 'Helm — Gemini', adguard: 'Helm — AdGuard', kiwix: 'Helm — Wikipedia' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', logs: 'Helm — Logs', wiki: 'Helm — Wiki', gemini: 'Helm — Gemini', adguard: 'Helm — AdGuard' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
