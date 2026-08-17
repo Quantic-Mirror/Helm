@@ -32,6 +32,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import defaultdict
 
 import emit_event
 
@@ -41,6 +42,7 @@ EVENTS_FILE = os.path.join(SCRIPT_DIR, "backup_events.json")
 POLL_INTERVAL_SECONDS = 3
 MAX_EVENTS = 500
 GET_BATCH_SIZE = 50
+KEEP_PER_KEY = 2  # current run + one prior, per distinct (stage, name)
 
 
 def _auth_header():
@@ -96,6 +98,40 @@ def fetch_batch(auth):
         return []
 
 
+def prune_events(events):
+    """Keep only the most recent KEEP_PER_KEY events per distinct
+    (stage, name) combination -- e.g. "r2_sync + wikijs" and
+    "r2_sync + argus" are tracked and pruned independently, each keeping
+    just the current run and the one before it. This is deliberately NOT
+    the same as the flat, global MAX_EVENTS cap below: without per-key
+    grouping, one chatty stage (many per-folder events in a single sync
+    run) could crowd out older, less frequent stages entirely from the
+    last MAX_EVENTS window. Grouping by key first means every distinct
+    backup item keeps its own short history regardless of how often
+    anything else runs.
+
+    Empty-string `name` is its own valid group (the overall per-stage
+    started/ok/failed summary events, as opposed to individual per-folder
+    events within that stage) -- not merged with anything, not treated
+    as "no group".
+
+    Preserves original chronological order in the returned list, since
+    the frontend (Helm's Backup Pipeline tab) relies on "last matching
+    element = most recent event" when picking a stage card's current
+    status.
+    """
+    groups = defaultdict(list)
+    for i, ev in enumerate(events):
+        key = (ev.get("stage"), ev.get("name", ""))
+        groups[key].append(i)
+
+    keep_indices = set()
+    for key, indices in groups.items():
+        keep_indices.update(indices[-KEEP_PER_KEY:])
+
+    return [ev for i, ev in enumerate(events) if i in keep_indices]
+
+
 def load_events():
     if not os.path.exists(EVENTS_FILE):
         return []
@@ -132,7 +168,8 @@ def main():
                     print(f"backup_event_worker: skipping malformed message: {msg}", file=sys.stderr)
                     continue
                 events.append(event)
-            events = events[-MAX_EVENTS:]
+            events = prune_events(events)
+            events = events[-MAX_EVENTS:]  # outer safety cap; rarely binds now that per-key pruning runs first
             save_events(events)
             print(f"backup_event_worker: drained {len(messages)} event(s)")
         time.sleep(POLL_INTERVAL_SECONDS)
