@@ -95,23 +95,45 @@ def _https_context_for_helm_url(url):
 
 
 def _password_via_vault_proxy():
-    """popcorn: no GPG/pass here, so go through helm_server.py's vault proxy."""
+    """popcorn: no GPG/pass here, so go through helm_server.py's vault proxy.
+
+    Retries once after a short delay on a genuine network-level failure
+    (timeout, connection refused) -- not on an HTTP error response, which
+    means the proxy WAS reached and answered, just not with what we
+    wanted, so retrying wouldn't help. This specifically targets a real,
+    reproducible pattern seen during scheduled (systemd timer-triggered)
+    runs: the request consistently times out on the first attempt, in a
+    way that doesn't reproduce on a manually-triggered run or a direct
+    diagnostic curl moments earlier -- exact mechanism not confirmed, but
+    a single retry costs nothing in the normal case and directly covers
+    the observed symptom.
+    """
     url = HELM_URL.rstrip("/") + "/api/vault/entry/" + urllib.parse.quote(PASS_ENTRY)
-    req = urllib.request.Request(url, method="GET")
     ctx = _https_context_for_helm_url(url)
-    try:
-        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(
-            f"vault proxy at {url} returned HTTP {e.code}: {e.read().decode(errors='replace')}"
-        )
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"could not reach helm_server.py vault proxy at {url}: {e.reason}")
-    secret = data.get("secret", "")
-    if not secret:
-        raise RuntimeError(f"vault proxy returned no secret for {PASS_ENTRY}")
-    return secret
+
+    last_error = None
+    for attempt in (1, 2):
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                data = json.loads(resp.read())
+            secret = data.get("secret", "")
+            if not secret:
+                raise RuntimeError(f"vault proxy returned no secret for {PASS_ENTRY}")
+            return secret
+        except urllib.error.HTTPError as e:
+            # Reached the proxy, got a real HTTP error back -- retrying
+            # won't change that, fail immediately with the real reason.
+            raise RuntimeError(
+                f"vault proxy at {url} returned HTTP {e.code}: {e.read().decode(errors='replace')}"
+            )
+        except urllib.error.URLError as e:
+            last_error = e.reason
+            if attempt == 1:
+                print(f"emit_event: vault proxy attempt 1 failed ({e.reason}), retrying in 5s...", file=sys.stderr)
+                time.sleep(5)
+
+    raise RuntimeError(f"could not reach helm_server.py vault proxy at {url} after 2 attempts: {last_error}")
 
 
 def get_rabbitmq_password():
