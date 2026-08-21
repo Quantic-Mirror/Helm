@@ -97,22 +97,33 @@ def _https_context_for_helm_url(url):
 def _password_via_vault_proxy():
     """popcorn: no GPG/pass here, so go through helm_server.py's vault proxy.
 
-    Retries once after a short delay on a genuine network-level failure
-    (timeout, connection refused) -- not on an HTTP error response, which
-    means the proxy WAS reached and answered, just not with what we
-    wanted, so retrying wouldn't help. This specifically targets a real,
-    reproducible pattern seen during scheduled (systemd timer-triggered)
-    runs: the request consistently times out on the first attempt, in a
-    way that doesn't reproduce on a manually-triggered run or a direct
-    diagnostic curl moments earlier -- exact mechanism not confirmed, but
-    a single retry costs nothing in the normal case and directly covers
-    the observed symptom.
+    Retries several times over a few minutes on a genuine network-level
+    failure (timeout, connection refused) -- not on an HTTP error
+    response, which means the proxy WAS reached and answered, just not
+    with what we wanted, so retrying wouldn't help.
+
+    This is deliberately a much longer retry window than a normal
+    transient-blip fix would need. The actual mechanism behind scheduled
+    (systemd timer-triggered) runs failing here, while manual runs and
+    direct diagnostics moments earlier succeed, was not confirmed despite
+    ruling out: the server being down, session/lingering configuration,
+    a competing scheduled task (certbot), the specific hour (moving the
+    schedule entirely did not help), and the environment variables
+    themselves (confirmed correctly applied via `systemctl show`).
+    What IS empirically true, every time this has been checked: a manual
+    retry shortly after a failed scheduled run has always succeeded. This
+    retry loop leans on that observed pattern directly, giving a failure
+    several minutes to resolve on its own rather than assuming a handful
+    of seconds is enough.
     """
     url = HELM_URL.rstrip("/") + "/api/vault/entry/" + urllib.parse.quote(PASS_ENTRY)
     ctx = _https_context_for_helm_url(url)
 
+    max_attempts = 6
+    delay_seconds = 30
+
     last_error = None
-    for attempt in (1, 2):
+    for attempt in range(1, max_attempts + 1):
         req = urllib.request.Request(url, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
@@ -129,11 +140,18 @@ def _password_via_vault_proxy():
             )
         except urllib.error.URLError as e:
             last_error = e.reason
-            if attempt == 1:
-                print(f"emit_event: vault proxy attempt 1 failed ({e.reason}), retrying in 5s...", file=sys.stderr)
-                time.sleep(5)
+            if attempt < max_attempts:
+                print(
+                    f"emit_event: vault proxy attempt {attempt}/{max_attempts} failed "
+                    f"({e.reason}), retrying in {delay_seconds}s...",
+                    file=sys.stderr,
+                )
+                time.sleep(delay_seconds)
 
-    raise RuntimeError(f"could not reach helm_server.py vault proxy at {url} after 2 attempts: {last_error}")
+    raise RuntimeError(
+        f"could not reach helm_server.py vault proxy at {url} after {max_attempts} attempts "
+        f"over ~{max_attempts * delay_seconds}s: {last_error}"
+    )
 
 
 def get_rabbitmq_password():
