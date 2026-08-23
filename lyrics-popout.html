@@ -37,6 +37,7 @@
   const POLL_MS = 90 * 1000;
   const SOMAFM_URL = 'https://somafm.com/indiepop/songhistory.html';
   const lyricsCache = {}; // "artist::song" -> lyrics string | null, this window's lifetime only
+  let lastTrackKey = null; // "artist::song" of whatever's currently rendered -- skip re-render if unchanged, so long lyrics don't reset your scroll position every 90s
 
   // Minimal reimplementation of index.html's fetchViaProxy() primary path --
   // same-origin /api/proxy, since this page is served by the same
@@ -90,6 +91,14 @@
       const tracks = parseTracks(html);
       const now = tracks.find(t => t.isNow) || tracks[0];
       if (!now) throw new Error('no current track found');
+
+      const trackKey = `${now.artist}::${now.song}`.toLowerCase();
+      if (trackKey === lastTrackKey) {
+        document.getElementById('status').textContent = '';
+        return; // same song still playing -- don't touch the DOM/scroll position
+      }
+      lastTrackKey = trackKey;
+
       document.title = `${now.song} — SomaFM Lyrics`;
       document.getElementById('track').textContent = now.song;
       document.getElementById('artist').textContent = now.artist;
