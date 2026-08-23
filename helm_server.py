@@ -53,7 +53,7 @@ import threading
 import urllib.request
 import urllib.error
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse, parse_qs, quote, unquote
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -801,6 +801,176 @@ def get_network_info():
     return result
 
 
+# ── AUDIO GRABBER ────────────────────────────────────────────────────────────
+# Search YouTube for a track (artist + song) and save the audio locally.
+# Shells out to the yt-dlp and ffmpeg CLIs (both already installed on popcorn)
+# rather than pip-installing the yt_dlp library, matching this file's
+# stdlib-only / shell-out-to-existing-tools convention (see vault_api.py's use
+# of `pass`, and the Docker socket helpers above).
+#
+# Downloads run one at a time on a background worker thread, never inline in
+# do_POST: HTTPServer here handles one request at a time (it's not a
+# ThreadingHTTPServer), so a multi-minute download running synchronously in a
+# request handler would stall every other device's state sync, services
+# polling, etc. until it finished. do_POST just enqueues a job and returns
+# immediately; the frontend polls /api/audio/jobs for progress.
+import mimetypes
+import queue as _queue
+
+AUDIO_DIR = os.path.join(SCRIPT_DIR, "audio-downloads")
+AUDIO_FORMATS = ("mp3", "m4a", "flac", "wav", "opus")
+AUDIO_MAX_BATCH = 50  # guard against an accidental huge paste queuing hundreds of jobs
+
+_audio_lock = threading.Lock()
+_audio_jobs = {}      # job_id (int) -> job dict
+_audio_job_seq = 0
+_audio_queue = _queue.Queue()
+
+
+def _new_audio_job(artist, song):
+    global _audio_job_seq
+    with _audio_lock:
+        _audio_job_seq += 1
+        job = {
+            "id": _audio_job_seq,
+            "artist": artist,
+            "song": song,
+            "status": "queued",
+            "message": "",
+            "filename": None,
+            "queuedAt": time.time(),
+            "startedAt": None,
+            "finishedAt": None,
+        }
+        _audio_jobs[job["id"]] = job
+    return job
+
+
+def _run_audio_download(job_id, audio_format, quality):
+    with _audio_lock:
+        job = _audio_jobs.get(job_id)
+        if not job:
+            return
+        job["status"] = "running"
+        job["startedAt"] = time.time()
+        artist, song = job["artist"], job["song"]
+
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    query = f"{artist} {song} audio"
+    cmd = [
+        "yt-dlp",
+        "--no-playlist",
+        "--default-search", "ytsearch1",
+        "-f", "bestaudio/best",
+        "-x", "--audio-format", audio_format,
+        "--audio-quality", quality,
+        "-o", os.path.join(AUDIO_DIR, "%(title)s.%(ext)s"),
+        # Prints the final on-disk path after extraction/move, so we don't
+        # have to diff a directory listing to learn the resulting filename.
+        "--print", "after_move:filepath",
+        query,
+    ]
+    # Search + download + audio extraction for one track comfortably fits in
+    # 10 minutes even on a slow connection; if it hangs longer than that,
+    # something's wrong and the job should surface as failed rather than
+    # blocking the worker thread (and every queued job behind it) forever.
+    stdout, stderr, rc = _run(cmd, timeout=600)
+
+    with _audio_lock:
+        job["finishedAt"] = time.time()
+        if rc == 0:
+            filepath = next((l for l in reversed(stdout.splitlines()) if l.strip()), None)
+            job["filename"] = os.path.basename(filepath) if filepath else None
+            job["status"] = "done" if filepath else "error"
+            job["message"] = "" if filepath else "yt-dlp finished but did not report an output file"
+        else:
+            tail = (stderr or stdout or "").strip().splitlines()
+            job["status"] = "error"
+            job["message"] = tail[-1] if tail else f"yt-dlp exited with code {rc}"
+
+
+def _audio_worker():
+    while True:
+        job_id, audio_format, quality = _audio_queue.get()
+        try:
+            _run_audio_download(job_id, audio_format, quality)
+        except Exception as e:
+            with _audio_lock:
+                job = _audio_jobs.get(job_id)
+                if job:
+                    job["status"] = "error"
+                    job["message"] = str(e)
+                    job["finishedAt"] = time.time()
+        finally:
+            _audio_queue.task_done()
+
+
+threading.Thread(target=_audio_worker, daemon=True).start()
+
+
+def _parse_audio_batch(text):
+    """Same 'Artist | Song Title' line format as yt_audio_grabber.py's --file mode."""
+    tracks = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "|" not in line:
+            continue
+        artist, _, song = line.partition("|")
+        artist, song = artist.strip()[:200], song.strip()[:200]
+        if artist and song:
+            tracks.append((artist, song))
+    return tracks
+
+
+def queue_audio_downloads(tracks, audio_format, quality):
+    if audio_format not in AUDIO_FORMATS:
+        audio_format = "mp3"
+    quality = quality.strip() if isinstance(quality, str) else ""
+    if not quality.isdigit():
+        quality = "192"
+    jobs = []
+    for artist, song in tracks[:AUDIO_MAX_BATCH]:
+        job = _new_audio_job(artist, song)
+        _audio_queue.put((job["id"], audio_format, quality))
+        jobs.append(job)
+    return jobs
+
+
+def get_audio_jobs():
+    with _audio_lock:
+        jobs = sorted(_audio_jobs.values(), key=lambda j: j["id"], reverse=True)
+    return jobs[:100]
+
+
+def get_audio_files():
+    if not os.path.isdir(AUDIO_DIR):
+        return []
+    files = []
+    for name in os.listdir(AUDIO_DIR):
+        path = os.path.join(AUDIO_DIR, name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            files.append({"filename": name, "size": os.path.getsize(path), "createdAt": os.path.getmtime(path)})
+        except OSError:
+            continue
+    files.sort(key=lambda f: f["createdAt"], reverse=True)
+    return files
+
+
+def delete_audio_file(filename):
+    if not filename or "/" in filename or "\\" in filename or filename in (".", ".."):
+        return False, "Invalid filename"
+    path = os.path.join(AUDIO_DIR, filename)
+    if not os.path.isfile(path):
+        return False, "File not found"
+    try:
+        os.remove(path)
+        return True, "Deleted"
+    except OSError as e:
+        return False, str(e)
+
+
 class HelmHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         path = args[0] if args else ""
@@ -851,6 +1021,37 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 data = f.read()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if parsed.path == "/api/audio/jobs":
+            self.send_json(200, {"jobs": get_audio_jobs()})
+            return
+
+        if parsed.path == "/api/audio/files":
+            self.send_json(200, {"files": get_audio_files()})
+            return
+
+        if parsed.path.startswith("/api/audio/files/"):
+            filename = unquote(parsed.path[len("/api/audio/files/"):])
+            # Safety: reject any path traversal attempts (same pattern as
+            # /api/backups/<file>), unlike backups these filenames come from
+            # arbitrary video titles so they need unquoting first.
+            if "/" in filename or "\\" in filename or filename in ("", ".", ".."):
+                self.send_json(400, {"error": "Invalid filename"})
+                return
+            path = os.path.join(AUDIO_DIR, filename)
+            if not os.path.isfile(path):
+                self.send_json(404, {"error": "File not found"})
+                return
+            ctype, _ = mimetypes.guess_type(path)
+            with open(path, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype or "application/octet-stream")
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
@@ -943,6 +1144,33 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 body = {}
             action = body.get("action", "")
             ok, msg = control_service(service_id, action)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/download":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            artist = (body.get("artist") or "").strip()[:200]
+            song = (body.get("song") or "").strip()[:200]
+            tracks = [(artist, song)] if artist and song else []
+            tracks.extend(_parse_audio_batch(body.get("batchText") or ""))
+            if not tracks:
+                self.send_json(400, {"error": "Provide artist+song and/or batchText"})
+                return
+            jobs = queue_audio_downloads(tracks, body.get("format", "mp3"), str(body.get("quality", "192")))
+            self.send_json(200, {"jobs": jobs})
+            return
+
+        if parsed.path == "/api/audio/files/delete":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            ok, msg = delete_audio_file(body.get("filename", ""))
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
             return
 
@@ -1048,6 +1276,7 @@ def main():
     print(f"  State sync available at /api/state (GET/PUT)")
     print(f"  State persisted to {STATE_FILE}")
     print(f"  Rolling backups (up to {BACKUP_KEEP}, hourly) in {BACKUP_DIR}")
+    print(f"  Audio Grabber downloads saved to {AUDIO_DIR}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
