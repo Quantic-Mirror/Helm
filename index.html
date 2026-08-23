@@ -1319,6 +1319,36 @@ body.theme-terminal #terminal-login-banner.visible {
 }
 .sysstats-uptime { font-size: 10px; color: var(--text-dim); margin-top: 8px; }
 
+/* SomaFM Now Playing widget */
+.somafm-body { padding: 12px 14px 14px; }
+.somafm-loading, .somafm-error {
+  font-size: 12px; color: var(--text-dim); text-align: center; padding: 12px 0; line-height: 1.6;
+}
+.somafm-now-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim); margin-bottom: 6px;
+}
+.somafm-now-track { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.somafm-now-info { flex: 1; min-width: 0; }
+.somafm-now-song {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.somafm-now-artist { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.somafm-now-album { font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.somafm-grab-btn { flex-shrink: 0; padding: 4px 9px; font-size: 12px; }
+.somafm-history { border-top: 1px solid var(--border); padding-top: 8px; }
+.somafm-history-row {
+  display: flex; align-items: center; gap: 8px; padding: 3px 0;
+}
+.somafm-history-time { font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.somafm-history-track {
+  flex: 1; min-width: 0; font-size: 11px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.somafm-link { display: block; margin-top: 10px; font-size: 10px; color: var(--text-dim); text-decoration: none; }
+.somafm-link:hover { color: var(--accent); }
+
 /* Weather widget */
 .weather-body { padding: 10px 12px 12px; }
 .wx-loading, .wx-error {
@@ -2670,6 +2700,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
           <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
           <button class="dropdown-item" id="btn-add-comics">Comics</button>
+          <button class="dropdown-item" id="btn-add-somafm">SomaFM Now Playing</button>
           <button class="dropdown-item" id="btn-add-vault">Password Vault</button>
         </div>
       </div>
@@ -3414,6 +3445,7 @@ function renderDashboard() {
     quoteoftheday: renderQuoteWidget,
     sunmoon: renderSunMoonWidget,
     comics: renderComicsWidget,
+    somafm: renderSomaFMWidget,
   };
 
   // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
@@ -6887,6 +6919,132 @@ function renderComicsManage(widgetId) {
   };
 }
 
+// ── SOMAFM NOW PLAYING WIDGET ────────────────────────────────────────────────
+// Scrapes SomaFM's own songhistory.html rather than a station-side API —
+// SomaFM doesn't publish one, and this page already contains everything
+// needed (current track + recent history) in a small, stable table. Fetched
+// through fetchViaProxy() (same helper News/Feeds/the article reader use)
+// since somafm.com doesn't send CORS headers. Each track's grab button
+// reuses submitAudioDownload() from the Audio Grabber page verbatim — same
+// "search yt-dlp's top hit and queue it" flow as that page's own "Quick
+// download" button — so there's no second download code path to maintain.
+const SOMAFM_INDIEPOP_URL = 'https://somafm.com/indiepop/songhistory.html';
+const SOMAFM_POLL_MS = 90 * 1000;
+const SOMAFM_TIMERS = {};
+
+function renderSomaFMWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card somafm-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#FFA657"></span>
+      <span class="column-title" style="cursor:default">SomaFM: Indie Pop Rocks</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="somafm-body" id="somafm-${w.id}">
+      <div class="somafm-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    loadSomaFMWidget(w.id);
+    clearInterval(SOMAFM_TIMERS[w.id]);
+    SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
+  }, 0);
+
+  return el;
+}
+
+// Table layout (as of 2026): a header row (td.boldblue cells), separator
+// rows (single <td colspan="5"> holding a spacer image), track rows
+// (<td>time</td><td>artist link</td><td>song</td><td>album link</td><td></td>),
+// and break rows (<td>time</td><td colspan="4">Break / Station ID</td>).
+// The currently playing track is the first track row and has "(Now)"
+// appended to its time cell.
+function parseSomaFMHistory(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const rows = doc.querySelectorAll('#playinc table tr');
+  const tracks = [];
+  rows.forEach(tr => {
+    const tds = tr.querySelectorAll('td');
+    if (tds.length < 2) return;               // separator row
+    if (tds[0].classList.contains('boldblue')) return; // header row
+    if (tds[1].hasAttribute('colspan')) return; // "Break / Station ID" row
+
+    const rawTime = tds[0].textContent.replace(/ /g, ' ').trim();
+    const isNow = /\(now\)/i.test(rawTime);
+    const time = rawTime.replace(/\(now\)/i, '').trim();
+    const artist = tds[1].textContent.trim();
+    const song = (tds[2] && tds[2].textContent.trim()) || '';
+    const album = (tds[3] && tds[3].textContent.trim()) || '';
+    if (!artist || !song) return;
+    tracks.push({ time, artist, song, album, isNow });
+  });
+  return tracks;
+}
+
+async function loadSomaFMWidget(widgetId) {
+  const body = document.getElementById('somafm-' + widgetId);
+  if (!body) { clearInterval(SOMAFM_TIMERS[widgetId]); return; }
+  try {
+    const html = await fetchViaProxy(SOMAFM_INDIEPOP_URL);
+    const tracks = parseSomaFMHistory(html);
+    if (!tracks.length) throw new Error('No tracks found on the page');
+    renderSomaFMBody(widgetId, tracks);
+  } catch (e) {
+    body.innerHTML = `<div class="somafm-error">Could not load song history.<br><small>${escHtml(e.message)}</small></div>`;
+  }
+}
+
+function renderSomaFMBody(widgetId, tracks) {
+  const body = document.getElementById('somafm-' + widgetId);
+  if (!body) return;
+
+  const now = tracks.find(t => t.isNow) || tracks[0];
+  const history = tracks.filter(t => t !== now).slice(0, 6);
+
+  const grabBtn = (t, cls) => `
+    <button class="${cls}" data-somafm-grab title="Send &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to Audio Grabber"
+      data-artist="${escHtml(t.artist)}" data-song="${escHtml(t.song)}">⬇</button>`;
+
+  body.innerHTML = `
+    <div class="somafm-now-label">Now Playing</div>
+    <div class="somafm-now-track">
+      <div class="somafm-now-info">
+        <div class="somafm-now-song">${escHtml(now.song)}</div>
+        <div class="somafm-now-artist">${escHtml(now.artist)}</div>
+        ${now.album ? `<div class="somafm-now-album">${escHtml(now.album)}</div>` : ''}
+      </div>
+      ${grabBtn(now, 'btn somafm-grab-btn')}
+    </div>
+    ${history.length ? `
+      <div class="somafm-history">
+        ${history.map(t => `
+          <div class="somafm-history-row">
+            <span class="somafm-history-time">${escHtml(t.time)}</span>
+            <span class="somafm-history-track">${escHtml(t.artist)} — ${escHtml(t.song)}</span>
+            ${grabBtn(t, 'icon-btn')}
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+    <a class="somafm-link" href="${SOMAFM_INDIEPOP_URL}" target="_blank" rel="noopener">Full song history ↗</a>
+  `;
+
+  body.querySelectorAll('[data-somafm-grab]').forEach(btn => {
+    btn.onclick = () => submitAudioDownload(btn.dataset.artist, btn.dataset.song, '');
+  });
+}
+
 function renderQuoteWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card quote-widget';
@@ -7293,6 +7451,10 @@ document.getElementById('btn-add-comics').onclick = () => {
 document.getElementById('btn-add-vault').onclick = () => {
   state.widgets.push({ id: uid(), type: 'vault', gridCol: 0 });
   save(); render();
+};
+document.getElementById('btn-add-somafm').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'somafm', gridCol: 1 });
+  save(); render(); renderDashboard();
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
 document.getElementById('search').oninput = (e) => filterBookmarks(e.target.value);
