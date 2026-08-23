@@ -393,9 +393,9 @@ def _docker_api(path, method="GET", body=None, socket_path="/var/run/docker.sock
         return None, str(e)
 
 
-def _run(cmd, timeout=10):
+def _run(cmd, timeout=10, env=None):
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
         return r.stdout.strip(), r.stderr.strip(), r.returncode
     except subprocess.TimeoutExpired:
         return "", "timeout", 1
@@ -842,6 +842,31 @@ def _find_binary(name, env_var):
 
 YT_DLP_BIN = _find_binary("yt-dlp", "YT_DLP_BIN")
 
+
+def _widened_path_env():
+    """Newer yt-dlp versions shell out to an external JS runtime (deno, by
+    default) on PATH to solve YouTube's signature/nsig challenges -- this is
+    what the "[jsc:deno] Solving JS challenges using deno" log line means.
+    If that lookup fails, yt-dlp doesn't error out; it just produces a
+    stream URL YouTube then serves as a 403 when actually fetched, which is
+    indistinguishable from a real block unless you know to look for it.
+    Deno's official installer puts it in ~/.deno/bin, which (like
+    ~/.local/bin for yt-dlp itself, see YT_DLP_BIN above) is on an
+    interactive shell's PATH but not on a systemd unit's — explaining
+    'works via `yt-dlp URL` on the CLI, 403s through Helm'. Widen PATH for
+    the subprocess rather than trying to locate every tool yt-dlp might
+    shell out to individually."""
+    env = dict(os.environ)
+    existing = env.get("PATH", "").split(os.pathsep)
+    for extra in ("/usr/local/bin", os.path.expanduser("~/.local/bin"), os.path.expanduser("~/.deno/bin")):
+        if extra not in existing:
+            existing.append(extra)
+    env["PATH"] = os.pathsep.join(existing)
+    return env
+
+
+AUDIO_ENV = _widened_path_env()
+
 # Escape hatch for YouTube's anti-bot blocks (403s), which are a moving
 # target: today's fix (e.g. --extractor-args "youtube:player_client=android",
 # or --cookies-from-browser) may stop working after YouTube's next change.
@@ -871,7 +896,7 @@ def search_audio_candidates(query, limit=AUDIO_SEARCH_LIMIT):
     actual download is."""
     limit = max(1, min(15, limit))
     cmd = [YT_DLP_BIN, f"ytsearch{limit}:{query}", "--flat-playlist", "--dump-json", "--no-warnings"] + YTDLP_EXTRA_ARGS
-    stdout, stderr, rc = _run(cmd, timeout=30)
+    stdout, stderr, rc = _run(cmd, timeout=30, env=AUDIO_ENV)
     if rc != 0:
         tail = [l for l in (stderr or stdout or "").strip().splitlines() if l.strip()]
         return None, (" / ".join(tail[-3:]) if tail else f"yt-dlp exited with code {rc}")
@@ -942,7 +967,7 @@ def _run_audio_download(job_id, target, is_url, audio_format, quality):
     # 10 minutes even on a slow connection; if it hangs longer than that,
     # something's wrong and the job should surface as failed rather than
     # blocking the worker thread (and every queued job behind it) forever.
-    stdout, stderr, rc = _run(cmd, timeout=600)
+    stdout, stderr, rc = _run(cmd, timeout=600, env=AUDIO_ENV)
 
     with _audio_lock:
         job["finishedAt"] = time.time()
@@ -1395,6 +1420,7 @@ def main():
     print(f"  State persisted to {STATE_FILE}")
     print(f"  Rolling backups (up to {BACKUP_KEEP}, hourly) in {BACKUP_DIR}")
     print(f"  Audio Grabber downloads saved to {AUDIO_DIR} (using {YT_DLP_BIN})")
+    print(f"  Audio Grabber subprocess PATH: {AUDIO_ENV['PATH']}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
