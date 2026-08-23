@@ -7283,6 +7283,7 @@ function renderSomaFMRadioCtrl(widgetId, running) {
 // coverage is inconsistent for lesser-known indie tracks (this is an indie
 // station), hence the "not found" fallback with a manual search link below.
 const LYRICS_TIMERS = {};
+const LYRICS_LAST_TRACK = {}; // widgetId -> "artist::song" currently rendered, so a poll that finds the same song still playing skips re-rendering (avoids resetting scroll position on long lyrics)
 
 function renderLyricsWidget(w) {
   const el = document.createElement('div');
@@ -7310,7 +7311,7 @@ function renderLyricsWidget(w) {
 
     el.querySelector('[data-lyrics-refresh]').onclick = (e) => {
       e.stopPropagation();
-      loadLyricsWidget(w.id);
+      loadLyricsWidget(w.id, true); // force: bypass the same-song skip below, since the user explicitly asked to refresh
       clearInterval(LYRICS_TIMERS[w.id]);
       LYRICS_TIMERS[w.id] = setInterval(() => loadLyricsWidget(w.id), SOMAFM_POLL_MS);
     };
@@ -7330,12 +7331,15 @@ function renderLyricsWidget(w) {
   return el;
 }
 
-async function loadLyricsWidget(widgetId) {
+async function loadLyricsWidget(widgetId, force) {
   const body = document.getElementById('lyrics-' + widgetId);
   if (!body) { clearInterval(LYRICS_TIMERS[widgetId]); return; }
   try {
     const tracks = await fetchSomaFMTracks();
     const now = tracks.find(t => t.isNow) || tracks[0];
+    const trackKey = `${now.artist}::${now.song}`.toLowerCase();
+    if (!force && trackKey === LYRICS_LAST_TRACK[widgetId]) return; // same song still playing -- don't touch the DOM/scroll position
+    LYRICS_LAST_TRACK[widgetId] = trackKey;
     const { lyrics } = await fetchSomaFMLyrics(now.artist, now.song);
     renderLyricsBody(widgetId, now, lyrics);
   } catch (e) {
