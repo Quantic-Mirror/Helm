@@ -5,8 +5,14 @@ Wants=network-online.target
 RequiresMountsFor=/mnt/SharedStuff
 
 [Service]
+# Runs as a systemd --user unit (not system-scope) so its systemctl --user
+# calls controlling soma-radio.service (the SomaFM background player, see
+# get_soma_radio_status()/control_soma_radio() in audio_grabber_server.py)
+# resolve in the same user session with no extra XDG_RUNTIME_DIR/D-Bus
+# wiring needed -- mirrors how helm.service already runs on popcorn (see
+# README.md). No User= here; --user units always run as whoever's session
+# they're loaded into.
 Type=simple
-User=isaboo
 WorkingDirectory=/home/isaboo/repos/Helm
 Environment=AUDIO_DOWNLOAD_DIR=/mnt/SharedStuff/Music/HelmDownloads
 ExecStart=/usr/bin/python3 /home/isaboo/repos/Helm/audio_grabber_server.py
@@ -14,4 +20,4 @@ Restart=on-failure
 RestartSec=5
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

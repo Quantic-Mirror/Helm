@@ -130,6 +130,28 @@ YTDLP_EXTRA_ARGS = shlex.split(os.environ.get("YTDLP_EXTRA_ARGS", ""))
 AUDIO_COOKIES_FILE = os.environ.get("YTDLP_COOKIES_FILE") or os.path.join(SCRIPT_DIR, "audio-cookies.txt")
 AUDIO_COOKIES_ARGS = ["--cookies", AUDIO_COOKIES_FILE] if os.path.isfile(AUDIO_COOKIES_FILE) else []
 
+# YouTube sometimes gates an entire search *results page* behind a "Confirm
+# your age" / "Sign in" interstitial for anonymous (logged-out) requests --
+# not because the query itself is unusual, but because YouTube's own ranking
+# decided one of the top hits for that specific query needs age verification
+# (confirmed by inspecting the raw search response for a query that reliably
+# reproduces this: the JSON comes back with a backgroundPromoRenderer titled
+# "Confirm your age" instead of any itemSectionRenderer video entries).
+# yt-dlp's search extractor doesn't recognize that block, so it just reports
+# "0 items" -- no error, nothing to catch, which is why this surfaces here as
+# "yt-dlp finished but did not report an output file" rather than a clear
+# search-failed message. There's no header/flag workaround for this (unlike
+# the SafeSearch PREF cookie, which does nothing here -- verified empirically,
+# it still returns 0 items with or without it): the interstitial requires an
+# actually-authenticated, age-verified session, which only a real cookies
+# file provides. See AUDIO_COOKIES_FILE above for how to set one up.
+SEARCH_NO_RESULTS_HINT = (
+    "no downloadable result for this search -- if this keeps happening for "
+    "songs that clearly exist on YouTube, it's likely the age/sign-in "
+    "interstitial described above; adding a real cookies file "
+    f"({AUDIO_COOKIES_FILE}) usually fixes it"
+)
+
 # Defaults to a folder next to this script, but override with
 # AUDIO_DOWNLOAD_DIR to land downloads somewhere else entirely, e.g. a
 # shared media mount (see AUDIO_DOWNLOAD_DIR= in audio-grabber.service).
@@ -232,7 +254,12 @@ def _run_audio_download(job_id, target, is_url, audio_format, quality):
             filepath = next((l for l in reversed(stdout.splitlines()) if l.strip()), None)
             job["filename"] = os.path.basename(filepath) if filepath else None
             job["status"] = "done" if filepath else "error"
-            job["message"] = "" if filepath else "yt-dlp finished but did not report an output file"
+            job["message"] = "" if filepath else (
+                f"yt-dlp finished but did not report an output file -- {SEARCH_NO_RESULTS_HINT}"
+                if not is_url else
+                "yt-dlp finished but did not report an output file (the file may already exist in "
+                "AUDIO_DIR from an earlier download of the same title)"
+            )
         else:
             # Keep the last few lines, not just one -- a bare "HTTP Error
             # 403: Forbidden" is usually preceded by which format/client
@@ -343,6 +370,38 @@ def delete_audio_file(filename):
         return False, str(e)
 
 
+# ── SOMAFM RADIO PLAYER CONTROL ──────────────────────────────────────────────
+# Runs helm_server.py's SomaFM widget "always on" background player: mpv,
+# playing the Indie Pop Rocks stream, as a `soma-radio.service` systemd
+# --user unit on this host (hyperion -- has real audio output, unlike
+# popcorn, per the user). helm_server.py's Services page can't reach this
+# directly: gather_services_status()/control_service() there only ever run
+# systemctl/docker against the local host helm_server.py itself is on (no
+# proxy hop, unlike Vault/Audio), which is popcorn, not hyperion. Rather
+# than inventing a new "remote systemd" proxy just for this one unit, reuse
+# the proxy tunnel that already exists to this exact host: any /api/audio/*
+# path is already forwarded here verbatim by proxy_to_audio() in
+# helm_server.py, so these two routes just ride along on that for free.
+SOMA_RADIO_UNIT = "soma-radio.service"
+
+
+def get_soma_radio_status():
+    out, err, rc = _run(
+        ["systemctl", "--user", "show", SOMA_RADIO_UNIT, "--property=ActiveState,SubState"],
+        timeout=10,
+    )
+    active = "ActiveState=active" in out
+    running = "SubState=running" in out
+    return {"running": active and running, "raw": out or err}
+
+
+def control_soma_radio(action):
+    if action not in ("start", "stop", "restart"):
+        return False, "Invalid action"
+    _, err, rc = _run(["systemctl", "--user", action, SOMA_RADIO_UNIT], timeout=15)
+    return rc == 0, (err if rc != 0 else f"{action} successful")
+
+
 class AudioHandler(BaseHTTPRequestHandler):
 
     def _check_auth(self):
@@ -387,6 +446,10 @@ class AudioHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/audio/files":
             self.send_json(200, {"files": get_audio_files()})
+            return
+
+        if parsed.path == "/api/audio/radio/status":
+            self.send_json(200, get_soma_radio_status())
             return
 
         if parsed.path.startswith("/api/audio/files/"):
@@ -458,6 +521,16 @@ class AudioHandler(BaseHTTPRequestHandler):
             except Exception:
                 body = {}
             ok, msg = delete_audio_file(body.get("filename", ""))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/radio/control":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            ok, msg = control_soma_radio(body.get("action", ""))
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
             return
 

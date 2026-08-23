@@ -1,0 +1,22 @@
+[Unit]
+Description=Always-on SomaFM Indie Pop Rocks stream player (mpv, audio-only)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --no-video: audio-only, no window needed. --no-config avoids picking up
+# any interactive mpv.conf that might set video/OSD options meant for
+# manual use. --loop-playlist=inf so a single URL "playlist" of one keeps
+# reconnecting rather than exiting when the stream briefly drops --
+# Restart=on-failure below is the real safety net if mpv itself dies.
+ExecStart=/usr/bin/mpv --no-video --no-config --volume=100 --loop-playlist=inf https://ice2.somafm.com/indiepop-128-mp3
+Restart=on-failure
+RestartSec=5
+# If there's truly no audio sink to play through, mpv will fail immediately
+# every time -- cap the restart loop rather than hammering it forever.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=default.target

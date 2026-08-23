@@ -1329,6 +1329,11 @@ body.theme-terminal #terminal-login-banner.visible {
   color: var(--text-dim); margin-bottom: 6px;
 }
 .somafm-now-track { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.somafm-art {
+  width: 44px; height: 44px; border-radius: 4px; object-fit: cover;
+  flex-shrink: 0; background: var(--surface-3);
+}
+.somafm-art-empty { visibility: hidden; }
 .somafm-now-info { flex: 1; min-width: 0; cursor: pointer; }
 .somafm-now-info:hover .somafm-now-song { color: var(--accent); }
 .somafm-play-icon { display: inline-block; width: 14px; color: var(--accent); }
@@ -1348,7 +1353,34 @@ body.theme-terminal #terminal-login-banner.visible {
   flex: 1; min-width: 0; font-size: 11px; color: var(--text-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.somafm-radio-ctrl {
+  display: flex; align-items: center; gap: 8px;
+  border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px;
+}
+.somafm-radio-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--text-dim);
+}
+.somafm-radio-dot-on { background: var(--green); }
+.somafm-radio-label { flex: 1; min-width: 0; font-size: 11px; color: var(--text-muted); }
+.somafm-radio-btn { flex-shrink: 0; padding: 3px 9px; font-size: 11px; }
 .somafm-link { display: block; margin-top: 10px; font-size: 10px; color: var(--text-dim); text-decoration: none; }
+
+/* SomaFM Lyrics widget */
+.lyrics-body { padding: 12px 14px 14px; }
+.lyrics-loading, .lyrics-error, .lyrics-notfound {
+  font-size: 12px; color: var(--text-dim); text-align: center; padding: 12px 0; line-height: 1.6;
+}
+.lyrics-notfound a { color: var(--accent); text-decoration: none; }
+.lyrics-notfound a:hover { text-decoration: underline; }
+.lyrics-track-label {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lyrics-text {
+  font-family: var(--font-body); font-size: 12px; color: var(--text-muted);
+  white-space: pre-line; line-height: 1.6; max-height: 320px; overflow-y: auto; margin: 0;
+}
 .somafm-link:hover { color: var(--accent); }
 
 /* Weather widget */
@@ -2703,6 +2735,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
           <button class="dropdown-item" id="btn-add-comics">Comics</button>
           <button class="dropdown-item" id="btn-add-somafm">SomaFM Now Playing</button>
+          <button class="dropdown-item" id="btn-add-lyrics">SomaFM Lyrics</button>
           <button class="dropdown-item" id="btn-add-vault">Password Vault</button>
         </div>
       </div>
@@ -3448,6 +3481,7 @@ function renderDashboard() {
     sunmoon: renderSunMoonWidget,
     comics: renderComicsWidget,
     somafm: renderSomaFMWidget,
+    lyrics: renderLyricsWidget,
   };
 
   // Give each widget a persistent gridCol (0/1/2), defaulting new widgets to
@@ -6947,6 +6981,78 @@ const SOMAFM_TIMERS = {};
 let SOMAFM_AUDIO = null;       // shared <audio> element, created lazily on first play
 let SOMAFM_PLAYING = false;    // whether the live stream is currently playing
 
+// Shared across the Now Playing widget and the Lyrics widget so having both
+// on the dashboard at once doesn't double the scrape traffic to
+// songhistory.html (fetchViaProxy()'s fallback path hits public,
+// rate-limit-sensitive CORS proxies). Short freshness window, not "forever"
+// — this genuinely changes as songs change, unlike the art/lyrics caches
+// below which key on an (artist, song) pair that never changes once fetched.
+const SOMAFM_TRACKS_FRESH_MS = 20 * 1000;
+let SOMAFM_TRACKS_CACHE = { tracks: null, ts: 0 };
+let SOMAFM_TRACKS_FETCH_PROMISE = null; // in-flight de-dupe, same pattern as BACKEND_CHECK_PROMISE
+
+async function fetchSomaFMTracks() {
+  if (SOMAFM_TRACKS_CACHE.tracks && Date.now() - SOMAFM_TRACKS_CACHE.ts < SOMAFM_TRACKS_FRESH_MS) {
+    return SOMAFM_TRACKS_CACHE.tracks;
+  }
+  if (SOMAFM_TRACKS_FETCH_PROMISE) return SOMAFM_TRACKS_FETCH_PROMISE;
+  SOMAFM_TRACKS_FETCH_PROMISE = (async () => {
+    const html = await fetchViaProxy(SOMAFM_INDIEPOP_URL);
+    const tracks = parseSomaFMHistory(html);
+    if (!tracks.length) throw new Error('No tracks found on the page');
+    SOMAFM_TRACKS_CACHE = { tracks, ts: Date.now() };
+    return tracks;
+  })();
+  try { return await SOMAFM_TRACKS_FETCH_PROMISE; }
+  finally { SOMAFM_TRACKS_FETCH_PROMISE = null; }
+}
+
+// Keyed by "artist::song" — an (artist, song) pair's art doesn't change,
+// so no TTL, unlike SOMAFM_TRACKS_CACHE above which must expire.
+const SOMAFM_ART_CACHE = {}; // "artist::song" (lowercased) → url string | null
+
+async function fetchSomaFMArtwork(artist, song) {
+  const key = `${artist}::${song}`.toLowerCase().trim();
+  if (key in SOMAFM_ART_CACHE) return SOMAFM_ART_CACHE[key];
+  try {
+    const resp = await fetch(
+      `https://itunes.apple.com/search?term=${encodeURIComponent(artist + ' ' + song)}&entity=song&limit=1`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const data = await resp.json();
+    const raw = data.results && data.results[0] && data.results[0].artworkUrl100;
+    const url = raw ? raw.replace('100x100bb', '300x300bb') : null; // upsize, standard iTunes convention
+    SOMAFM_ART_CACHE[key] = url;
+    return url;
+  } catch (e) {
+    SOMAFM_ART_CACHE[key] = null; // don't retry every poll for a track with no match
+    return null;
+  }
+}
+
+// Lyrics for a specific song don't change over time either, so (like
+// SOMAFM_ART_CACHE) this has no TTL — but unlike art, a network/parse
+// failure here is NOT cached, since that's transient and worth retrying,
+// whereas a confirmed "no lyrics found" is a stable fact about the song.
+const SOMAFM_LYRICS_CACHE = {}; // "artist::song" → { lyrics: string|null }
+
+async function fetchSomaFMLyrics(artist, song) {
+  const key = `${artist}::${song}`.toLowerCase().trim();
+  if (key in SOMAFM_LYRICS_CACHE) return SOMAFM_LYRICS_CACHE[key];
+  try {
+    const resp = await fetch(
+      `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(song)}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const data = await resp.json(); // 404 still returns a JSON body, e.g. {"error":"No lyrics found"}
+    const result = { lyrics: data.lyrics || null };
+    SOMAFM_LYRICS_CACHE[key] = result;
+    return result;
+  } catch (e) {
+    return { lyrics: null };
+  }
+}
+
 function renderSomaFMWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card somafm-widget';
@@ -6957,6 +7063,7 @@ function renderSomaFMWidget(w) {
       <span class="col-dot" style="background:#FFA657"></span>
       <span class="column-title" style="cursor:default">SomaFM: Indie Pop Rocks</span>
       <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Refresh now" data-somafm-refresh="${w.id}">↻</button>
         <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
       </div>
     </div>
@@ -6970,6 +7077,14 @@ function renderSomaFMWidget(w) {
     if (header) header.onmousedown = () => { el.draggable = true; };
     el.addEventListener('dragend', () => { el.draggable = false; });
     document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    el.querySelector('[data-somafm-refresh]').onclick = (e) => {
+      e.stopPropagation();
+      loadSomaFMWidget(w.id);
+      // Reset the timer so the next auto-poll doesn't fire seconds later.
+      clearInterval(SOMAFM_TIMERS[w.id]);
+      SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
+    };
 
     loadSomaFMWidget(w.id);
     clearInterval(SOMAFM_TIMERS[w.id]);
@@ -7011,9 +7126,7 @@ async function loadSomaFMWidget(widgetId) {
   const body = document.getElementById('somafm-' + widgetId);
   if (!body) { clearInterval(SOMAFM_TIMERS[widgetId]); return; }
   try {
-    const html = await fetchViaProxy(SOMAFM_INDIEPOP_URL);
-    const tracks = parseSomaFMHistory(html);
-    if (!tracks.length) throw new Error('No tracks found on the page');
+    const tracks = await fetchSomaFMTracks();
     renderSomaFMBody(widgetId, tracks);
   } catch (e) {
     body.innerHTML = `<div class="somafm-error">Could not load song history.<br><small>${escHtml(e.message)}</small></div>`;
@@ -7041,6 +7154,7 @@ function renderSomaFMBody(widgetId, tracks) {
   body.innerHTML = `
     <div class="somafm-now-label">Now Playing</div>
     <div class="somafm-now-track">
+      <img class="somafm-art somafm-art-empty" id="somafm-art-${widgetId}" alt="" />
       <div class="somafm-now-info" data-somafm-playtoggle title="${escHtml(playTitle)}">
         <div class="somafm-now-song"><span class="somafm-play-icon">${playIcon}</span>${escHtml(now.song)}</div>
         <div class="somafm-now-artist">${escHtml(now.artist)}</div>
@@ -7059,6 +7173,9 @@ function renderSomaFMBody(widgetId, tracks) {
         `).join('')}
       </div>
     ` : ''}
+    <div class="somafm-radio-ctrl" id="somafm-radio-${widgetId}">
+      <span class="somafm-radio-label">Checking speaker…</span>
+    </div>
     <a class="somafm-link" href="${SOMAFM_INDIEPOP_URL}" target="_blank" rel="noopener">Full song history ↗</a>
   `;
 
@@ -7066,6 +7183,16 @@ function renderSomaFMBody(widgetId, tracks) {
     btn.onclick = () => submitAudioDownload(btn.dataset.artist, btn.dataset.song, '');
   });
   body.querySelector('[data-somafm-playtoggle]').onclick = toggleSomaFMPlayback;
+  loadSomaFMRadioStatus(widgetId);
+
+  // Resolved asynchronously so artwork lookup latency never blocks showing
+  // the track name itself.
+  fetchSomaFMArtwork(now.artist, now.song).then(url => {
+    const img = document.getElementById('somafm-art-' + widgetId);
+    if (!img) return; // widget may have been removed/re-rendered by now
+    if (url) { img.src = url; img.classList.remove('somafm-art-empty'); }
+    else { img.classList.add('somafm-art-empty'); }
+  });
 }
 
 function toggleSomaFMPlayback() {
@@ -7098,6 +7225,134 @@ function updateSomaFMPlayIcons(forceIcon) {
   const title = SOMAFM_PLAYING ? 'Pause live stream' : 'Play live stream (Indie Pop Rocks)';
   document.querySelectorAll('.somafm-play-icon').forEach(el => { el.textContent = icon; });
   document.querySelectorAll('[data-somafm-playtoggle]').forEach(el => { el.title = title; });
+}
+
+// Controls the always-on background player on hyperion (soma-radio.service,
+// mpv) via audio_grabber_server.py's new radio/status + radio/control
+// routes, proxied through the same /api/audio/* tunnel submitAudioDownload()
+// already uses. Deliberately a separate control from toggleSomaFMPlayback()
+// above -- that one plays through *this browser tab*; this one plays
+// through hyperion's own speakers regardless of whether any browser is open.
+async function loadSomaFMRadioStatus(widgetId) {
+  const el = document.getElementById('somafm-radio-' + widgetId);
+  if (!el) return;
+  try {
+    const resp = await fetch('/api/audio/radio/status', { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    renderSomaFMRadioCtrl(widgetId, data.running);
+  } catch (e) {
+    el.innerHTML = `<span class="somafm-radio-label">Speaker status unavailable</span>`;
+  }
+}
+
+function renderSomaFMRadioCtrl(widgetId, running) {
+  const el = document.getElementById('somafm-radio-' + widgetId);
+  if (!el) return;
+  el.innerHTML = `
+    <span class="somafm-radio-dot${running ? ' somafm-radio-dot-on' : ''}"></span>
+    <span class="somafm-radio-label">Speaker (hyperion): ${running ? 'On' : 'Off'}</span>
+    <button class="btn somafm-radio-btn" data-somafm-radio-action="${running ? 'stop' : 'start'}">${running ? 'Turn off' : 'Turn on'}</button>
+  `;
+  el.querySelector('[data-somafm-radio-action]').onclick = async (e) => {
+    const btn = e.currentTarget;
+    const action = btn.dataset.somafmRadioAction;
+    btn.disabled = true;
+    btn.textContent = action === 'start' ? 'Turning on…' : 'Turning off…';
+    try {
+      const resp = await fetch('/api/audio/radio/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const data = await resp.json();
+      toast(data.ok ? `Speaker ${action === 'start' ? 'on' : 'off'}` : `Failed: ${data.message}`);
+    } catch (err) {
+      toast('Speaker control failed: ' + err.message);
+    }
+    setTimeout(() => loadSomaFMRadioStatus(widgetId), 1500);
+  };
+}
+
+// ── SOMAFM LYRICS WIDGET ─────────────────────────────────────────────────────
+// Separate widget from the Now Playing one above, sharing only
+// fetchSomaFMTracks() (see the de-dupe comment near SOMAFM_TRACKS_CACHE) so
+// having both on the dashboard at once doesn't double-scrape songhistory.html.
+// Lyrics come from api.lyrics.ovh, confirmed CORS-open and free/keyless —
+// coverage is inconsistent for lesser-known indie tracks (this is an indie
+// station), hence the "not found" fallback with a manual search link below.
+const LYRICS_TIMERS = {};
+
+function renderLyricsWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card lyrics-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#39C5CB"></span>
+      <span class="column-title" style="cursor:default">SomaFM Lyrics</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Refresh now" data-lyrics-refresh="${w.id}">↻</button>
+        <button class="icon-btn" title="Pop out into its own window" data-lyrics-popout="${w.id}">⧉</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="lyrics-body" id="lyrics-${w.id}"><div class="lyrics-loading">Loading…</div></div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    el.querySelector('[data-lyrics-refresh]').onclick = (e) => {
+      e.stopPropagation();
+      loadLyricsWidget(w.id);
+      clearInterval(LYRICS_TIMERS[w.id]);
+      LYRICS_TIMERS[w.id] = setInterval(() => loadLyricsWidget(w.id), SOMAFM_POLL_MS);
+    };
+
+    // window.open() must fire synchronously inside the click handler (not
+    // after an await) or popup blockers will silently swallow it.
+    el.querySelector('[data-lyrics-popout]').onclick = (e) => {
+      e.stopPropagation();
+      window.open('lyrics-popout.html', 'helm-lyrics-popout', 'width=420,height=560,resizable=yes');
+    };
+
+    loadLyricsWidget(w.id);
+    clearInterval(LYRICS_TIMERS[w.id]);
+    LYRICS_TIMERS[w.id] = setInterval(() => loadLyricsWidget(w.id), SOMAFM_POLL_MS);
+  }, 0);
+
+  return el;
+}
+
+async function loadLyricsWidget(widgetId) {
+  const body = document.getElementById('lyrics-' + widgetId);
+  if (!body) { clearInterval(LYRICS_TIMERS[widgetId]); return; }
+  try {
+    const tracks = await fetchSomaFMTracks();
+    const now = tracks.find(t => t.isNow) || tracks[0];
+    const { lyrics } = await fetchSomaFMLyrics(now.artist, now.song);
+    renderLyricsBody(widgetId, now, lyrics);
+  } catch (e) {
+    body.innerHTML = `<div class="lyrics-error">Could not load current track.<br><small>${escHtml(e.message)}</small></div>`;
+  }
+}
+
+function renderLyricsBody(widgetId, now, lyrics) {
+  const body = document.getElementById('lyrics-' + widgetId);
+  if (!body) return;
+  const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(now.artist + ' ' + now.song + ' lyrics')}`;
+  body.innerHTML = `
+    <div class="lyrics-track-label">${escHtml(now.song)} — ${escHtml(now.artist)}</div>
+    ${lyrics
+      ? `<pre class="lyrics-text">${escHtml(lyrics)}</pre>`
+      : `<div class="lyrics-notfound">No lyrics found for this track.<br><a href="${searchUrl}" target="_blank" rel="noopener">Search for lyrics ↗</a></div>`}
+  `;
 }
 
 function renderQuoteWidget(w) {
@@ -7509,6 +7764,10 @@ document.getElementById('btn-add-vault').onclick = () => {
 };
 document.getElementById('btn-add-somafm').onclick = () => {
   state.widgets.push({ id: uid(), type: 'somafm', gridCol: 1 });
+  save(); render(); renderDashboard();
+};
+document.getElementById('btn-add-lyrics').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'lyrics', gridCol: 1 });
   save(); render(); renderDashboard();
 };
 document.getElementById('import-input').onchange = (e) => importFile(e.target.files[0]);
