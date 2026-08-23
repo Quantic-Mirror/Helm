@@ -2,11 +2,13 @@
 Description=Helm Audio Grabber backend (yt-dlp downloads, proxied from helm_server.py on popcorn)
 After=network-online.target
 Wants=network-online.target
+RequiresMountsFor=/mnt/SharedStuff
 
 [Service]
 Type=simple
 User=isaboo
 WorkingDirectory=/home/isaboo/repos/Helm
+Environment=AUDIO_DOWNLOAD_DIR=/mnt/SharedStuff/Music/HelmDownloads
 ExecStart=/usr/bin/python3 /home/isaboo/repos/Helm/audio_grabber_server.py
 Restart=on-failure
 RestartSec=5
