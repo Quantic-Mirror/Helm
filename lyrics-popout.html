@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SomaFM Lyrics</title>
+<style>
+  /* Minimal palette copied from index.html's :root -- this is a separate
+     document (no build step / shared JS module in this project) so it
+     can't share index.html's <style> block. Keep in sync manually if the
+     main theme colors change. */
+  :root {
+    --bg: #0D1117; --border: #30363D;
+    --text: #F0F6FC; --text-muted: #8B949E; --text-dim: #484F58; --accent: #58A6FF;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Inter', sans-serif; margin: 0; padding: 16px;
+  }
+  #track { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  #artist { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  #lyrics { white-space: pre-line; font-size: 13px; line-height: 1.6; color: var(--text); }
+  #status { color: var(--text-dim); font-size: 12px; margin-top: 12px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div id="track">Loading…</div>
+  <div id="artist"></div>
+  <div id="lyrics"></div>
+  <div id="status"></div>
+<script>
+  // Standalone poller -- deliberately does not import/depend on any
+  // index.html JS state (this runs in its own window/document, opened via
+  // window.open() from the Lyrics widget). Same 90s cadence as the main
+  // dashboard's SomaFM widgets, kept as a literal constant here rather than
+  // shared, for the same "separate document" reason as the CSS above.
+  const POLL_MS = 90 * 1000;
+  const SOMAFM_URL = 'https://somafm.com/indiepop/songhistory.html';
+  const lyricsCache = {}; // "artist::song" -> lyrics string | null, this window's lifetime only
+
+  // Minimal reimplementation of index.html's fetchViaProxy() primary path --
+  // same-origin /api/proxy, since this page is served by the same
+  // helm_server.py that exposes that endpoint.
+  async function fetchViaProxyLocal(url) {
+    const resp = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) throw new Error('proxy fetch failed: ' + resp.status);
+    return await resp.text();
+  }
+
+  // Same parsing logic as parseSomaFMHistory() in index.html, duplicated
+  // here for the same reason as the CSS above.
+  function parseTracks(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const rows = doc.querySelectorAll('#playinc table tr');
+    const tracks = [];
+    rows.forEach(tr => {
+      const tds = tr.querySelectorAll('td');
+      if (tds.length < 2) return;
+      if (tds[0].classList.contains('boldblue')) return;
+      if (tds[1].hasAttribute('colspan')) return;
+      const isNow = /\(now\)/i.test(tds[0].textContent);
+      const artist = tds[1].textContent.trim();
+      const song = (tds[2] && tds[2].textContent.trim()) || '';
+      if (!artist || !song) return;
+      tracks.push({ artist, song, isNow });
+    });
+    return tracks;
+  }
+
+  async function fetchLyrics(artist, song) {
+    const key = `${artist}::${song}`.toLowerCase();
+    if (key in lyricsCache) return lyricsCache[key];
+    try {
+      const resp = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(song)}`);
+      const data = await resp.json();
+      lyricsCache[key] = data.lyrics || null;
+    } catch (e) {
+      return null; // don't cache transient failures
+    }
+    return lyricsCache[key];
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function tick() {
+    try {
+      const html = await fetchViaProxyLocal(SOMAFM_URL);
+      const tracks = parseTracks(html);
+      const now = tracks.find(t => t.isNow) || tracks[0];
+      if (!now) throw new Error('no current track found');
+      document.title = `${now.song} — SomaFM Lyrics`;
+      document.getElementById('track').textContent = now.song;
+      document.getElementById('artist').textContent = now.artist;
+      document.getElementById('status').textContent = '';
+      const lyrics = await fetchLyrics(now.artist, now.song);
+      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(now.artist + ' ' + now.song + ' lyrics')}`;
+      document.getElementById('lyrics').innerHTML = lyrics
+        ? esc(lyrics)
+        : `<span style="color:var(--text-dim)">No lyrics found. <a href="${searchUrl}" target="_blank">Search &#8599;</a></span>`;
+    } catch (e) {
+      document.getElementById('status').textContent = 'Error: ' + e.message;
+    }
+  }
+
+  tick();
+  setInterval(tick, POLL_MS);
+</script>
+</body>
+</html>
