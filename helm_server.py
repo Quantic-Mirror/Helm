@@ -53,7 +53,7 @@ import threading
 import urllib.request
 import urllib.error
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs, quote, unquote
+from urllib.parse import urlparse, parse_qs, quote
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -92,6 +92,50 @@ def proxy_to_vault(method, path_and_query, body_bytes=None):
     except urllib.error.URLError as e:
         msg = json.dumps({"error": f"Could not reach vault backend on hyperion: {e.reason}"})
         return 502, msg.encode("utf-8")
+
+
+# ── AUDIO GRABBER PROXY ──────────────────────────────────────────────────────
+# audio_grabber_server.py runs on hyperion (so downloaded files land there,
+# not on popcorn) and does the actual yt-dlp work. Requests to /api/audio/*
+# get forwarded there rather than handled locally -- same pattern as the
+# vault proxy above. Change AUDIO_BACKEND if hyperion's LAN hostname/IP or
+# audio_grabber_server.py's port ever changes.
+AUDIO_BACKEND = os.environ.get("AUDIO_BACKEND_URL", "http://hyperion:8091")
+AUDIO_TOKEN_FILE = os.path.join(SCRIPT_DIR, "audio_token.txt")
+
+
+def _audio_token():
+    if os.path.exists(AUDIO_TOKEN_FILE):
+        with open(AUDIO_TOKEN_FILE) as f:
+            return f.read().strip()
+    return None
+
+
+def proxy_to_audio(method, path_and_query, body_bytes=None):
+    """Forward a request to audio_grabber_server.py running on hyperion.
+    Returns (status_code, response_body_bytes, headers_dict). Unlike the
+    vault proxy above, one route here (file download) returns raw audio
+    bytes rather than JSON, so the response Content-Type/Content-Disposition
+    are forwarded through rather than hardcoded."""
+    token = _audio_token()
+    url = AUDIO_BACKEND + path_and_query
+    req = urllib.request.Request(url, data=body_bytes, method=method)
+    if token:
+        req.add_header("X-Audio-Token", token)
+    if body_bytes:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=40) as resp:
+            headers = {"Content-Type": resp.headers.get("Content-Type", "application/json")}
+            cd = resp.headers.get("Content-Disposition")
+            if cd:
+                headers["Content-Disposition"] = cd
+            return resp.status, resp.read(), headers
+    except urllib.error.HTTPError as e:
+        return e.code, e.read(), {"Content-Type": "application/json"}
+    except urllib.error.URLError as e:
+        msg = json.dumps({"error": f"Could not reach audio backend on hyperion: {e.reason}"})
+        return 502, msg.encode("utf-8"), {"Content-Type": "application/json"}
 
 
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
@@ -801,291 +845,6 @@ def get_network_info():
     return result
 
 
-# ── AUDIO GRABBER ────────────────────────────────────────────────────────────
-# Search YouTube for a track (artist + song) and save the audio locally.
-# Shells out to the yt-dlp and ffmpeg CLIs (both already installed on popcorn)
-# rather than pip-installing the yt_dlp library, matching this file's
-# stdlib-only / shell-out-to-existing-tools convention (see vault_api.py's use
-# of `pass`, and the Docker socket helpers above).
-#
-# Downloads run one at a time on a background worker thread, never inline in
-# do_POST: HTTPServer here handles one request at a time (it's not a
-# ThreadingHTTPServer), so a multi-minute download running synchronously in a
-# request handler would stall every other device's state sync, services
-# polling, etc. until it finished. do_POST just enqueues a job and returns
-# immediately; the frontend polls /api/audio/jobs for progress.
-import mimetypes
-import queue as _queue
-import re
-import shlex
-import shutil as _shutil
-
-
-def _find_binary(name, env_var):
-    """Resolve an external tool's absolute path. A systemd unit's inherited
-    PATH is often much narrower than an interactive shell's (may miss
-    ~/.local/bin, /usr/local/bin, etc.), which is why a bare 'yt-dlp' can
-    work fine at a terminal but fail with FileNotFoundError when helm.service
-    runs it. env_var lets it be pinned explicitly (see VAULT_BACKEND_URL for
-    the same override pattern) without editing this file."""
-    override = os.environ.get(env_var)
-    if override:
-        return override
-    found = _shutil.which(name)
-    if found:
-        return found
-    for candidate in (f"/usr/bin/{name}", f"/usr/local/bin/{name}", os.path.expanduser(f"~/.local/bin/{name}")):
-        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
-    return name  # last resort -- let it fail with a clear PATH-related error
-
-
-YT_DLP_BIN = _find_binary("yt-dlp", "YT_DLP_BIN")
-
-
-def _widened_path_env():
-    """Newer yt-dlp versions shell out to an external JS runtime (deno, by
-    default) on PATH to solve YouTube's signature/nsig challenges -- this is
-    what the "[jsc:deno] Solving JS challenges using deno" log line means.
-    If that lookup fails, yt-dlp doesn't error out; it just produces a
-    stream URL YouTube then serves as a 403 when actually fetched, which is
-    indistinguishable from a real block unless you know to look for it.
-    Deno's official installer puts it in ~/.deno/bin, which (like
-    ~/.local/bin for yt-dlp itself, see YT_DLP_BIN above) is on an
-    interactive shell's PATH but not on a systemd unit's — explaining
-    'works via `yt-dlp URL` on the CLI, 403s through Helm'. Widen PATH for
-    the subprocess rather than trying to locate every tool yt-dlp might
-    shell out to individually."""
-    env = dict(os.environ)
-    existing = env.get("PATH", "").split(os.pathsep)
-    for extra in ("/usr/local/bin", os.path.expanduser("~/.local/bin"), os.path.expanduser("~/.deno/bin")):
-        if extra not in existing:
-            existing.append(extra)
-    env["PATH"] = os.pathsep.join(existing)
-    return env
-
-
-AUDIO_ENV = _widened_path_env()
-
-# Escape hatch for YouTube's anti-bot blocks (403s), which are a moving
-# target: today's fix (e.g. --extractor-args "youtube:player_client=android",
-# or --cookies-from-browser) may stop working after YouTube's next change.
-# Rather than hardcoding a specific workaround here that will go stale, let
-# it be tuned live via env var, e.g.:
-#   YTDLP_EXTRA_ARGS='--extractor-args "youtube:player_client=android"'
-YTDLP_EXTRA_ARGS = shlex.split(os.environ.get("YTDLP_EXTRA_ARGS", ""))
-
-AUDIO_DIR = os.path.join(SCRIPT_DIR, "audio-downloads")
-AUDIO_FORMATS = ("mp3", "m4a", "flac", "wav", "opus")
-AUDIO_MAX_BATCH = 50  # guard against an accidental huge paste queuing hundreds of jobs
-AUDIO_SEARCH_LIMIT = 8
-
-_audio_lock = threading.Lock()
-_audio_jobs = {}      # job_id (int) -> job dict
-_audio_job_seq = 0
-_audio_queue = _queue.Queue()
-
-
-def search_audio_candidates(query, limit=AUDIO_SEARCH_LIMIT):
-    """Return up to `limit` YouTube search hits for `query` without
-    downloading anything, so the user can pick the right one instead of
-    trusting yt-dlp's top hit (which is what queue_audio_downloads() does,
-    and which is exactly what produced a wrong-song download before this
-    existed). --flat-playlist skips per-video format resolution, so this is
-    fast and much less likely to trip YouTube's anti-bot blocks than an
-    actual download is."""
-    limit = max(1, min(15, limit))
-    cmd = [YT_DLP_BIN, f"ytsearch{limit}:{query}", "--flat-playlist", "--dump-json", "--no-warnings"] + YTDLP_EXTRA_ARGS
-    stdout, stderr, rc = _run(cmd, timeout=30, env=AUDIO_ENV)
-    if rc != 0:
-        tail = [l for l in (stderr or stdout or "").strip().splitlines() if l.strip()]
-        return None, (" / ".join(tail[-3:]) if tail else f"yt-dlp exited with code {rc}")
-
-    results = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except Exception:
-            continue
-        vid = obj.get("id")
-        results.append({
-            "id": vid,
-            "title": obj.get("title") or "(untitled)",
-            "uploader": obj.get("uploader") or obj.get("channel") or "",
-            "duration": obj.get("duration"),
-        })
-    return results, None
-
-
-def _new_audio_job(label):
-    global _audio_job_seq
-    with _audio_lock:
-        _audio_job_seq += 1
-        job = {
-            "id": _audio_job_seq,
-            "label": label,
-            "status": "queued",
-            "message": "",
-            "filename": None,
-            "queuedAt": time.time(),
-            "startedAt": None,
-            "finishedAt": None,
-        }
-        _audio_jobs[job["id"]] = job
-    return job
-
-
-def _run_audio_download(job_id, target, is_url, audio_format, quality):
-    with _audio_lock:
-        job = _audio_jobs.get(job_id)
-        if not job:
-            return
-        job["status"] = "running"
-        job["startedAt"] = time.time()
-
-    os.makedirs(AUDIO_DIR, exist_ok=True)
-    cmd = [YT_DLP_BIN, "--no-playlist"]
-    if not is_url:
-        # Free-text query (artist+song) -- let yt-dlp search and take its
-        # best guess. For a guaranteed-correct match, the caller should
-        # search via search_audio_candidates() and pass an exact video URL
-        # (is_url=True) instead.
-        cmd += ["--default-search", "ytsearch1"]
-    cmd += [
-        "-f", "bestaudio/best",
-        "-x", "--audio-format", audio_format,
-        "--audio-quality", quality,
-        "-o", os.path.join(AUDIO_DIR, "%(title)s.%(ext)s"),
-        # Prints the final on-disk path after extraction/move, so we don't
-        # have to diff a directory listing to learn the resulting filename.
-        "--print", "after_move:filepath",
-    ] + YTDLP_EXTRA_ARGS + [target]
-    # Search + download + audio extraction for one track comfortably fits in
-    # 10 minutes even on a slow connection; if it hangs longer than that,
-    # something's wrong and the job should surface as failed rather than
-    # blocking the worker thread (and every queued job behind it) forever.
-    stdout, stderr, rc = _run(cmd, timeout=600, env=AUDIO_ENV)
-
-    with _audio_lock:
-        job["finishedAt"] = time.time()
-        if rc == 0:
-            filepath = next((l for l in reversed(stdout.splitlines()) if l.strip()), None)
-            job["filename"] = os.path.basename(filepath) if filepath else None
-            job["status"] = "done" if filepath else "error"
-            job["message"] = "" if filepath else "yt-dlp finished but did not report an output file"
-        else:
-            # Keep the last few lines, not just one -- a bare "HTTP Error
-            # 403: Forbidden" is usually preceded by which format/client
-            # yt-dlp was trying, which matters for diagnosing YouTube's
-            # anti-bot blocks (see YTDLP_EXTRA_ARGS above).
-            tail = [l for l in (stderr or stdout or "").strip().splitlines() if l.strip()]
-            job["status"] = "error"
-            job["message"] = " / ".join(tail[-3:]) if tail else f"yt-dlp exited with code {rc}"
-
-
-def _audio_worker():
-    while True:
-        job_id, target, is_url, audio_format, quality = _audio_queue.get()
-        try:
-            _run_audio_download(job_id, target, is_url, audio_format, quality)
-        except Exception as e:
-            with _audio_lock:
-                job = _audio_jobs.get(job_id)
-                if job:
-                    job["status"] = "error"
-                    job["message"] = str(e)
-                    job["finishedAt"] = time.time()
-        finally:
-            _audio_queue.task_done()
-
-
-threading.Thread(target=_audio_worker, daemon=True).start()
-
-
-def _parse_audio_batch(text):
-    """Same 'Artist | Song Title' line format as yt_audio_grabber.py's --file mode."""
-    tracks = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "|" not in line:
-            continue
-        artist, _, song = line.partition("|")
-        artist, song = artist.strip()[:200], song.strip()[:200]
-        if artist and song:
-            tracks.append((artist, song))
-    return tracks
-
-
-def _normalize_format_quality(audio_format, quality):
-    if audio_format not in AUDIO_FORMATS:
-        audio_format = "mp3"
-    quality = quality.strip() if isinstance(quality, str) else ""
-    if not quality.isdigit():
-        quality = "192"
-    return audio_format, quality
-
-
-def queue_audio_downloads(tracks, audio_format, quality):
-    """tracks: (artist, song) pairs downloaded via search auto-pick (yt-dlp's
-    top hit). Used by the quick single-track field and by batch mode, where
-    picking each match individually would defeat the point of pasting a
-    whole list. For a guaranteed-correct match on a single track, search via
-    /api/audio/search first and queue the exact video with queue_audio_pick()."""
-    audio_format, quality = _normalize_format_quality(audio_format, quality)
-    jobs = []
-    for artist, song in tracks[:AUDIO_MAX_BATCH]:
-        job = _new_audio_job(f"{artist} — {song}")
-        _audio_queue.put((job["id"], f"{artist} {song} audio", False, audio_format, quality))
-        jobs.append(job)
-    return jobs
-
-
-def queue_audio_pick(video_id, title, audio_format, quality):
-    audio_format, quality = _normalize_format_quality(audio_format, quality)
-    job = _new_audio_job(title or video_id)
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    _audio_queue.put((job["id"], url, True, audio_format, quality))
-    return job
-
-
-def get_audio_jobs():
-    with _audio_lock:
-        jobs = sorted(_audio_jobs.values(), key=lambda j: j["id"], reverse=True)
-    return jobs[:100]
-
-
-def get_audio_files():
-    if not os.path.isdir(AUDIO_DIR):
-        return []
-    files = []
-    for name in os.listdir(AUDIO_DIR):
-        path = os.path.join(AUDIO_DIR, name)
-        if not os.path.isfile(path):
-            continue
-        try:
-            files.append({"filename": name, "size": os.path.getsize(path), "createdAt": os.path.getmtime(path)})
-        except OSError:
-            continue
-    files.sort(key=lambda f: f["createdAt"], reverse=True)
-    return files
-
-
-def delete_audio_file(filename):
-    if not filename or "/" in filename or "\\" in filename or filename in (".", ".."):
-        return False, "Invalid filename"
-    path = os.path.join(AUDIO_DIR, filename)
-    if not os.path.isfile(path):
-        return False, "File not found"
-    try:
-        os.remove(path)
-        return True, "Deleted"
-    except OSError as e:
-        return False, str(e)
-
-
 class HelmHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         path = args[0] if args else ""
@@ -1142,46 +901,12 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
 
-        if parsed.path == "/api/audio/search":
-            qs = parse_qs(parsed.query)
-            query = (qs.get("q", [""])[0]).strip()[:200]
-            if not query:
-                self.send_json(400, {"error": "Missing q parameter"})
-                return
-            results, err = search_audio_candidates(query)
-            if err:
-                self.send_json(502, {"error": err})
-                return
-            self.send_json(200, {"results": results})
-            return
-
-        if parsed.path == "/api/audio/jobs":
-            self.send_json(200, {"jobs": get_audio_jobs()})
-            return
-
-        if parsed.path == "/api/audio/files":
-            self.send_json(200, {"files": get_audio_files()})
-            return
-
-        if parsed.path.startswith("/api/audio/files/"):
-            filename = unquote(parsed.path[len("/api/audio/files/"):])
-            # Safety: reject any path traversal attempts (same pattern as
-            # /api/backups/<file>), unlike backups these filenames come from
-            # arbitrary video titles so they need unquoting first.
-            if "/" in filename or "\\" in filename or filename in ("", ".", ".."):
-                self.send_json(400, {"error": "Invalid filename"})
-                return
-            path = os.path.join(AUDIO_DIR, filename)
-            if not os.path.isfile(path):
-                self.send_json(404, {"error": "File not found"})
-                return
-            ctype, _ = mimetypes.guess_type(path)
-            with open(path, "rb") as f:
-                data = f.read()
-            self.send_response(200)
-            self.send_header("Content-Type", ctype or "application/octet-stream")
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-            self.send_header("Access-Control-Allow-Origin", "*")
+        if parsed.path.startswith("/api/audio/"):
+            status, data, headers = proxy_to_audio("GET", self.path)
+            self.send_response(status)
+            for k, v in headers.items():
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
             return
@@ -1275,46 +1000,16 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
             return
 
-        if parsed.path == "/api/audio/download":
+        if parsed.path.startswith("/api/audio/"):
             length = int(self.headers.get("Content-Length", 0))
-            try:
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except Exception:
-                body = {}
-            artist = (body.get("artist") or "").strip()[:200]
-            song = (body.get("song") or "").strip()[:200]
-            tracks = [(artist, song)] if artist and song else []
-            tracks.extend(_parse_audio_batch(body.get("batchText") or ""))
-            if not tracks:
-                self.send_json(400, {"error": "Provide artist+song and/or batchText"})
-                return
-            jobs = queue_audio_downloads(tracks, body.get("format", "mp3"), str(body.get("quality", "192")))
-            self.send_json(200, {"jobs": jobs})
-            return
-
-        if parsed.path == "/api/audio/download-pick":
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except Exception:
-                body = {}
-            video_id = (body.get("videoId") or "").strip()
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", video_id or ""):
-                self.send_json(400, {"error": "Invalid or missing videoId"})
-                return
-            title = (body.get("title") or "").strip()[:200]
-            job = queue_audio_pick(video_id, title, body.get("format", "mp3"), str(body.get("quality", "192")))
-            self.send_json(200, {"jobs": [job]})
-            return
-
-        if parsed.path == "/api/audio/files/delete":
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except Exception:
-                body = {}
-            ok, msg = delete_audio_file(body.get("filename", ""))
-            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            body_bytes = self.rfile.read(length) if length else None
+            status, data, headers = proxy_to_audio("POST", self.path, body_bytes)
+            self.send_response(status)
+            for k, v in headers.items():
+                self.send_header(k, v)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
             return
 
         if parsed.path == "/api/vault/lock" or parsed.path == "/api/vault/generate" \
@@ -1419,8 +1114,7 @@ def main():
     print(f"  State sync available at /api/state (GET/PUT)")
     print(f"  State persisted to {STATE_FILE}")
     print(f"  Rolling backups (up to {BACKUP_KEEP}, hourly) in {BACKUP_DIR}")
-    print(f"  Audio Grabber downloads saved to {AUDIO_DIR} (using {YT_DLP_BIN})")
-    print(f"  Audio Grabber subprocess PATH: {AUDIO_ENV['PATH']}")
+    print(f"  Audio Grabber proxied to {AUDIO_BACKEND} (audio_grabber_server.py on hyperion)")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
