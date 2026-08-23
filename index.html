@@ -1329,7 +1329,9 @@ body.theme-terminal #terminal-login-banner.visible {
   color: var(--text-dim); margin-bottom: 6px;
 }
 .somafm-now-track { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.somafm-now-info { flex: 1; min-width: 0; }
+.somafm-now-info { flex: 1; min-width: 0; cursor: pointer; }
+.somafm-now-info:hover .somafm-now-song { color: var(--accent); }
+.somafm-play-icon { display: inline-block; width: 14px; color: var(--accent); }
 .somafm-now-song {
   font-size: 13px; font-weight: 600; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -4816,6 +4818,11 @@ function attachEvents() {
       save();
       render();
       renderDashboard(); // widgets live on the Dashboard page — keep it in sync too
+      // Removing the widget removes its only playback control — stop the
+      // stream rather than leaving it playing with nothing left to pause it.
+      if (SOMAFM_AUDIO && !state.widgets.some(w => w.type === 'somafm')) {
+        SOMAFM_AUDIO.pause();
+      }
     };
   });
 
@@ -6929,8 +6936,16 @@ function renderComicsManage(widgetId) {
 // "search yt-dlp's top hit and queue it" flow as that page's own "Quick
 // download" button — so there's no second download code path to maintain.
 const SOMAFM_INDIEPOP_URL = 'https://somafm.com/indiepop/songhistory.html';
+// Highest-quality direct MP3 stream mount, from https://somafm.com/indiepop.pls
+// (SomaFM publishes these .pls files precisely so third-party apps can play
+// the live stream directly — no station-side API or auth needed). Playing it
+// via a plain <audio src> doesn't require CORS the way fetch()/XHR would, so
+// this doesn't need to go through fetchViaProxy() like the history scrape.
+const SOMAFM_STREAM_URL = 'https://ice2.somafm.com/indiepop-128-mp3';
 const SOMAFM_POLL_MS = 90 * 1000;
 const SOMAFM_TIMERS = {};
+let SOMAFM_AUDIO = null;       // shared <audio> element, created lazily on first play
+let SOMAFM_PLAYING = false;    // whether the live stream is currently playing
 
 function renderSomaFMWidget(w) {
   const el = document.createElement('div');
@@ -7016,11 +7031,18 @@ function renderSomaFMBody(widgetId, tracks) {
     <button class="${cls}" data-somafm-grab title="Send &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to Audio Grabber"
       data-artist="${escHtml(t.artist)}" data-song="${escHtml(t.song)}">⬇</button>`;
 
+  const playIcon = SOMAFM_PLAYING ? '⏸' : '▶';
+  // Clicking tunes into the live stream, not this specific track — there's
+  // no way to "replay" a moment from a live radio feed, only listen to
+  // whatever's airing right now (which, if this row still says the same
+  // song, happens to be this one).
+  const playTitle = SOMAFM_PLAYING ? 'Pause live stream' : 'Play live stream (Indie Pop Rocks)';
+
   body.innerHTML = `
     <div class="somafm-now-label">Now Playing</div>
     <div class="somafm-now-track">
-      <div class="somafm-now-info">
-        <div class="somafm-now-song">${escHtml(now.song)}</div>
+      <div class="somafm-now-info" data-somafm-playtoggle title="${escHtml(playTitle)}">
+        <div class="somafm-now-song"><span class="somafm-play-icon">${playIcon}</span>${escHtml(now.song)}</div>
         <div class="somafm-now-artist">${escHtml(now.artist)}</div>
         ${now.album ? `<div class="somafm-now-album">${escHtml(now.album)}</div>` : ''}
       </div>
@@ -7043,6 +7065,39 @@ function renderSomaFMBody(widgetId, tracks) {
   body.querySelectorAll('[data-somafm-grab]').forEach(btn => {
     btn.onclick = () => submitAudioDownload(btn.dataset.artist, btn.dataset.song, '');
   });
+  body.querySelector('[data-somafm-playtoggle]').onclick = toggleSomaFMPlayback;
+}
+
+function toggleSomaFMPlayback() {
+  if (!SOMAFM_AUDIO) {
+    SOMAFM_AUDIO = new Audio(SOMAFM_STREAM_URL);
+    SOMAFM_AUDIO.preload = 'none';
+    SOMAFM_AUDIO.addEventListener('playing', () => { SOMAFM_PLAYING = true; updateSomaFMPlayIcons(); });
+    SOMAFM_AUDIO.addEventListener('pause', () => { SOMAFM_PLAYING = false; updateSomaFMPlayIcons(); });
+    SOMAFM_AUDIO.addEventListener('error', () => {
+      SOMAFM_PLAYING = false;
+      updateSomaFMPlayIcons();
+      toast('Could not play the Indie Pop Rocks stream');
+    });
+  }
+
+  if (SOMAFM_AUDIO.paused) {
+    updateSomaFMPlayIcons('…'); // immediate feedback while the stream buffers
+    SOMAFM_AUDIO.play().catch(() => {
+      SOMAFM_PLAYING = false;
+      updateSomaFMPlayIcons();
+      toast('Could not play the Indie Pop Rocks stream');
+    });
+  } else {
+    SOMAFM_AUDIO.pause();
+  }
+}
+
+function updateSomaFMPlayIcons(forceIcon) {
+  const icon = forceIcon || (SOMAFM_PLAYING ? '⏸' : '▶');
+  const title = SOMAFM_PLAYING ? 'Pause live stream' : 'Play live stream (Indie Pop Rocks)';
+  document.querySelectorAll('.somafm-play-icon').forEach(el => { el.textContent = icon; });
+  document.querySelectorAll('[data-somafm-playtoggle]').forEach(el => { el.title = title; });
 }
 
 function renderQuoteWidget(w) {
