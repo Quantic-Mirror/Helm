@@ -2202,6 +2202,9 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .audio-form-row .field.audio-field-narrow { flex: 0 0 80px; min-width: 0; }
 .audio-form-row .btn { flex-shrink: 0; }
 
+#audio-search-results:not(:empty) { margin-top: 14px; }
+.audio-pick-btn { flex-shrink: 0; padding: 4px 10px; font-size: 11px; }
+
 #audio-batch-details { margin-top: 14px; }
 #audio-batch-details summary {
   cursor: pointer; font-size: 12px; color: var(--text-muted); font-weight: 500;
@@ -2804,12 +2807,14 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
         <label for="audio-quality-input">Quality</label>
         <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
       </div>
-      <button class="btn" id="btn-audio-download">Download</button>
+      <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
+      <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
     </div>
+    <div id="audio-search-results"></div>
     <details id="audio-batch-details">
       <summary>Batch (multiple tracks)</summary>
       <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
-      <button class="btn" id="btn-audio-batch-download">Download batch</button>
+      <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
     </details>
   </div>
 
@@ -3068,6 +3073,7 @@ let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
 let audioJobs = [];
 let audioFiles = [];
+let audioSearchResults = [];
 let audioPollTimer = null;
 const AUDIO_POLL_MS = 5 * 1000;
 
@@ -7565,6 +7571,11 @@ document.getElementById('btn-refresh-services').onclick = fetchServices;
 document.getElementById('btn-refresh-backups').onclick = fetchBackupEvents;
 document.getElementById('btn-refresh-logs').onclick = fetchLogs;
 document.getElementById('btn-refresh-audio').onclick = fetchAudioData;
+document.getElementById('btn-audio-search').onclick = () => {
+  const artist = document.getElementById('audio-artist-input').value.trim();
+  const song = document.getElementById('audio-song-input').value.trim();
+  searchAudioMatches(artist, song);
+};
 document.getElementById('btn-audio-download').onclick = () => {
   const artistEl = document.getElementById('audio-artist-input');
   const songEl = document.getElementById('audio-song-input');
@@ -8929,7 +8940,7 @@ function buildAudioJobRowHTML(job) {
     <div class="bp-event-row">
       <span class="bp-dot ${dotClass}"></span>
       <span class="bp-event-stage">${escHtml(statusText)}</span>
-      <span class="bp-event-name">${escHtml(job.artist)} — ${escHtml(job.song)}</span>
+      <span class="bp-event-name">${escHtml(job.label)}</span>
       <span class="bp-event-message">${escHtml(job.message || job.filename || '')}</span>
     </div>`;
 }
@@ -8964,6 +8975,74 @@ async function submitAudioDownload(artist, song, batchText) {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
     toast(`Queued ${data.jobs.length} download${data.jobs.length === 1 ? '' : 's'}`);
+    fetchAudioData();
+  } catch(e) {
+    toast('Could not queue download: ' + e.message);
+  }
+}
+
+function formatAudioDuration(secs) {
+  if (secs === null || secs === undefined) return '';
+  secs = Math.round(secs);
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+async function searchAudioMatches(artist, song) {
+  const resultsEl = document.getElementById('audio-search-results');
+  const q = `${artist} ${song}`.trim();
+  if (!q) { toast('Enter an artist and/or song to search'); return; }
+  resultsEl.innerHTML = '<div class="svc-loading">Searching…</div>';
+  try {
+    const resp = await fetch('/api/audio/search?q=' + encodeURIComponent(q), { signal: AbortSignal.timeout(30000) });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+    audioSearchResults = data.results || [];
+    renderAudioSearchResults();
+  } catch(e) {
+    resultsEl.innerHTML = `<div class="svc-error">Search failed: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderAudioSearchResults() {
+  const resultsEl = document.getElementById('audio-search-results');
+  if (!audioSearchResults.length) {
+    resultsEl.innerHTML = '<div class="svc-loading">No matches found.</div>';
+    return;
+  }
+  resultsEl.innerHTML = `<div class="bp-events-list">${audioSearchResults.map(buildAudioSearchRowHTML).join('')}</div>`;
+  resultsEl.querySelectorAll('.audio-pick-btn').forEach(btn => {
+    btn.onclick = () => pickAudioSearchResult(btn.dataset.id, btn.dataset.title);
+  });
+}
+
+function buildAudioSearchRowHTML(r) {
+  const dur = formatAudioDuration(r.duration);
+  return `
+    <div class="bp-event-row">
+      <span class="bp-event-name">${escHtml(r.title)}</span>
+      <span class="bp-event-message">${escHtml(r.uploader || '')}${dur ? ' · ' + escHtml(dur) : ''}</span>
+      <button class="btn audio-pick-btn" data-id="${escHtml(r.id)}" data-title="${escHtml(r.title)}">Download this</button>
+    </div>`;
+}
+
+async function pickAudioSearchResult(videoId, title) {
+  const format = document.getElementById('audio-format-select').value;
+  const quality = document.getElementById('audio-quality-input').value.trim() || '192';
+  try {
+    const resp = await fetch('/api/audio/download-pick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, title, format, quality }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+    toast('Queued: ' + title);
+    audioSearchResults = [];
+    document.getElementById('audio-search-results').innerHTML = '';
     fetchAudioData();
   } catch(e) {
     toast('Could not queue download: ' + e.message);
