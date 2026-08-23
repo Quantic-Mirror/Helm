@@ -7,11 +7,13 @@ helm-ca.srl
 helm_state.json
 helm-backups/
 audio-downloads/
+audio-cookies.txt
 marks_state.json
 backup_events.json
 *.tmp
 __pycache__/
 *.bak
 vault_token.txt
+audio_token.txt
 CLAUDE.md
 vault_token.txt
