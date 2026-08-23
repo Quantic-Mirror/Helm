@@ -6,6 +6,7 @@ helm-ca.key
 helm-ca.srl
 helm_state.json
 helm-backups/
+audio-downloads/
 marks_state.json
 backup_events.json
 *.tmp

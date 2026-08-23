@@ -2182,6 +2182,51 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .bp-event-name { color: var(--accent); flex-shrink: 0; }
 .bp-event-message { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Audio Grabber page */
+#audio-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+#audio-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+#audio-last-updated { font-size: 11px; color: var(--text-dim); }
+
+#audio-form-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.audio-form-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.audio-form-row .field { flex: 1; min-width: 140px; margin-bottom: 0; }
+.audio-form-row .field.audio-field-narrow { flex: 0 0 80px; min-width: 0; }
+.audio-form-row .btn { flex-shrink: 0; }
+
+#audio-batch-details { margin-top: 14px; }
+#audio-batch-details summary {
+  cursor: pointer; font-size: 12px; color: var(--text-muted); font-weight: 500;
+}
+#audio-batch-input {
+  width: 100%; min-height: 90px; margin-top: 10px; margin-bottom: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: monospace;
+  font-size: 12px;
+  padding: 8px 11px;
+  outline: none;
+  resize: vertical;
+}
+#audio-batch-input:focus { border-color: var(--accent); }
+
+.audio-section-title {
+  font-family: var(--font-display);
+  font-size: 13px; font-weight: 600; color: var(--text);
+  margin-bottom: 10px;
+}
+#audio-jobs-section { margin-bottom: 24px; }
+
 /* Network info card */
 .net-card {
   background: var(--surface);
@@ -2580,6 +2625,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#calendar" data-tab="calendar">Calendar</a>
     <a class="tab-btn" href="#services" data-tab="services">Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">Backup Pipeline</a>
+    <a class="tab-btn" href="#audio" data-tab="audio">Audio Grabber</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
   </nav>
@@ -2725,6 +2771,57 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   </div>
   <div id="backups-summary"></div>
   <div id="backups-events"></div>
+</div>
+
+<!-- AUDIO GRABBER PAGE -->
+<div id="audio-page" style="display:none">
+  <div id="audio-topbar">
+    <span id="audio-last-updated"></span>
+    <button class="btn" id="btn-refresh-audio">↺ Refresh</button>
+  </div>
+
+  <div id="audio-form-card">
+    <div class="audio-form-row">
+      <div class="field">
+        <label for="audio-artist-input">Artist</label>
+        <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="audio-song-input">Song</label>
+        <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
+      </div>
+      <div class="field audio-field-narrow">
+        <label for="audio-format-select">Format</label>
+        <select id="audio-format-select">
+          <option value="mp3">mp3</option>
+          <option value="m4a">m4a</option>
+          <option value="flac">flac</option>
+          <option value="wav">wav</option>
+          <option value="opus">opus</option>
+        </select>
+      </div>
+      <div class="field audio-field-narrow">
+        <label for="audio-quality-input">Quality</label>
+        <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
+      </div>
+      <button class="btn" id="btn-audio-download">Download</button>
+    </div>
+    <details id="audio-batch-details">
+      <summary>Batch (multiple tracks)</summary>
+      <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
+      <button class="btn" id="btn-audio-batch-download">Download batch</button>
+    </details>
+  </div>
+
+  <div id="audio-jobs-section">
+    <div class="audio-section-title">Downloads</div>
+    <div id="audio-jobs"></div>
+  </div>
+
+  <div id="audio-files-section">
+    <div class="audio-section-title">Files</div>
+    <div id="audio-files"></div>
+  </div>
 </div>
 
 <!-- WIKI PAGE -->
@@ -2969,6 +3066,10 @@ const BACKUPS_POLL_MS = 30 * 1000;
 let logsData = [];
 let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
+let audioJobs = [];
+let audioFiles = [];
+let audioPollTimer = null;
+const AUDIO_POLL_MS = 5 * 1000;
 
 // Moved up from later in the file — applyTheme() now runs immediately after
 // load() at startup, and if the saved theme is already 'terminal' from a
@@ -7407,6 +7508,7 @@ function switchTab(tab) {
   show('calendar-page',  tab === 'calendar');
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
+  show('audio-page',     tab === 'audio');
   show('wiki-page',      tab === 'wiki');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
@@ -7414,7 +7516,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', logs: 'Helm — Logs', wiki: 'Helm — Wiki' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', wiki: 'Helm — Wiki' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -7425,6 +7527,8 @@ function switchTab(tab) {
   else stopServicesPolling();
   if (tab === 'backups')   { fetchBackupEvents(); startBackupsPolling(); }
   else stopBackupsPolling();
+  if (tab === 'audio')     { fetchAudioData(); startAudioPolling(); }
+  else stopAudioPolling();
   if (tab === 'logs')      { fetchLogs(); startLogsPolling(); }
   else stopLogsPolling();
 }
@@ -7460,6 +7564,23 @@ document.getElementById('btn-add-news-source').onclick = addNewsSource;
 document.getElementById('btn-refresh-services').onclick = fetchServices;
 document.getElementById('btn-refresh-backups').onclick = fetchBackupEvents;
 document.getElementById('btn-refresh-logs').onclick = fetchLogs;
+document.getElementById('btn-refresh-audio').onclick = fetchAudioData;
+document.getElementById('btn-audio-download').onclick = () => {
+  const artistEl = document.getElementById('audio-artist-input');
+  const songEl = document.getElementById('audio-song-input');
+  const artist = artistEl.value.trim();
+  const song = songEl.value.trim();
+  if (!artist || !song) { toast('Enter both artist and song'); return; }
+  submitAudioDownload(artist, song, '');
+  artistEl.value = '';
+  songEl.value = '';
+};
+document.getElementById('btn-audio-batch-download').onclick = () => {
+  const batchEl = document.getElementById('audio-batch-input');
+  if (!batchEl.value.trim()) { toast('Enter at least one "Artist | Song Title" line'); return; }
+  submitAudioDownload('', '', batchEl.value);
+  batchEl.value = '';
+};
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
 document.getElementById('logs-search-clear').onclick = () => {
@@ -8740,6 +8861,141 @@ function startBackupsPolling() {
 function stopBackupsPolling() {
   clearInterval(backupsPollTimer);
   backupsPollTimer = null;
+}
+
+// ── AUDIO GRABBER PAGE ────────────────────────────────────────────────────────
+// Talks to helm_server.py's /api/audio/* endpoints, which shell out to the
+// yt-dlp CLI on a background worker thread queue (downloads can take a
+// while, and the local server handles one request at a time, so a download
+// must never run inline in a request handler). Polls jobs+files every 5s
+// while the tab is open so an in-progress download's status updates live.
+
+async function fetchAudioData() {
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) {
+    document.getElementById('audio-jobs').innerHTML =
+      '<div class="svc-error">Audio Grabber requires the local backend (helm_server.py). Not reachable.</div>';
+    document.getElementById('audio-files').innerHTML = '';
+    return;
+  }
+  try {
+    const [jobsResp, filesResp] = await Promise.all([
+      fetch('/api/audio/jobs', { signal: AbortSignal.timeout(15000) }),
+      fetch('/api/audio/files', { signal: AbortSignal.timeout(15000) }),
+    ]);
+    if (!jobsResp.ok) throw new Error('HTTP ' + jobsResp.status);
+    if (!filesResp.ok) throw new Error('HTTP ' + filesResp.status);
+    audioJobs = (await jobsResp.json()).jobs || [];
+    audioFiles = (await filesResp.json()).files || [];
+    renderAudioPage();
+    const el = document.getElementById('audio-last-updated');
+    if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch(e) {
+    document.getElementById('audio-jobs').innerHTML =
+      `<div class="svc-error">Could not fetch audio data: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderAudioPage() {
+  const jobsEl = document.getElementById('audio-jobs');
+  const filesEl = document.getElementById('audio-files');
+  if (!jobsEl || !filesEl) return;
+
+  jobsEl.innerHTML = audioJobs.length
+    ? `<div class="bp-events-list">${audioJobs.map(buildAudioJobRowHTML).join('')}</div>`
+    : '<div class="svc-loading">No downloads queued yet.</div>';
+
+  if (!audioFiles.length) {
+    filesEl.innerHTML = '<div class="svc-loading">No downloaded files yet.</div>';
+    return;
+  }
+  filesEl.innerHTML = `<div class="bp-events-list">${audioFiles.map(buildAudioFileRowHTML).join('')}</div>`;
+
+  filesEl.querySelectorAll('.audio-delete-btn').forEach(btn => {
+    btn.onclick = () => deleteAudioFile(btn.dataset.filename);
+  });
+}
+
+function buildAudioJobRowHTML(job) {
+  const dotClass = job.status === 'done' ? 'bp-dot-ok'
+    : job.status === 'error' ? 'bp-dot-err'
+    : job.status === 'running' ? 'bp-dot-warn'
+    : 'bp-dot-none';
+  const statusText = job.status === 'done' ? 'Done'
+    : job.status === 'error' ? 'Failed'
+    : job.status === 'running' ? 'Downloading…'
+    : 'Queued';
+  return `
+    <div class="bp-event-row">
+      <span class="bp-dot ${dotClass}"></span>
+      <span class="bp-event-stage">${escHtml(statusText)}</span>
+      <span class="bp-event-name">${escHtml(job.artist)} — ${escHtml(job.song)}</span>
+      <span class="bp-event-message">${escHtml(job.message || job.filename || '')}</span>
+    </div>`;
+}
+
+function buildAudioFileRowHTML(f) {
+  const date = new Date(f.createdAt * 1000);
+  const label = date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const size = f.size > 1024 * 1024 ? (f.size / (1024 * 1024)).toFixed(1) + ' MB' : (f.size / 1024).toFixed(1) + ' KB';
+  const encoded = encodeURIComponent(f.filename);
+  return `
+    <div class="backup-row">
+      <div class="backup-info">
+        <span class="backup-label">${escHtml(f.filename)}</span>
+        <span class="backup-size">${escHtml(label)} · ${escHtml(size)}</span>
+      </div>
+      <div class="backup-actions">
+        <a class="btn backup-dl-btn" href="/api/audio/files/${encoded}" download="${escHtml(f.filename)}" title="Download">↓</a>
+        <button class="btn audio-delete-btn" data-filename="${escHtml(f.filename)}" title="Delete">✕</button>
+      </div>
+    </div>`;
+}
+
+async function submitAudioDownload(artist, song, batchText) {
+  const format = document.getElementById('audio-format-select').value;
+  const quality = document.getElementById('audio-quality-input').value.trim() || '192';
+  try {
+    const resp = await fetch('/api/audio/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ artist, song, batchText, format, quality }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+    toast(`Queued ${data.jobs.length} download${data.jobs.length === 1 ? '' : 's'}`);
+    fetchAudioData();
+  } catch(e) {
+    toast('Could not queue download: ' + e.message);
+  }
+}
+
+async function deleteAudioFile(filename) {
+  if (!confirm(`Delete "${filename}"?`)) return;
+  try {
+    const resp = await fetch('/api/audio/files/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    toast('Deleted');
+    fetchAudioData();
+  } catch(e) {
+    toast('Could not delete: ' + e.message);
+  }
+}
+
+function startAudioPolling() {
+  if (!audioPollTimer) {
+    audioPollTimer = setInterval(fetchAudioData, AUDIO_POLL_MS);
+  }
+}
+
+function stopAudioPolling() {
+  clearInterval(audioPollTimer);
+  audioPollTimer = null;
 }
 
 function getSortedNewsSources() {
