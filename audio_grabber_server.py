@@ -130,7 +130,10 @@ YTDLP_EXTRA_ARGS = shlex.split(os.environ.get("YTDLP_EXTRA_ARGS", ""))
 AUDIO_COOKIES_FILE = os.environ.get("YTDLP_COOKIES_FILE") or os.path.join(SCRIPT_DIR, "audio-cookies.txt")
 AUDIO_COOKIES_ARGS = ["--cookies", AUDIO_COOKIES_FILE] if os.path.isfile(AUDIO_COOKIES_FILE) else []
 
-AUDIO_DIR = os.path.join(SCRIPT_DIR, "audio-downloads")
+# Defaults to a folder next to this script, but override with
+# AUDIO_DOWNLOAD_DIR to land downloads somewhere else entirely, e.g. a
+# shared media mount (see AUDIO_DOWNLOAD_DIR= in audio-grabber.service).
+AUDIO_DIR = os.environ.get("AUDIO_DOWNLOAD_DIR") or os.path.join(SCRIPT_DIR, "audio-downloads")
 AUDIO_FORMATS = ("mp3", "m4a", "flac", "wav", "opus")
 AUDIO_MAX_BATCH = 50  # guard against an accidental huge paste queuing hundreds of jobs
 AUDIO_SEARCH_LIMIT = 8
