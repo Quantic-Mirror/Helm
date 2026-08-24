@@ -2908,10 +2908,12 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 </div>
 
 <!-- MEDIA PLAYER PAGE -->
-<!-- myMPD, iframed directly at its own origin (no Helm proxy in front --
-     it terminates its own TLS with a real hyperion-cert.pem/key.pem, and
-     ships frame-ancestors '*' + no X-Frame-Options by default, so it's
-     already iframe-friendly). Its WebSocket connects same-origin to
+<!-- ncmpcpp (terminal MPD client) shared over the web by ttyd, iframed
+     directly at its own origin -- no Helm proxy in front, same reasoning
+     as myMPD before it (which this replaced, same port): ttyd terminates
+     its own TLS with the real hyperion-cert.pem/key.pem, sends neither
+     X-Frame-Options nor a CSP, so it's iframe-friendly with no config, and
+     its WebSocket (the actual terminal stream) connects same-origin to
      hyperion:8443 itself, never touching helm_tls_proxy.py, which is why
      this works despite that proxy not supporting WebSocket upgrades. -->
 <div id="player-page" style="display:none">
