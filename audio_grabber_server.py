@@ -237,6 +237,13 @@ def _run_audio_download(job_id, target, is_url, audio_format, quality):
         "-f", "bestaudio/best",
         "-x", "--audio-format", audio_format,
         "--audio-quality", quality,
+        # Without this, the extracted file carries no ID3 tags at all (only
+        # ffmpeg's own "encoder" tag) -- the title only ever lived in the
+        # filename. That's invisible to anything that searches by tag
+        # rather than filename (e.g. myMPD/MPD's search only looks at
+        # Title/Artist/Album/Genre). Embeds yt-dlp's own metadata (title,
+        # uploader as artist, etc.) into the file at extraction time.
+        "--embed-metadata",
         "-o", os.path.join(AUDIO_DIR, "%(title)s.%(ext)s"),
         # Prints the final on-disk path after extraction/move, so we don't
         # have to diff a directory listing to learn the resulting filename.
