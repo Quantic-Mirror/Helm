@@ -2315,13 +2315,22 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   margin-bottom: 8px;
   padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 8px;
+  cursor: pointer; user-select: none;
 }
+.player-artist-header:hover { color: var(--accent); }
 .player-album-group { margin-bottom: 12px; margin-left: 6px; }
 .player-album-header {
   font-size: 11px; font-weight: 600; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: 0.03em;
   margin-bottom: 4px;
+  display: flex; align-items: baseline; gap: 8px;
+  cursor: pointer; user-select: none;
 }
+.player-album-header:hover { color: var(--text); }
+.player-group-toggle { flex-shrink: 0; font-size: 10px; width: 10px; display: inline-block; color: var(--text-dim); }
+.player-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-group-count { flex-shrink: 0; font-size: 10px; font-weight: 400; text-transform: none; letter-spacing: normal; color: var(--text-dim); }
 
 .player-playlist-new { display: flex; gap: 6px; margin: 10px 0 14px; }
 .player-playlist-new input {
@@ -3264,6 +3273,8 @@ let playerPollTimer = null;
 const PLAYER_STATUS_POLL_MS = 2500;
 let playerLibraryPollTimer = null;
 const PLAYER_LIBRARY_POLL_MS = 60 * 1000;
+const PLAYER_EXPANDED_ARTISTS = new Set(); // artist names currently expanded -- empty = everything collapsed by default
+const PLAYER_EXPANDED_ALBUMS = new Set();  // "artist::album" keys currently expanded
 
 // Moved up from later in the file — applyTheme() now runs immediately after
 // load() at startup, and if the saved theme is already 'terminal' from a
@@ -9861,8 +9872,30 @@ function renderPlayerLibrary() {
     return;
   }
 
-  libEl.innerHTML = groupPlayerTracks(tracks).map(buildPlayerArtistGroupHTML).join('');
+  // While actively filtering, force everything open -- otherwise a search
+  // match would still be hidden behind a collapsed header, defeating the
+  // point of searching. This doesn't touch the underlying expanded-state
+  // Sets, so clearing the filter reverts to whatever was manually
+  // expanded/collapsed before.
+  const forceExpanded = !!q;
+  libEl.innerHTML = groupPlayerTracks(tracks).map(g => buildPlayerArtistGroupHTML(g, forceExpanded)).join('');
 
+  libEl.querySelectorAll('.player-artist-header').forEach(el => {
+    el.onclick = () => {
+      const artist = el.dataset.artist;
+      if (PLAYER_EXPANDED_ARTISTS.has(artist)) PLAYER_EXPANDED_ARTISTS.delete(artist);
+      else PLAYER_EXPANDED_ARTISTS.add(artist);
+      renderPlayerLibrary();
+    };
+  });
+  libEl.querySelectorAll('.player-album-header').forEach(el => {
+    el.onclick = () => {
+      const key = el.dataset.albumKey;
+      if (PLAYER_EXPANDED_ALBUMS.has(key)) PLAYER_EXPANDED_ALBUMS.delete(key);
+      else PLAYER_EXPANDED_ALBUMS.add(key);
+      renderPlayerLibrary();
+    };
+  });
   libEl.querySelectorAll('.player-play-btn').forEach(btn => {
     btn.onclick = () => playerPlayTrack(btn.dataset.trackId);
   });
@@ -9876,19 +9909,31 @@ function renderPlayerLibrary() {
   });
 }
 
-function buildPlayerArtistGroupHTML(group) {
+function buildPlayerArtistGroupHTML(group, forceExpanded) {
+  const expanded = forceExpanded || PLAYER_EXPANDED_ARTISTS.has(group.artist);
+  const trackCount = group.albums.reduce((sum, a) => sum + a.tracks.length, 0);
   return `
     <div class="player-artist-group">
-      <div class="player-artist-header">${escHtml(group.artist)}</div>
-      ${group.albums.map(buildPlayerAlbumGroupHTML).join('')}
+      <div class="player-artist-header" data-artist="${escHtml(group.artist)}">
+        <span class="player-group-toggle">${expanded ? '▾' : '▸'}</span>
+        <span class="player-group-name">${escHtml(group.artist)}</span>
+        <span class="player-group-count">${group.albums.length} album${group.albums.length === 1 ? '' : 's'} · ${trackCount} track${trackCount === 1 ? '' : 's'}</span>
+      </div>
+      ${expanded ? group.albums.map(a => buildPlayerAlbumGroupHTML(group.artist, a, forceExpanded)).join('') : ''}
     </div>`;
 }
 
-function buildPlayerAlbumGroupHTML(albumGroup) {
+function buildPlayerAlbumGroupHTML(artist, albumGroup, forceExpanded) {
+  const key = artist + '::' + albumGroup.album;
+  const expanded = forceExpanded || PLAYER_EXPANDED_ALBUMS.has(key);
   return `
     <div class="player-album-group">
-      <div class="player-album-header">${escHtml(albumGroup.album)}</div>
-      <div class="bp-events-list">${albumGroup.tracks.map(buildPlayerTrackRowHTML).join('')}</div>
+      <div class="player-album-header" data-album-key="${escHtml(key)}">
+        <span class="player-group-toggle">${expanded ? '▾' : '▸'}</span>
+        <span class="player-group-name">${escHtml(albumGroup.album)}</span>
+        <span class="player-group-count">${albumGroup.tracks.length} track${albumGroup.tracks.length === 1 ? '' : 's'}</span>
+      </div>
+      ${expanded ? `<div class="bp-events-list">${albumGroup.tracks.map(buildPlayerTrackRowHTML).join('')}</div>` : ''}
     </div>`;
 }
 
