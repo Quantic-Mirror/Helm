@@ -1836,6 +1836,17 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   display: block;
 }
 
+#player-page {
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+#player-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
 /* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
 #upcoming-events-strip {
   margin: 0 0 12px;
@@ -2693,7 +2704,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#services" data-tab="services">Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">Backup Pipeline</a>
     <a class="tab-btn" href="#audio" data-tab="audio">Audio Grabber</a>
-    <a class="tab-btn" href="https://hyperion:8443" target="_blank" rel="noopener" title="Opens myMPD in a new tab">🎵 Music ↗</a>
+    <a class="tab-btn" href="#player" data-tab="player">🎵 Music</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
   </nav>
@@ -2894,6 +2905,17 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <div class="audio-section-title">Files</div>
     <div id="audio-files"></div>
   </div>
+</div>
+
+<!-- MEDIA PLAYER PAGE -->
+<!-- myMPD, iframed directly at its own origin (no Helm proxy in front --
+     it terminates its own TLS with a real hyperion-cert.pem/key.pem, and
+     ships frame-ancestors '*' + no X-Frame-Options by default, so it's
+     already iframe-friendly). Its WebSocket connects same-origin to
+     hyperion:8443 itself, never touching helm_tls_proxy.py, which is why
+     this works despite that proxy not supporting WebSocket upgrades. -->
+<div id="player-page" style="display:none">
+  <iframe id="player-frame" src="https://hyperion:8443" allow="fullscreen"></iframe>
 </div>
 
 <!-- WIKI PAGE -->
@@ -7822,7 +7844,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'player'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -7997,13 +8019,14 @@ function switchTab(tab) {
   show('backups-page',   tab === 'backups');
   show('audio-page',     tab === 'audio');
   show('wiki-page',      tab === 'wiki');
+  show('player-page',    tab === 'player');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', wiki: 'Helm — Wiki' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', wiki: 'Helm — Wiki', player: 'Helm — Music' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -8021,10 +8044,10 @@ function switchTab(tab) {
 }
 
 document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
-  // [data-tab] excludes plain external links styled as a tab-btn (e.g. the
-  // myMPD nav link, which has no data-tab and a real target="_blank" href)
-  // -- those aren't SPA tabs, so the browser should just handle the click
-  // natively rather than this reaching switchTab(undefined).
+  // [data-tab] excludes any plain external link styled as a .tab-btn (none
+  // currently, but if one's ever added it won't have data-tab) -- those
+  // aren't SPA tabs, so the browser should just handle the click natively
+  // rather than this reaching switchTab(undefined).
   btn.addEventListener('click', (e) => {
     // Let the browser handle middle-click, ctrl/cmd+click, and shift+click
     // natively — those are how a real link opens in a new tab or window,
