@@ -21,6 +21,7 @@ Default port: 8091
 
 import sys
 import os
+import concurrent.futures
 import json
 import mimetypes
 import queue as _queue
@@ -416,6 +417,30 @@ MEDIA_LIBRARY_ROOT = os.environ.get("MEDIA_LIBRARY_ROOT") or "/mnt/SharedStuff/M
 MEDIA_LIBRARY_CACHE_FILE = os.path.join(SCRIPT_DIR, "media_library_cache.json")
 MEDIA_AUDIO_EXTS = (".mp3", ".m4a", ".flac", ".wav", ".opus", ".ogg", ".aac")
 
+# ffprobe calls are I/O-bound (subprocess spawn + disk read/parse), not
+# CPU-bound, so running several at once -- rather than the one-at-a-time
+# loop this started as -- cuts wall-clock time on a large, mostly-uncached
+# library substantially without saturating hyperion. 8 is a reasonable
+# default for a personal appliance; override via env var if the underlying
+# storage (e.g. a slow network mount) or CPU count warrants a different
+# number.
+MEDIA_SCAN_WORKERS = int(os.environ.get("MEDIA_SCAN_WORKERS", "8"))
+
+# Bump whenever _probe_track()/_path_fallback_tags() change in a way that
+# should force previously-cached entries to be re-probed rather than reused
+# via the mtime-unchanged fast path in _run_library_scan() -- otherwise a
+# logic fix here would silently never apply to files already in the cache
+# until something else touches them.
+MEDIA_SCAN_FORMAT_VERSION = 3
+
+# Two "Artist - Album" folder-naming conventions observed in this library,
+# used by _path_fallback_tags() below: one with a leading "NNNN. " index,
+# one without. Both require whitespace on *both* sides of the hyphen (not
+# just "-") so a bare mid-word hyphen in a band name (e.g. "AC-DC") can't be
+# misread as the artist/album separator.
+_NUMBERED_ALBUM_FOLDER_RE = re.compile(r"^\s*\d+\.\s*(.+?)\s+-\s+(.+?)\s*(?:\(\d{4}\))?\s*$")
+_ARTIST_ALBUM_FOLDER_RE = re.compile(r"^(.+?)\s+-\s+(.+?)\s*(?:\(\d{4}\))?\s*$")
+
 # ffprobe (not a guarded mutagen import) reads tag metadata: unlike zxcvbn in
 # vault_api.py, ffprobe is already a hard dependency of this exact host for
 # yt-dlp's audio extraction, so there's nothing to gracefully degrade
@@ -425,7 +450,7 @@ FFPROBE_BIN = _find_binary("ffprobe", "FFPROBE_BIN")
 
 _library_lock = threading.Lock()
 _library_cache = None  # {"scannedAt": float|None, "tracks": [...]}, lazily loaded
-_library_scan_state = {"scanning": False, "scannedCount": 0, "startedAt": None}
+_library_scan_state = {"scanning": False, "scannedCount": 0, "totalCount": 0, "startedAt": None}
 
 
 def _load_library_cache():
@@ -493,6 +518,35 @@ def _probe_track(path):
     return result
 
 
+def _path_fallback_tags(relpath):
+    """Best-effort artist/album guess from directory structure, used only to
+    fill in whatever ffprobe found no tag for -- never overrides real
+    embedded metadata. This library mixes a few conventions:
+      - Artist/[...intermediate.../]Album/track.mp3 (nested, 2+ directory
+        levels) -- trust the real nesting: top-level directory is the
+        artist, the file's immediate parent directory is the album.
+      - "NNNN. Artist - Album (Year)/track.mp3" or "Artist - Album
+        (Year)/track.mp3" (a single folder combining artist and album, with
+        or without a numeric index) -- only tried when there's no nested
+        album directory to trust instead, so a real Artist/Album structure
+        always wins over guessing at a " - " split in a top-level name.
+    Files with no directory at all (shouldn't happen given
+    MEDIA_LIBRARY_ROOT is itself a directory, but be defensive) get "", ""."""
+    dirs = relpath.split(os.sep)[:-1]
+    if not dirs:
+        return "", ""
+    top = dirs[0]
+    m = _NUMBERED_ALBUM_FOLDER_RE.match(top)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    if len(dirs) > 1:
+        return top, dirs[-1]
+    m = _ARTIST_ALBUM_FOLDER_RE.match(top)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return top, ""
+
+
 def _walk_media_library():
     """Yield (relpath, abspath, mtime) for every audio file under
     MEDIA_LIBRARY_ROOT. relpath is used as the track's stable id -- see
@@ -512,39 +566,76 @@ def _walk_media_library():
             yield relpath, abspath, mtime
 
 
+def _probe_entry(item):
+    index, relpath, abspath, mtime = item
+    meta = _probe_track(abspath)
+    if not meta["artist"] or not meta["album"]:
+        fallback_artist, fallback_album = _path_fallback_tags(relpath)
+        meta["artist"] = meta["artist"] or fallback_artist
+        meta["album"] = meta["album"] or fallback_album
+    return index, {
+        "id": relpath,
+        "path": relpath,
+        "filename": os.path.basename(relpath),
+        "artist": meta["artist"],
+        "title": meta["title"],
+        "album": meta["album"],
+        "duration": meta["duration"],
+        "mtime": mtime,
+    }
+
+
 def _run_library_scan():
     """Runs in a background thread (see start_library_rescan()). Reuses the
     previous cache entry for any file whose mtime hasn't changed, so
     re-scanning after adding a handful of new tracks to a large library only
-    probes the new ones, not the whole tree."""
+    probes the new ones, not the whole tree. The tree walk itself (just stat
+    calls) is fast even for tens of thousands of files -- it's ffprobe that's
+    expensive, so only the probing step is parallelized across
+    MEDIA_SCAN_WORKERS threads."""
     try:
         previous = _load_library_cache()
-        previous_by_path = {t["path"]: t for t in previous.get("tracks", [])}
+        if previous.get("formatVersion") == MEDIA_SCAN_FORMAT_VERSION:
+            previous_by_path = {t["path"]: t for t in previous.get("tracks", [])}
+        else:
+            # A _probe_track()/_path_fallback_tags() change means fields on
+            # already-cached entries may be stale/incomplete -- treat this
+            # as "nothing cached" so every file gets re-probed once, rather
+            # than silently keeping old data forever via the mtime-match
+            # fast path below.
+            previous_by_path = {}
 
-        tracks = []
-        count = 0
-        for relpath, abspath, mtime in _walk_media_library():
+        # Walk up front so scannedCount/totalCount reflect real progress
+        # against the actual file count, not "however many discovered so far".
+        entries = list(_walk_media_library())
+        with _library_lock:
+            _library_scan_state["totalCount"] = len(entries)
+
+        tracks = [None] * len(entries)
+        to_probe = []
+        for i, (relpath, abspath, mtime) in enumerate(entries):
             prev = previous_by_path.get(relpath)
             if prev is not None and prev.get("mtime") == mtime:
-                tracks.append(prev)
+                tracks[i] = prev
             else:
-                meta = _probe_track(abspath)
-                tracks.append({
-                    "id": relpath,
-                    "path": relpath,
-                    "filename": os.path.basename(relpath),
-                    "artist": meta["artist"],
-                    "title": meta["title"],
-                    "album": meta["album"],
-                    "duration": meta["duration"],
-                    "mtime": mtime,
-                })
-            count += 1
-            with _library_lock:
-                _library_scan_state["scannedCount"] = count
+                to_probe.append((i, relpath, abspath, mtime))
+
+        count = len(entries) - len(to_probe)
+        with _library_lock:
+            _library_scan_state["scannedCount"] = count
+
+        if to_probe:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MEDIA_SCAN_WORKERS) as pool:
+                futures = [pool.submit(_probe_entry, item) for item in to_probe]
+                for future in concurrent.futures.as_completed(futures):
+                    i, track = future.result()
+                    tracks[i] = track
+                    count += 1
+                    with _library_lock:
+                        _library_scan_state["scannedCount"] = count
 
         tracks.sort(key=lambda t: (t.get("artist") or "", t.get("album") or "", t.get("path") or ""))
-        _save_library_cache({"scannedAt": time.time(), "tracks": tracks})
+        _save_library_cache({"scannedAt": time.time(), "formatVersion": MEDIA_SCAN_FORMAT_VERSION, "tracks": tracks})
     finally:
         with _library_lock:
             _library_scan_state["scanning"] = False
@@ -556,6 +647,7 @@ def start_library_rescan():
             return False, "Scan already in progress"
         _library_scan_state["scanning"] = True
         _library_scan_state["scannedCount"] = 0
+        _library_scan_state["totalCount"] = 0
         _library_scan_state["startedAt"] = time.time()
     threading.Thread(target=_run_library_scan, daemon=True).start()
     return True, "Scan started"
@@ -785,6 +877,12 @@ def player_play(track_ids):
         return False, err
     for p in paths[1:]:
         mpv_ipc.mpv_loadfile(p, mode="append")
+    # mpv's `pause` property is sticky across loadfile -- it is NOT reset
+    # just because a new file was loaded. If mpv was last left paused (e.g.
+    # after a `stop`), loading a new file here would otherwise sit there
+    # paused until something else explicitly resumes it. "Play" should mean
+    # play, so force pause off.
+    mpv_ipc.mpv_set_property("pause", False)
     return True, "Playing"
 
 

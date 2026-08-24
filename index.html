@@ -2308,6 +2308,21 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 #player-library-section { flex: 2; min-width: 320px; }
 #player-playlists-section { flex: 1; min-width: 260px; }
 
+.player-artist-group { margin-bottom: 20px; }
+.player-artist-header {
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 700; color: var(--text);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.player-album-group { margin-bottom: 12px; margin-left: 6px; }
+.player-album-header {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.03em;
+  margin-bottom: 4px;
+}
+
 .player-playlist-new { display: flex; gap: 6px; margin: 10px 0 14px; }
 .player-playlist-new input {
   flex: 1; min-width: 0;
@@ -2337,7 +2352,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 #player-seek { flex: 1; min-width: 120px; }
 #player-time { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 #player-volume { width: 80px; }
-#btn-player-shuffle.player-shuffle-on { border-color: var(--accent); color: var(--accent); }
+#btn-player-shuffle.player-shuffle-on { background: var(--accent); border-color: var(--accent); color: #0D1117; font-weight: 600; }
 #player-soma-warning { font-size: 11px; color: var(--amber); white-space: nowrap; }
 
 /* Network info card */
@@ -2953,12 +2968,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
       <input type="text" id="player-search" placeholder="Filter library…" autocomplete="off" spellcheck="false">
       <button id="player-search-clear" title="Clear filter">✕</button>
     </div>
-    <select id="player-sort" class="btn" style="cursor:pointer">
-      <option value="artist">Sort: Artist</option>
-      <option value="title">Sort: Title</option>
-      <option value="album">Sort: Album</option>
-      <option value="duration">Sort: Duration</option>
-    </select>
   </div>
 
   <div id="player-body">
@@ -8196,11 +8205,6 @@ document.getElementById('player-search-clear').onclick = () => {
   document.getElementById('player-search').value = '';
   renderPlayerLibrary();
 };
-document.getElementById('player-sort').value = state.settings.playerLibrarySortMode || 'artist';
-document.getElementById('player-sort').onchange = (e) => {
-  state.settings.playerLibrarySortMode = e.target.value;
-  save(); renderPlayerLibrary();
-};
 document.getElementById('btn-player-create-playlist').onclick = () => {
   const input = document.getElementById('player-new-playlist-name');
   const name = input.value.trim();
@@ -9795,25 +9799,60 @@ async function fetchPlayerLibrary() {
   }
 }
 
+// Natural filename order (so "2 - Song" sorts before "10 - Song") -- most
+// ripped albums prefix filenames with a track number, so this reads as
+// album/track order without needing a separate track-number field.
+function playerFilenameCompare(a, b) {
+  return (a || '').localeCompare(b || '', undefined, { numeric: true, sensitivity: 'base' });
+}
+
+// Groups a flat track list into artist -> album -> tracks, each level
+// alphabetical, so the library reads as a real music library instead of one
+// giant flat list.
+function groupPlayerTracks(tracks) {
+  const byArtist = new Map();
+  for (const t of tracks) {
+    const artistKey = t.artist || 'Unknown Artist';
+    const albumKey = t.album || 'Unknown Album';
+    if (!byArtist.has(artistKey)) byArtist.set(artistKey, new Map());
+    const byAlbum = byArtist.get(artistKey);
+    if (!byAlbum.has(albumKey)) byAlbum.set(albumKey, []);
+    byAlbum.get(albumKey).push(t);
+  }
+  return [...byArtist.keys()].sort((a, b) => a.localeCompare(b)).map(artist => {
+    const byAlbum = byArtist.get(artist);
+    const albums = [...byAlbum.keys()].sort((a, b) => a.localeCompare(b)).map(album => ({
+      album,
+      tracks: byAlbum.get(album).slice().sort((a, b) => playerFilenameCompare(a.filename, b.filename)),
+    }));
+    return { artist, albums };
+  });
+}
+
+// Given a track id, returns [that track's id, ...rest of its album in
+// order] so clicking Play on one song continues through the rest of the
+// album instead of stopping after a single track.
+function playerAlbumQueueFrom(trackId) {
+  const track = playerLibrary.find(t => t.id === trackId);
+  if (!track) return [trackId];
+  const albumTracks = playerLibrary
+    .filter(t => (t.artist || 'Unknown Artist') === (track.artist || 'Unknown Artist') && (t.album || 'Unknown Album') === (track.album || 'Unknown Album'))
+    .sort((a, b) => playerFilenameCompare(a.filename, b.filename));
+  const idx = albumTracks.findIndex(t => t.id === trackId);
+  return idx === -1 ? [trackId] : albumTracks.slice(idx).map(t => t.id);
+}
+
 function renderPlayerLibrary() {
   const libEl = document.getElementById('player-library');
   if (!libEl) return;
 
   const q = playerSearchQ.toLowerCase();
-  let tracks = !q ? playerLibrary : playerLibrary.filter(t =>
+  const tracks = !q ? playerLibrary : playerLibrary.filter(t =>
     (t.title || '').toLowerCase().includes(q) ||
     (t.artist || '').toLowerCase().includes(q) ||
     (t.album || '').toLowerCase().includes(q) ||
     (t.filename || '').toLowerCase().includes(q)
   );
-
-  const mode = state.settings.playerLibrarySortMode || 'artist';
-  tracks = [...tracks].sort((a, b) => {
-    if (mode === 'duration') return (a.duration || 0) - (b.duration || 0);
-    const av = (a[mode] || a.title || a.filename || '').toString().toLowerCase();
-    const bv = (b[mode] || b.title || b.filename || '').toString().toLowerCase();
-    return av.localeCompare(bv);
-  });
 
   if (!tracks.length) {
     libEl.innerHTML = playerLibrary.length
@@ -9822,7 +9861,7 @@ function renderPlayerLibrary() {
     return;
   }
 
-  libEl.innerHTML = `<div class="bp-events-list">${tracks.map(buildPlayerTrackRowHTML).join('')}</div>`;
+  libEl.innerHTML = groupPlayerTracks(tracks).map(buildPlayerArtistGroupHTML).join('');
 
   libEl.querySelectorAll('.player-play-btn').forEach(btn => {
     btn.onclick = () => playerPlayTrack(btn.dataset.trackId);
@@ -9837,19 +9876,33 @@ function renderPlayerLibrary() {
   });
 }
 
+function buildPlayerArtistGroupHTML(group) {
+  return `
+    <div class="player-artist-group">
+      <div class="player-artist-header">${escHtml(group.artist)}</div>
+      ${group.albums.map(buildPlayerAlbumGroupHTML).join('')}
+    </div>`;
+}
+
+function buildPlayerAlbumGroupHTML(albumGroup) {
+  return `
+    <div class="player-album-group">
+      <div class="player-album-header">${escHtml(albumGroup.album)}</div>
+      <div class="bp-events-list">${albumGroup.tracks.map(buildPlayerTrackRowHTML).join('')}</div>
+    </div>`;
+}
+
 function buildPlayerTrackRowHTML(t) {
   const dur = formatAudioDuration(t.duration);
-  const meta = [t.artist, t.album].filter(Boolean).join(' · ');
-  const metaLine = meta && dur ? `${meta} · ${dur}` : (meta || dur);
   const playlistOptions = playerPlaylists.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.name)}</option>`).join('');
   return `
     <div class="backup-row">
       <div class="backup-info">
         <span class="backup-label">${escHtml(t.title || t.filename)}</span>
-        <span class="backup-size">${escHtml(metaLine)}</span>
+        <span class="backup-size">${escHtml(dur)}</span>
       </div>
       <div class="backup-actions">
-        <button class="btn player-play-btn" data-track-id="${escHtml(t.id)}" title="Play now">▶</button>
+        <button class="btn player-play-btn" data-track-id="${escHtml(t.id)}" title="Play (continues through the rest of the album)">▶</button>
         <button class="btn player-queue-btn" data-track-id="${escHtml(t.id)}" title="Add to queue">+Q</button>
         <select class="btn player-add-to-playlist-select" data-track-id="${escHtml(t.id)}" title="Add to playlist" style="cursor:pointer">
           <option value="">+ Playlist…</option>
@@ -9955,10 +10008,14 @@ function buildPlayerPlaylistTrackRowHTML(trackId, index) {
 }
 
 async function playerPlayTrack(trackId) {
+  // Queue the clicked track plus the rest of its album (in track order) so
+  // playback continues naturally instead of stopping after one song --
+  // mpv's own playlist then auto-advances through it.
+  const trackIds = playerAlbumQueueFrom(trackId);
   try {
     const resp = await fetch('/api/audio/player/play', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ trackId }),
+      body: JSON.stringify({ trackIds }),
     });
     const data = await resp.json();
     if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
@@ -10097,7 +10154,9 @@ async function pollPlayerScanStatus() {
     const resp = await fetch('/api/audio/library/scan-status', { signal: AbortSignal.timeout(8000) });
     const data = await resp.json();
     if (data.scanning) {
-      if (statusEl) statusEl.textContent = `Scanning… (${data.scannedCount} found)`;
+      if (statusEl) statusEl.textContent = data.totalCount
+        ? `Scanning… (${data.scannedCount}/${data.totalCount})`
+        : `Scanning… (${data.scannedCount} found)`;
       setTimeout(pollPlayerScanStatus, 2000);
     } else {
       if (statusEl) statusEl.textContent = '';
