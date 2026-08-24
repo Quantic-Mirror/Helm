@@ -24,14 +24,18 @@ import os
 import json
 import mimetypes
 import queue as _queue
+import random
 import re
 import shlex
 import shutil
 import subprocess
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
+
+import mpv_ipc
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8091
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -402,6 +406,423 @@ def control_soma_radio(action):
     return rc == 0, (err if rc != 0 else f"{action} successful")
 
 
+# ── MEDIA LIBRARY (recursive scan of /mnt/SharedStuff/Music) ────────────────
+# Distinct from AUDIO_DIR above: AUDIO_DIR is only the yt-dlp download
+# staging folder (flat, small). The media library is the whole music mount
+# -- recursive, potentially thousands of files -- so it needs its own
+# on-demand-scan-with-cache model rather than the flat os.listdir()
+# get_audio_files() already does above.
+MEDIA_LIBRARY_ROOT = os.environ.get("MEDIA_LIBRARY_ROOT") or "/mnt/SharedStuff/Music"
+MEDIA_LIBRARY_CACHE_FILE = os.path.join(SCRIPT_DIR, "media_library_cache.json")
+MEDIA_AUDIO_EXTS = (".mp3", ".m4a", ".flac", ".wav", ".opus", ".ogg", ".aac")
+
+# ffprobe (not a guarded mutagen import) reads tag metadata: unlike zxcvbn in
+# vault_api.py, ffprobe is already a hard dependency of this exact host for
+# yt-dlp's audio extraction, so there's nothing to gracefully degrade
+# without -- this follows the YT_DLP_BIN/_find_binary() shell-out precedent
+# above, not the guarded-optional-import one.
+FFPROBE_BIN = _find_binary("ffprobe", "FFPROBE_BIN")
+
+_library_lock = threading.Lock()
+_library_cache = None  # {"scannedAt": float|None, "tracks": [...]}, lazily loaded
+_library_scan_state = {"scanning": False, "scannedCount": 0, "startedAt": None}
+
+
+def _load_library_cache():
+    global _library_cache
+    if _library_cache is not None:
+        return _library_cache
+    if os.path.exists(MEDIA_LIBRARY_CACHE_FILE):
+        try:
+            with open(MEDIA_LIBRARY_CACHE_FILE) as f:
+                _library_cache = json.load(f)
+                return _library_cache
+        except (json.JSONDecodeError, OSError):
+            pass
+    _library_cache = {"scannedAt": None, "tracks": []}
+    return _library_cache
+
+
+def _save_library_cache(cache):
+    global _library_cache
+    tmp_path = MEDIA_LIBRARY_CACHE_FILE + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(cache, f)
+    os.replace(tmp_path, MEDIA_LIBRARY_CACHE_FILE)
+    _library_cache = cache
+
+
+def get_media_library():
+    cache = _load_library_cache()
+    return {"scannedAt": cache.get("scannedAt"), "tracks": cache.get("tracks", [])}
+
+
+def get_library_scan_status():
+    with _library_lock:
+        return dict(_library_scan_state)
+
+
+def _probe_track(path):
+    """Shell out to ffprobe for artist/title/album/duration. Never raises --
+    a probe failure (corrupt file, ffprobe missing, no tags at all) just
+    means filename-derived, metadata-light display, matching the rest of
+    this feature's tolerance for an imperfect real-world music folder."""
+    title_fallback = os.path.splitext(os.path.basename(path))[0]
+    result = {"artist": "", "title": title_fallback, "album": "", "duration": None}
+    stdout, stderr, rc = _run(
+        [FFPROBE_BIN, "-v", "quiet", "-print_format", "json", "-show_format", path],
+        timeout=15,
+    )
+    if rc != 0 or not stdout:
+        return result
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return result
+    fmt = data.get("format", {})
+    # Tag casing is inconsistent across files/encoders (Artist vs artist vs
+    # ARTIST) -- normalize to lowercase keys before reading.
+    tags = {k.lower(): v for k, v in (fmt.get("tags") or {}).items()}
+    result["artist"] = tags.get("artist") or ""
+    result["title"] = tags.get("title") or title_fallback
+    result["album"] = tags.get("album") or ""
+    try:
+        result["duration"] = float(fmt["duration"]) if fmt.get("duration") else None
+    except (TypeError, ValueError):
+        result["duration"] = None
+    return result
+
+
+def _walk_media_library():
+    """Yield (relpath, abspath, mtime) for every audio file under
+    MEDIA_LIBRARY_ROOT. relpath is used as the track's stable id -- see
+    _run_library_scan()."""
+    if not os.path.isdir(MEDIA_LIBRARY_ROOT):
+        return
+    for dirpath, _dirnames, filenames in os.walk(MEDIA_LIBRARY_ROOT):
+        for name in filenames:
+            if not name.lower().endswith(MEDIA_AUDIO_EXTS):
+                continue
+            abspath = os.path.join(dirpath, name)
+            relpath = os.path.relpath(abspath, MEDIA_LIBRARY_ROOT)
+            try:
+                mtime = os.path.getmtime(abspath)
+            except OSError:
+                continue
+            yield relpath, abspath, mtime
+
+
+def _run_library_scan():
+    """Runs in a background thread (see start_library_rescan()). Reuses the
+    previous cache entry for any file whose mtime hasn't changed, so
+    re-scanning after adding a handful of new tracks to a large library only
+    probes the new ones, not the whole tree."""
+    try:
+        previous = _load_library_cache()
+        previous_by_path = {t["path"]: t for t in previous.get("tracks", [])}
+
+        tracks = []
+        count = 0
+        for relpath, abspath, mtime in _walk_media_library():
+            prev = previous_by_path.get(relpath)
+            if prev is not None and prev.get("mtime") == mtime:
+                tracks.append(prev)
+            else:
+                meta = _probe_track(abspath)
+                tracks.append({
+                    "id": relpath,
+                    "path": relpath,
+                    "filename": os.path.basename(relpath),
+                    "artist": meta["artist"],
+                    "title": meta["title"],
+                    "album": meta["album"],
+                    "duration": meta["duration"],
+                    "mtime": mtime,
+                })
+            count += 1
+            with _library_lock:
+                _library_scan_state["scannedCount"] = count
+
+        tracks.sort(key=lambda t: (t.get("artist") or "", t.get("album") or "", t.get("path") or ""))
+        _save_library_cache({"scannedAt": time.time(), "tracks": tracks})
+    finally:
+        with _library_lock:
+            _library_scan_state["scanning"] = False
+
+
+def start_library_rescan():
+    with _library_lock:
+        if _library_scan_state["scanning"]:
+            return False, "Scan already in progress"
+        _library_scan_state["scanning"] = True
+        _library_scan_state["scannedCount"] = 0
+        _library_scan_state["startedAt"] = time.time()
+    threading.Thread(target=_run_library_scan, daemon=True).start()
+    return True, "Scan started"
+
+
+def _library_track_by_id(track_id):
+    for t in get_media_library()["tracks"]:
+        if t["id"] == track_id:
+            return t
+    return None
+
+
+def _resolve_track_path(track_id):
+    t = _library_track_by_id(track_id)
+    if not t:
+        return None
+    return os.path.join(MEDIA_LIBRARY_ROOT, t["path"])
+
+
+# ── MEDIA PLAYLISTS ───────────────────────────────────────────────────────────
+# Server-side so playlists are identical from any device, same reasoning as
+# marks_state.json for bookmarks -- atomic tmp+replace writes, same pattern
+# as _write_state_to_disk in helm_server.py. trackIds reference the same
+# relative-path id scheme the library scan produces above; there's only one
+# identifier scheme in this whole feature, nothing to reconcile.
+MEDIA_PLAYLISTS_FILE = os.path.join(SCRIPT_DIR, "media_playlists.json")
+_playlists_lock = threading.Lock()
+
+
+def _load_playlists_data():
+    if not os.path.exists(MEDIA_PLAYLISTS_FILE):
+        return {"playlists": []}
+    try:
+        with open(MEDIA_PLAYLISTS_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {"playlists": []}
+
+
+def _save_playlists_data(data):
+    tmp_path = MEDIA_PLAYLISTS_FILE + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp_path, MEDIA_PLAYLISTS_FILE)
+
+
+def _find_playlist(data, playlist_id):
+    for pl in data["playlists"]:
+        if pl["id"] == playlist_id:
+            return pl
+    return None
+
+
+def get_playlists():
+    with _playlists_lock:
+        return _load_playlists_data()["playlists"]
+
+
+def create_playlist(name):
+    name = (name or "").strip()[:200]
+    if not name:
+        return None, "Name required"
+    with _playlists_lock:
+        data = _load_playlists_data()
+        now = time.time()
+        pl = {"id": uuid.uuid4().hex[:12], "name": name, "trackIds": [], "createdAt": now, "updatedAt": now}
+        data["playlists"].append(pl)
+        _save_playlists_data(data)
+    return pl, None
+
+
+def rename_playlist(playlist_id, name):
+    name = (name or "").strip()[:200]
+    if not name:
+        return False, "Name required"
+    with _playlists_lock:
+        data = _load_playlists_data()
+        pl = _find_playlist(data, playlist_id)
+        if not pl:
+            return False, "Playlist not found"
+        pl["name"] = name
+        pl["updatedAt"] = time.time()
+        _save_playlists_data(data)
+    return True, "Renamed"
+
+
+def delete_playlist(playlist_id):
+    with _playlists_lock:
+        data = _load_playlists_data()
+        before = len(data["playlists"])
+        data["playlists"] = [p for p in data["playlists"] if p["id"] != playlist_id]
+        if len(data["playlists"]) == before:
+            return False, "Playlist not found"
+        _save_playlists_data(data)
+    return True, "Deleted"
+
+
+def add_track_to_playlist(playlist_id, track_id):
+    if not track_id:
+        return False, "trackId required"
+    with _playlists_lock:
+        data = _load_playlists_data()
+        pl = _find_playlist(data, playlist_id)
+        if not pl:
+            return False, "Playlist not found"
+        pl["trackIds"].append(track_id)
+        pl["updatedAt"] = time.time()
+        _save_playlists_data(data)
+    return True, "Added"
+
+
+def remove_track_from_playlist(playlist_id, index):
+    with _playlists_lock:
+        data = _load_playlists_data()
+        pl = _find_playlist(data, playlist_id)
+        if not pl:
+            return False, "Playlist not found"
+        if not isinstance(index, int) or index < 0 or index >= len(pl["trackIds"]):
+            return False, "Invalid index"
+        pl["trackIds"].pop(index)
+        pl["updatedAt"] = time.time()
+        _save_playlists_data(data)
+    return True, "Removed"
+
+
+def reorder_playlist(playlist_id, track_ids):
+    with _playlists_lock:
+        data = _load_playlists_data()
+        pl = _find_playlist(data, playlist_id)
+        if not pl:
+            return False, "Playlist not found"
+        if not isinstance(track_ids, list) or sorted(track_ids) != sorted(pl["trackIds"]):
+            return False, "trackIds must be a reordering of the existing playlist"
+        pl["trackIds"] = track_ids
+        pl["updatedAt"] = time.time()
+        _save_playlists_data(data)
+    return True, "Reordered"
+
+
+# ── MEDIA PLAYER CONTROL (mpv IPC) ───────────────────────────────────────────
+# Thin HTTP wrappers over mpv_ipc.py, driving the always-idle mpv instance
+# started by mpv-player.service (see that file). Auto-advance between queued
+# tracks is handled by mpv's own internal playlist, not reimplemented here --
+# see mpv_ipc.py's docstring.
+_player_state = {"shuffle": False}  # single shared playback session -- no per-client state needed
+
+
+def get_player_status():
+    status, err = mpv_ipc.mpv_status()
+    soma = get_soma_radio_status()
+    if err:
+        return {
+            "playing": False, "paused": True, "trackId": None, "title": "", "artist": "",
+            "position": 0, "duration": 0, "volume": 100, "shuffle": _player_state["shuffle"],
+            "queue": [], "queuePos": -1, "somaRadioRunning": soma.get("running", False),
+            "error": err,
+        }
+
+    playlist, _ = mpv_ipc.get_playlist()
+    queue, queue_pos = [], -1
+    if isinstance(playlist, list):
+        for i, item in enumerate(playlist):
+            abspath = item.get("filename", "")
+            try:
+                relpath = os.path.relpath(abspath, MEDIA_LIBRARY_ROOT)
+            except ValueError:
+                relpath = abspath
+            queue.append(relpath)
+            if item.get("current"):
+                queue_pos = i
+
+    path = status.get("path")
+    track_id = None
+    if path:
+        try:
+            track_id = os.path.relpath(path, MEDIA_LIBRARY_ROOT)
+        except ValueError:
+            track_id = None
+    track = _library_track_by_id(track_id) if track_id else None
+    idle = bool(status.get("idle-active"))
+
+    return {
+        "playing": bool(path) and not idle,
+        "paused": bool(status.get("pause")) if status.get("pause") is not None else True,
+        "trackId": track_id,
+        "title": (track or {}).get("title") or status.get("media-title") or "",
+        "artist": (track or {}).get("artist") or "",
+        "position": status.get("time-pos") or 0,
+        "duration": status.get("duration") or (track or {}).get("duration") or 0,
+        "volume": status.get("volume") if status.get("volume") is not None else 100,
+        "shuffle": _player_state["shuffle"],
+        "queue": queue,
+        "queuePos": queue_pos,
+        "somaRadioRunning": soma.get("running", False),
+    }
+
+
+def resolve_play_request(body):
+    """Turn a /player/play body ({trackId} or {trackIds} or {playlistId})
+    into an ordered list of library track ids."""
+    if body.get("trackId"):
+        return [body["trackId"]], None
+    if body.get("trackIds"):
+        ids = body["trackIds"]
+        if not isinstance(ids, list) or not ids:
+            return None, "trackIds must be a non-empty list"
+        return ids, None
+    if body.get("playlistId"):
+        with _playlists_lock:
+            pl = _find_playlist(_load_playlists_data(), body["playlistId"])
+        if not pl:
+            return None, "Playlist not found"
+        if not pl["trackIds"]:
+            return None, "Playlist is empty"
+        return list(pl["trackIds"]), None
+    return None, "Provide trackId, trackIds, or playlistId"
+
+
+def player_play(track_ids):
+    paths = [p for p in (_resolve_track_path(tid) for tid in track_ids) if p and os.path.isfile(p)]
+    if not paths:
+        return False, "No playable tracks found"
+    if _player_state["shuffle"] and len(paths) > 1:
+        random.shuffle(paths)
+    ok, err = mpv_ipc.mpv_loadfile(paths[0], mode="replace")
+    if not ok:
+        return False, err
+    for p in paths[1:]:
+        mpv_ipc.mpv_loadfile(p, mode="append")
+    return True, "Playing"
+
+
+def player_set_shuffle(enabled):
+    """Shuffle is tracked as server-side state and applied at load time
+    (player_play above), not via mpv's own `shuffle` command -- avoids
+    having to reconcile mpv's internal shuffled order with what the
+    frontend displays as "queue". Toggling mid-playback reshuffles only the
+    not-yet-played remainder of the current queue; the current track is
+    left playing undisturbed."""
+    enabled = bool(enabled)
+    _player_state["shuffle"] = enabled
+    if not enabled:
+        return True, "Shuffle off"
+
+    playlist, err = mpv_ipc.get_playlist()
+    if err or not isinstance(playlist, list):
+        return True, "Shuffle on (nothing queued to reshuffle yet)"
+    current_idx = next((i for i, item in enumerate(playlist) if item.get("current")), None)
+    if current_idx is None or current_idx >= len(playlist) - 1:
+        return True, "Shuffle on"
+
+    remaining = [item.get("filename") for item in playlist[current_idx + 1:]]
+    random.shuffle(remaining)
+    for _ in remaining:
+        mpv_ipc.mpv_command("playlist-remove", current_idx + 1)
+    for filename in remaining:
+        mpv_ipc.mpv_loadfile(filename, mode="append")
+    return True, "Shuffle on, queue reshuffled"
+
+
+def player_queue_add(track_id):
+    path = _resolve_track_path(track_id)
+    if not path or not os.path.isfile(path):
+        return False, "Track not found"
+    return mpv_ipc.mpv_loadfile(path, mode="append-play")
+
+
 class AudioHandler(BaseHTTPRequestHandler):
 
     def _check_auth(self):
@@ -421,6 +842,17 @@ class AudioHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _read_json_body(self):
+        # Shared by the media-library/playlists/player routes below, which
+        # have enough call sites that repeating the inline try/except here
+        # (as the original download/download-pick/radio routes above do)
+        # would be more duplication than it's worth.
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            return json.loads(self.rfile.read(length)) if length else {}
+        except Exception:
+            return {}
 
     def do_GET(self):
         if not self._check_auth():
@@ -450,6 +882,22 @@ class AudioHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/audio/radio/status":
             self.send_json(200, get_soma_radio_status())
+            return
+
+        if parsed.path == "/api/audio/library":
+            self.send_json(200, get_media_library())
+            return
+
+        if parsed.path == "/api/audio/library/scan-status":
+            self.send_json(200, get_library_scan_status())
+            return
+
+        if parsed.path == "/api/audio/playlists":
+            self.send_json(200, {"playlists": get_playlists()})
+            return
+
+        if parsed.path == "/api/audio/player/status":
+            self.send_json(200, get_player_status())
             return
 
         if parsed.path.startswith("/api/audio/files/"):
@@ -532,6 +980,131 @@ class AudioHandler(BaseHTTPRequestHandler):
                 body = {}
             ok, msg = control_soma_radio(body.get("action", ""))
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/library/rescan":
+            ok, msg = start_library_rescan()
+            self.send_json(200 if ok else 409, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/playlists/create":
+            body = self._read_json_body()
+            pl, err = create_playlist(body.get("name", ""))
+            self.send_json(200 if pl else 400, {"playlist": pl, "error": err})
+            return
+
+        if parsed.path == "/api/audio/playlists/rename":
+            body = self._read_json_body()
+            ok, msg = rename_playlist(body.get("id", ""), body.get("name", ""))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/playlists/delete":
+            body = self._read_json_body()
+            ok, msg = delete_playlist(body.get("id", ""))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/playlists/add-track":
+            body = self._read_json_body()
+            ok, msg = add_track_to_playlist(body.get("id", ""), body.get("trackId", ""))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/playlists/remove-track":
+            body = self._read_json_body()
+            ok, msg = remove_track_from_playlist(body.get("id", ""), body.get("index"))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/playlists/reorder":
+            body = self._read_json_body()
+            ok, msg = reorder_playlist(body.get("id", ""), body.get("trackIds"))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/player/play":
+            body = self._read_json_body()
+            track_ids, err = resolve_play_request(body)
+            if err:
+                self.send_json(400, {"ok": False, "message": err})
+                return
+            ok, msg = player_play(track_ids)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/player/pause":
+            ok, err = mpv_ipc.mpv_set_property("pause", True)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Paused"})
+            return
+
+        if parsed.path == "/api/audio/player/resume":
+            ok, err = mpv_ipc.mpv_set_property("pause", False)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Resumed"})
+            return
+
+        if parsed.path == "/api/audio/player/seek":
+            body = self._read_json_body()
+            try:
+                position = float(body.get("position"))
+            except (TypeError, ValueError):
+                self.send_json(400, {"ok": False, "message": "Invalid position"})
+                return
+            ok, err = mpv_ipc.mpv_command("seek", position, "absolute")
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Seeked"})
+            return
+
+        if parsed.path == "/api/audio/player/next":
+            ok, err = mpv_ipc.mpv_command("playlist-next")
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Next"})
+            return
+
+        if parsed.path == "/api/audio/player/prev":
+            ok, err = mpv_ipc.mpv_command("playlist-prev")
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Prev"})
+            return
+
+        if parsed.path == "/api/audio/player/volume":
+            body = self._read_json_body()
+            try:
+                volume = max(0, min(100, int(body.get("volume"))))
+            except (TypeError, ValueError):
+                self.send_json(400, {"ok": False, "message": "Invalid volume"})
+                return
+            ok, err = mpv_ipc.mpv_set_property("volume", volume)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Volume set"})
+            return
+
+        if parsed.path == "/api/audio/player/shuffle":
+            body = self._read_json_body()
+            ok, msg = player_set_shuffle(body.get("enabled", False))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/audio/player/queue/add":
+            body = self._read_json_body()
+            ok, err = player_queue_add(body.get("trackId", ""))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Queued"})
+            return
+
+        if parsed.path == "/api/audio/player/queue/remove":
+            body = self._read_json_body()
+            index = body.get("index")
+            if not isinstance(index, int) or index < 0:
+                self.send_json(400, {"ok": False, "message": "Invalid index"})
+                return
+            ok, err = mpv_ipc.mpv_command("playlist-remove", index)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Removed"})
+            return
+
+        if parsed.path == "/api/audio/player/queue/reorder":
+            body = self._read_json_body()
+            index, target_index = body.get("index"), body.get("targetIndex")
+            if not isinstance(index, int) or not isinstance(target_index, int):
+                self.send_json(400, {"ok": False, "message": "Invalid index"})
+                return
+            ok, err = mpv_ipc.mpv_command("playlist-move", index, target_index)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": err or "Reordered"})
             return
 
         self.send_json(404, {"error": "Not found"})

@@ -1,5 +1,5 @@
 [Unit]
-Description=Always-on SomaFM Indie Pop Rocks stream player (mpv, audio-only)
+Description=SomaFM Indie Pop Rocks stream player (mpv, audio-only) -- started/stopped on demand by the Helm widget, not enabled at boot
 After=network-online.target sound.target
 Wants=network-online.target
 

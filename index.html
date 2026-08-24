@@ -2294,6 +2294,52 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 }
 #audio-jobs-section { margin-bottom: 24px; }
 
+/* Media Player page */
+#player-page { padding: 20px 24px; min-height: calc(100vh - 56px); padding-bottom: 90px; }
+#player-topbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+#player-last-updated { font-size: 11px; color: var(--text-dim); }
+#player-scan-status { font-size: 11px; color: var(--text-muted); }
+#player-search-wrap { margin-left: auto; }
+
+#player-body { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+#player-library-section { flex: 2; min-width: 320px; }
+#player-playlists-section { flex: 1; min-width: 260px; }
+
+.player-playlist-new { display: flex; gap: 6px; margin: 10px 0 14px; }
+.player-playlist-new input {
+  flex: 1; min-width: 0;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); font-size: 12px; padding: 6px 9px; outline: none;
+}
+.player-playlist-new input:focus { border-color: var(--accent); }
+
+.player-playlist-row { cursor: default; }
+.player-playlist-name { cursor: pointer; }
+.player-playlist-name:hover { text-decoration: underline; }
+.player-playlist-row-active .player-playlist-name { color: var(--text); font-weight: 600; }
+.player-playlist-track-row { cursor: grab; }
+.player-playlist-track-row:active { cursor: grabbing; }
+
+#player-transport-bar {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: 10px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  z-index: 20;
+}
+#player-now-playing { display: flex; flex-direction: column; gap: 1px; min-width: 160px; max-width: 260px; }
+#player-now-title { font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#player-now-artist { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#player-transport-controls { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
+#player-transport-controls .btn { padding: 4px 9px; }
+#player-seek { flex: 1; min-width: 120px; }
+#player-time { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+#player-volume { width: 80px; }
+#btn-player-shuffle.player-shuffle-on { border-color: var(--accent); color: var(--accent); }
+#player-soma-warning { font-size: 11px; color: var(--amber); white-space: nowrap; }
+
 /* Network info card */
 .net-card {
   background: var(--surface);
@@ -2693,6 +2739,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#services" data-tab="services">Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">Backup Pipeline</a>
     <a class="tab-btn" href="#audio" data-tab="audio">Audio Grabber</a>
+    <a class="tab-btn" href="#player" data-tab="player">Media Player</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
   </nav>
@@ -2892,6 +2939,60 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   <div id="audio-files-section">
     <div class="audio-section-title">Files</div>
     <div id="audio-files"></div>
+  </div>
+</div>
+
+<!-- MEDIA PLAYER PAGE -->
+<div id="player-page" style="display:none">
+  <div id="player-topbar">
+    <span id="player-last-updated"></span>
+    <button class="btn" id="btn-refresh-player">↺ Refresh</button>
+    <button class="btn" id="btn-player-rescan">Rescan library</button>
+    <span id="player-scan-status"></span>
+    <div class="logs-search-wrap" id="player-search-wrap">
+      <input type="text" id="player-search" placeholder="Filter library…" autocomplete="off" spellcheck="false">
+      <button id="player-search-clear" title="Clear filter">✕</button>
+    </div>
+    <select id="player-sort" class="btn" style="cursor:pointer">
+      <option value="artist">Sort: Artist</option>
+      <option value="title">Sort: Title</option>
+      <option value="album">Sort: Album</option>
+      <option value="duration">Sort: Duration</option>
+    </select>
+  </div>
+
+  <div id="player-body">
+    <div id="player-library-section">
+      <div class="audio-section-title">Library</div>
+      <div id="player-library"></div>
+    </div>
+    <div id="player-playlists-section">
+      <div class="audio-section-title">Playlists</div>
+      <div id="player-playlists-list"></div>
+      <div class="player-playlist-new">
+        <input type="text" id="player-new-playlist-name" placeholder="New playlist name" autocomplete="off">
+        <button class="btn" id="btn-player-create-playlist">+ Create</button>
+      </div>
+      <div id="player-playlist-detail"></div>
+    </div>
+  </div>
+
+  <div id="player-transport-bar">
+    <div id="player-now-playing">
+      <span id="player-now-title">Nothing playing</span>
+      <span id="player-now-artist"></span>
+    </div>
+    <div id="player-transport-controls">
+      <button class="btn" id="btn-player-prev" title="Previous">⏮</button>
+      <button class="btn" id="btn-player-playpause" title="Play/Pause">▶</button>
+      <button class="btn" id="btn-player-next" title="Next">⏭</button>
+      <input type="range" id="player-seek" min="0" max="100" value="0">
+      <span id="player-time">0:00 / 0:00</span>
+      <button class="btn" id="btn-player-shuffle" title="Toggle shuffle">🔀</button>
+      <span title="Volume">🔊</span>
+      <input type="range" id="player-volume" min="0" max="100" value="100">
+      <span id="player-soma-warning" style="display:none" title="soma-radio.service is also playing on hyperion — audio will mix">⚠ SomaFM speaker also on</span>
+    </div>
   </div>
 </div>
 
@@ -3142,6 +3243,18 @@ let audioFiles = [];
 let audioSearchResults = [];
 let audioPollTimer = null;
 const AUDIO_POLL_MS = 5 * 1000;
+let playerLibrary = [];          // full scanned track list, in-memory
+let playerLibraryScannedAt = null;
+let playerPlaylists = [];        // server-side playlists, full objects
+let playerActivePlaylistId = null; // which playlist is open in the UI (transient, not synced)
+let playerSearchQ = '';          // transient, like audioSearchResults — never touches localStorage
+let playerStatus = { playing: false, paused: true, trackId: null, title: '', artist: '', position: 0, duration: 0, volume: 100, shuffle: false, queue: [], queuePos: -1, somaRadioRunning: false };
+let playerSeekDragging = false;  // suppress the seek bar's poll-driven position update while the user is dragging it
+let playerVolumeDragging = false;
+let playerPollTimer = null;
+const PLAYER_STATUS_POLL_MS = 2500;
+let playerLibraryPollTimer = null;
+const PLAYER_LIBRARY_POLL_MS = 60 * 1000;
 
 // Moved up from later in the file — applyTheme() now runs immediately after
 // load() at startup, and if the saved theme is already 'terminal' from a
@@ -7821,7 +7934,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'player'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -7995,6 +8108,7 @@ function switchTab(tab) {
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
   show('audio-page',     tab === 'audio');
+  show('player-page',    tab === 'player');
   show('wiki-page',      tab === 'wiki');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
@@ -8002,7 +8116,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', wiki: 'Helm — Wiki' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', player: 'Helm — Media Player', logs: 'Helm — Logs', wiki: 'Helm — Wiki' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -8015,6 +8129,8 @@ function switchTab(tab) {
   else stopBackupsPolling();
   if (tab === 'audio')     { fetchAudioData(); startAudioPolling(); }
   else stopAudioPolling();
+  if (tab === 'player')    { fetchPlayerLibrary(); startPlayerPolling(); }
+  else stopPlayerPolling();
   if (tab === 'logs')      { fetchLogs(); startLogsPolling(); }
   else stopLogsPolling();
 }
@@ -8072,6 +8188,87 @@ document.getElementById('btn-audio-batch-download').onclick = () => {
   submitAudioDownload('', '', batchEl.value);
   batchEl.value = '';
 };
+document.getElementById('btn-refresh-player').onclick = fetchPlayerLibrary;
+document.getElementById('btn-player-rescan').onclick = playerRescanLibrary;
+document.getElementById('player-search').oninput = (e) => { playerSearchQ = e.target.value; renderPlayerLibrary(); };
+document.getElementById('player-search-clear').onclick = () => {
+  playerSearchQ = '';
+  document.getElementById('player-search').value = '';
+  renderPlayerLibrary();
+};
+document.getElementById('player-sort').value = state.settings.playerLibrarySortMode || 'artist';
+document.getElementById('player-sort').onchange = (e) => {
+  state.settings.playerLibrarySortMode = e.target.value;
+  save(); renderPlayerLibrary();
+};
+document.getElementById('btn-player-create-playlist').onclick = () => {
+  const input = document.getElementById('player-new-playlist-name');
+  const name = input.value.trim();
+  if (!name) { toast('Enter a playlist name'); return; }
+  playerCreatePlaylist(name);
+  input.value = '';
+};
+document.getElementById('btn-player-playpause').onclick = async () => {
+  const action = playerStatus.paused ? 'resume' : 'pause';
+  try {
+    const resp = await fetch('/api/audio/player/' + action, { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    fetchPlayerStatus();
+  } catch(e) { toast('Playback control failed: ' + e.message); }
+};
+document.getElementById('btn-player-prev').onclick = async () => {
+  await fetch('/api/audio/player/prev', { method: 'POST' });
+  fetchPlayerStatus();
+};
+document.getElementById('btn-player-next').onclick = async () => {
+  await fetch('/api/audio/player/next', { method: 'POST' });
+  fetchPlayerStatus();
+};
+document.getElementById('btn-player-shuffle').onclick = async () => {
+  const enabled = !playerStatus.shuffle;
+  try {
+    const resp = await fetch('/api/audio/player/shuffle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    state.settings.playerShuffleOn = enabled;
+    save();
+    fetchPlayerStatus();
+  } catch(e) { toast('Could not toggle shuffle: ' + e.message); }
+};
+{
+  const seekEl = document.getElementById('player-seek');
+  seekEl.addEventListener('input', () => { playerSeekDragging = true; });
+  seekEl.addEventListener('change', async () => {
+    playerSeekDragging = false;
+    try {
+      await fetch('/api/audio/player/seek', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ position: parseFloat(seekEl.value) }),
+      });
+      fetchPlayerStatus();
+    } catch(e) { toast('Seek failed: ' + e.message); }
+  });
+
+  const volumeEl = document.getElementById('player-volume');
+  volumeEl.value = state.settings.playerVolume ?? 100;
+  volumeEl.addEventListener('input', () => { playerVolumeDragging = true; });
+  volumeEl.addEventListener('change', async () => {
+    playerVolumeDragging = false;
+    const volume = parseInt(volumeEl.value, 10);
+    state.settings.playerVolume = volume;
+    save();
+    try {
+      await fetch('/api/audio/player/volume', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ volume }),
+      });
+    } catch(e) { toast('Volume change failed: ' + e.message); }
+  });
+}
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
 document.getElementById('logs-search-clear').onclick = () => {
@@ -9555,6 +9752,415 @@ function startAudioPolling() {
 function stopAudioPolling() {
   clearInterval(audioPollTimer);
   audioPollTimer = null;
+}
+
+// ── MEDIA PLAYER PAGE ────────────────────────────────────────────────────────
+// Frontend to mpv running on hyperion, via the same /api/audio/* proxy
+// tunnel the Audio Grabber and SomaFM widgets already use (see helm_server.py
+// proxy_to_audio() / audio_grabber_server.py's MEDIA LIBRARY / MEDIA
+// PLAYLISTS / MEDIA PLAYER CONTROL sections). Two independent poll loops:
+// fetchPlayerLibrary() (library + playlists, slow -- only needs refreshing
+// after a rescan or a playlist edit) and fetchPlayerStatus() (now-playing
+// transport state, fast -- drives the progress bar).
+
+async function fetchPlayerLibrary() {
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) {
+    document.getElementById('player-library').innerHTML =
+      '<div class="svc-error">Media Player requires the local backend (helm_server.py). Not reachable.</div>';
+    return;
+  }
+  try {
+    const [libResp, plResp] = await Promise.all([
+      fetch('/api/audio/library', { signal: AbortSignal.timeout(15000) }),
+      fetch('/api/audio/playlists', { signal: AbortSignal.timeout(15000) }),
+    ]);
+    if (!libResp.ok) throw new Error('HTTP ' + libResp.status);
+    if (!plResp.ok) throw new Error('HTTP ' + plResp.status);
+    const libData = await libResp.json();
+    playerLibrary = libData.tracks || [];
+    playerLibraryScannedAt = libData.scannedAt;
+    playerPlaylists = (await plResp.json()).playlists || [];
+    renderPlayerLibrary();
+    renderPlayerPlaylists();
+    const el = document.getElementById('player-last-updated');
+    if (el) {
+      el.textContent = playerLibraryScannedAt
+        ? 'Library scanned ' + new Date(playerLibraryScannedAt * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : 'Library not scanned yet';
+    }
+  } catch(e) {
+    document.getElementById('player-library').innerHTML =
+      `<div class="svc-error">Could not fetch media library: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderPlayerLibrary() {
+  const libEl = document.getElementById('player-library');
+  if (!libEl) return;
+
+  const q = playerSearchQ.toLowerCase();
+  let tracks = !q ? playerLibrary : playerLibrary.filter(t =>
+    (t.title || '').toLowerCase().includes(q) ||
+    (t.artist || '').toLowerCase().includes(q) ||
+    (t.album || '').toLowerCase().includes(q) ||
+    (t.filename || '').toLowerCase().includes(q)
+  );
+
+  const mode = state.settings.playerLibrarySortMode || 'artist';
+  tracks = [...tracks].sort((a, b) => {
+    if (mode === 'duration') return (a.duration || 0) - (b.duration || 0);
+    const av = (a[mode] || a.title || a.filename || '').toString().toLowerCase();
+    const bv = (b[mode] || b.title || b.filename || '').toString().toLowerCase();
+    return av.localeCompare(bv);
+  });
+
+  if (!tracks.length) {
+    libEl.innerHTML = playerLibrary.length
+      ? '<div class="svc-loading">No tracks match your filter.</div>'
+      : '<div class="svc-loading">No tracks yet — click "Rescan library".</div>';
+    return;
+  }
+
+  libEl.innerHTML = `<div class="bp-events-list">${tracks.map(buildPlayerTrackRowHTML).join('')}</div>`;
+
+  libEl.querySelectorAll('.player-play-btn').forEach(btn => {
+    btn.onclick = () => playerPlayTrack(btn.dataset.trackId);
+  });
+  libEl.querySelectorAll('.player-queue-btn').forEach(btn => {
+    btn.onclick = () => playerQueueAdd(btn.dataset.trackId);
+  });
+  libEl.querySelectorAll('.player-add-to-playlist-select').forEach(sel => {
+    sel.onchange = () => {
+      if (sel.value) { playerAddTrackToPlaylist(sel.value, sel.dataset.trackId); sel.value = ''; }
+    };
+  });
+}
+
+function buildPlayerTrackRowHTML(t) {
+  const dur = formatAudioDuration(t.duration);
+  const meta = [t.artist, t.album].filter(Boolean).join(' · ');
+  const metaLine = meta && dur ? `${meta} · ${dur}` : (meta || dur);
+  const playlistOptions = playerPlaylists.map(p => `<option value="${escHtml(p.id)}">${escHtml(p.name)}</option>`).join('');
+  return `
+    <div class="backup-row">
+      <div class="backup-info">
+        <span class="backup-label">${escHtml(t.title || t.filename)}</span>
+        <span class="backup-size">${escHtml(metaLine)}</span>
+      </div>
+      <div class="backup-actions">
+        <button class="btn player-play-btn" data-track-id="${escHtml(t.id)}" title="Play now">▶</button>
+        <button class="btn player-queue-btn" data-track-id="${escHtml(t.id)}" title="Add to queue">+Q</button>
+        <select class="btn player-add-to-playlist-select" data-track-id="${escHtml(t.id)}" title="Add to playlist" style="cursor:pointer">
+          <option value="">+ Playlist…</option>
+          ${playlistOptions}
+        </select>
+      </div>
+    </div>`;
+}
+
+function renderPlayerPlaylists() {
+  const listEl = document.getElementById('player-playlists-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = playerPlaylists.length
+    ? playerPlaylists.map(buildPlayerPlaylistRowHTML).join('')
+    : '<div class="svc-loading">No playlists yet.</div>';
+
+  listEl.querySelectorAll('.player-playlist-name').forEach(el => {
+    el.onclick = () => { playerActivePlaylistId = el.dataset.playlistId; renderPlayerPlaylistDetail(); renderPlayerPlaylists(); };
+  });
+  listEl.querySelectorAll('.player-playlist-play-btn').forEach(btn => {
+    btn.onclick = () => playerPlayPlaylist(btn.dataset.playlistId);
+  });
+  listEl.querySelectorAll('.player-playlist-rename-btn').forEach(btn => {
+    btn.onclick = () => playerRenamePlaylist(btn.dataset.playlistId);
+  });
+  listEl.querySelectorAll('.player-playlist-delete-btn').forEach(btn => {
+    btn.onclick = () => playerDeletePlaylist(btn.dataset.playlistId);
+  });
+
+  renderPlayerPlaylistDetail();
+}
+
+function buildPlayerPlaylistRowHTML(p) {
+  const active = p.id === playerActivePlaylistId;
+  return `
+    <div class="bp-event-row player-playlist-row${active ? ' player-playlist-row-active' : ''}">
+      <span class="bp-event-name player-playlist-name" data-playlist-id="${escHtml(p.id)}">${escHtml(p.name)}</span>
+      <span class="bp-event-message">${p.trackIds.length} track${p.trackIds.length === 1 ? '' : 's'}</span>
+      <button class="btn player-playlist-play-btn" data-playlist-id="${escHtml(p.id)}" title="Play playlist">▶</button>
+      <button class="btn player-playlist-rename-btn" data-playlist-id="${escHtml(p.id)}" title="Rename">✎</button>
+      <button class="btn danger player-playlist-delete-btn" data-playlist-id="${escHtml(p.id)}" title="Delete">✕</button>
+    </div>`;
+}
+
+function renderPlayerPlaylistDetail() {
+  const detailEl = document.getElementById('player-playlist-detail');
+  if (!detailEl) return;
+  const pl = playerPlaylists.find(p => p.id === playerActivePlaylistId);
+  if (!pl) { detailEl.innerHTML = ''; return; }
+
+  detailEl.innerHTML = `
+    <div class="audio-section-title">${escHtml(pl.name)}</div>
+    <div class="bp-events-list" id="player-playlist-tracks"></div>
+  `;
+  const tracksEl = document.getElementById('player-playlist-tracks');
+  tracksEl.innerHTML = pl.trackIds.length
+    ? pl.trackIds.map((tid, i) => buildPlayerPlaylistTrackRowHTML(tid, i)).join('')
+    : '<div class="svc-loading">Empty — add tracks from the Library list.</div>';
+
+  tracksEl.querySelectorAll('.player-playlist-track-remove-btn').forEach(btn => {
+    btn.onclick = () => playerRemoveTrackFromPlaylist(pl.id, parseInt(btn.dataset.index, 10));
+  });
+
+  // Drag-reorder: modeled on dragBm's pattern (a single "what's being
+  // dragged" tracker + splice-on-drop), not a generalization of dragBm
+  // itself, since that's tightly coupled to the bookmark-column data model.
+  let dragPlayerTrackIndex = null;
+  tracksEl.querySelectorAll('.player-playlist-track-row').forEach(row => {
+    row.addEventListener('dragstart', () => { dragPlayerTrackIndex = parseInt(row.dataset.index, 10); });
+    row.addEventListener('dragover', (e) => e.preventDefault());
+    row.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const targetIndex = parseInt(row.dataset.index, 10);
+      if (dragPlayerTrackIndex === null || dragPlayerTrackIndex === targetIndex) return;
+      const ids = [...pl.trackIds];
+      const [moved] = ids.splice(dragPlayerTrackIndex, 1);
+      ids.splice(targetIndex, 0, moved);
+      pl.trackIds = ids; // optimistic local update
+      renderPlayerPlaylistDetail();
+      fetch('/api/audio/playlists/reorder', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pl.id, trackIds: ids }),
+      }).catch(() => {});
+    });
+  });
+}
+
+function buildPlayerPlaylistTrackRowHTML(trackId, index) {
+  const t = playerLibrary.find(x => x.id === trackId);
+  const label = t ? (t.title || t.filename) : trackId;
+  const meta = t ? [t.artist, t.album].filter(Boolean).join(' · ') : '';
+  return `
+    <div class="backup-row player-playlist-track-row" draggable="true" data-index="${index}">
+      <div class="backup-info">
+        <span class="backup-label">${escHtml(label)}</span>
+        <span class="backup-size">${escHtml(meta)}</span>
+      </div>
+      <div class="backup-actions">
+        <button class="btn player-playlist-track-remove-btn" data-index="${index}" title="Remove">✕</button>
+      </div>
+    </div>`;
+}
+
+async function playerPlayTrack(trackId) {
+  try {
+    const resp = await fetch('/api/audio/player/play', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackId }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    toast('Playing');
+    fetchPlayerStatus();
+  } catch(e) {
+    toast('Could not play: ' + e.message);
+  }
+}
+
+async function playerPlayPlaylist(playlistId) {
+  try {
+    const resp = await fetch('/api/audio/player/play', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playlistId }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    toast('Playing playlist');
+    fetchPlayerStatus();
+  } catch(e) {
+    toast('Could not play playlist: ' + e.message);
+  }
+}
+
+async function playerQueueAdd(trackId) {
+  try {
+    const resp = await fetch('/api/audio/player/queue/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackId }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    toast('Added to queue');
+    fetchPlayerStatus();
+  } catch(e) {
+    toast('Could not queue: ' + e.message);
+  }
+}
+
+async function playerAddTrackToPlaylist(playlistId, trackId) {
+  try {
+    const resp = await fetch('/api/audio/playlists/add-track', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: playlistId, trackId }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    toast('Added to playlist');
+    fetchPlayerLibrary();
+  } catch(e) {
+    toast('Could not add to playlist: ' + e.message);
+  }
+}
+
+async function playerCreatePlaylist(name) {
+  try {
+    const resp = await fetch('/api/audio/playlists/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.playlist) throw new Error(data.error || ('HTTP ' + resp.status));
+    playerActivePlaylistId = data.playlist.id;
+    toast('Playlist created');
+    fetchPlayerLibrary();
+  } catch(e) {
+    toast('Could not create playlist: ' + e.message);
+  }
+}
+
+async function playerRenamePlaylist(playlistId) {
+  const pl = playerPlaylists.find(p => p.id === playlistId);
+  const name = prompt('Rename playlist:', pl ? pl.name : '');
+  if (!name || !name.trim()) return;
+  try {
+    const resp = await fetch('/api/audio/playlists/rename', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: playlistId, name: name.trim() }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    fetchPlayerLibrary();
+  } catch(e) {
+    toast('Could not rename: ' + e.message);
+  }
+}
+
+async function playerDeletePlaylist(playlistId) {
+  const pl = playerPlaylists.find(p => p.id === playlistId);
+  if (!confirm(`Delete playlist "${pl ? pl.name : ''}"?`)) return;
+  try {
+    const resp = await fetch('/api/audio/playlists/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: playlistId }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    if (playerActivePlaylistId === playlistId) playerActivePlaylistId = null;
+    toast('Deleted');
+    fetchPlayerLibrary();
+  } catch(e) {
+    toast('Could not delete: ' + e.message);
+  }
+}
+
+async function playerRemoveTrackFromPlaylist(playlistId, index) {
+  try {
+    const resp = await fetch('/api/audio/playlists/remove-track', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: playlistId, index }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    fetchPlayerLibrary();
+  } catch(e) {
+    toast('Could not remove track: ' + e.message);
+  }
+}
+
+async function playerRescanLibrary() {
+  try {
+    const resp = await fetch('/api/audio/library/rescan', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
+    toast('Library scan started');
+    pollPlayerScanStatus();
+  } catch(e) {
+    toast('Could not start scan: ' + e.message);
+  }
+}
+
+async function pollPlayerScanStatus() {
+  const statusEl = document.getElementById('player-scan-status');
+  try {
+    const resp = await fetch('/api/audio/library/scan-status', { signal: AbortSignal.timeout(8000) });
+    const data = await resp.json();
+    if (data.scanning) {
+      if (statusEl) statusEl.textContent = `Scanning… (${data.scannedCount} found)`;
+      setTimeout(pollPlayerScanStatus, 2000);
+    } else {
+      if (statusEl) statusEl.textContent = '';
+      fetchPlayerLibrary();
+    }
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '';
+  }
+}
+
+async function fetchPlayerStatus() {
+  try {
+    const resp = await fetch('/api/audio/player/status', { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    playerStatus = await resp.json();
+    renderPlayerTransportBar();
+  } catch(e) {
+    // Silent -- the transport bar just keeps showing its last-known state;
+    // a single missed poll every 2.5s shouldn't flash an error.
+  }
+}
+
+function renderPlayerTransportBar() {
+  const titleEl = document.getElementById('player-now-title');
+  if (!titleEl) return;
+  const artistEl = document.getElementById('player-now-artist');
+  const playBtn = document.getElementById('btn-player-playpause');
+  const seekEl = document.getElementById('player-seek');
+  const timeEl = document.getElementById('player-time');
+  const shuffleBtn = document.getElementById('btn-player-shuffle');
+  const volumeEl = document.getElementById('player-volume');
+  const somaWarnEl = document.getElementById('player-soma-warning');
+
+  titleEl.textContent = playerStatus.title || playerStatus.trackId || 'Nothing playing';
+  artistEl.textContent = playerStatus.artist || '';
+  playBtn.textContent = playerStatus.paused ? '▶' : '⏸';
+
+  if (!playerSeekDragging) {
+    seekEl.max = Math.max(1, Math.round(playerStatus.duration || 0));
+    seekEl.value = Math.round(playerStatus.position || 0);
+  }
+  timeEl.textContent = `${formatAudioDuration(playerStatus.position) || '0:00'} / ${formatAudioDuration(playerStatus.duration) || '0:00'}`;
+
+  shuffleBtn.classList.toggle('player-shuffle-on', !!playerStatus.shuffle);
+  if (!playerVolumeDragging) volumeEl.value = playerStatus.volume ?? 100;
+  if (somaWarnEl) somaWarnEl.style.display = playerStatus.somaRadioRunning ? '' : 'none';
+}
+
+function startPlayerPolling() {
+  if (!playerPollTimer) {
+    fetchPlayerStatus();
+    playerPollTimer = setInterval(fetchPlayerStatus, PLAYER_STATUS_POLL_MS);
+  }
+  if (!playerLibraryPollTimer) {
+    playerLibraryPollTimer = setInterval(fetchPlayerLibrary, PLAYER_LIBRARY_POLL_MS);
+  }
+}
+
+function stopPlayerPolling() {
+  clearInterval(playerPollTimer);
+  playerPollTimer = null;
+  clearInterval(playerLibraryPollTimer);
+  playerLibraryPollTimer = null;
 }
 
 function getSortedNewsSources() {

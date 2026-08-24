@@ -1,0 +1,34 @@
+[Unit]
+Description=Helm Media Player mpv backend (idle, JSON-IPC controlled by audio_grabber_server.py)
+After=network.target sound.target
+
+[Service]
+Type=simple
+# --idle=yes keeps this process alive with nothing loaded until a command
+# arrives over the IPC socket -- unlike soma-radio.service (which plays one
+# hardcoded stream URL for as long as the unit is up), this instance is a
+# blank remote-controllable player: mpv_ipc.py drives it via loadfile/
+# playlist-next/seek/etc. %t expands to $XDG_RUNTIME_DIR, so the socket path
+# survives reboots without a hardcoded location and without needing manual
+# cleanup of a stale socket file.
+#
+# This is a second, independent mpv process from soma-radio.service. If both
+# are started at once they will both try to open the same audio sink: on a
+# host running PipeWire/PulseAudio they'll simply mix into one output (two
+# things audible at once, not a crash); on bare ALSA with no sound server,
+# whichever one grabs the device second will fail its commands with an
+# "AO: [alsa] Device busy"-style IPC error. There is deliberately no
+# code-level arbitration between the two here (single-user appliance, not
+# worth the complexity) -- pause/turn off SomaFM first if you want the media
+# player's audio alone. /api/audio/player/status reports whether
+# soma-radio.service is also running so the frontend can flag this.
+ExecStart=/usr/bin/mpv --idle=yes --no-video --no-config --volume=100 --input-ipc-server=%t/mpv-player.sock
+Restart=on-failure
+RestartSec=5
+# If there's truly no audio sink to play through, mpv will fail immediately
+# every time -- cap the restart loop rather than hammering it forever.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=default.target
