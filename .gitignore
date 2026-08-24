@@ -10,8 +10,6 @@ audio-downloads/
 audio-cookies.txt
 marks_state.json
 backup_events.json
-media_library_cache.json
-media_playlists.json
 *.tmp
 __pycache__/
 *.bak
