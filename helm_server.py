@@ -194,21 +194,32 @@ def _build_recipe_prompt(pantry):
     ingredient_list = "\n".join(lines)
 
     return (
-        "You are a home cooking assistant. Here is the full list of "
-        "ingredients currently available:\n"
+        "You are a home cooking assistant writing real, usable recipes -- "
+        "not vague summaries. Here is the full list of ingredients "
+        "currently available, with how much of each is on hand where known:\n"
         f"{ingredient_list}\n\n"
         "Common pantry staples (salt, pepper, cooking oil, water) may be "
-        "assumed available even if not listed above.\n\n"
+        "assumed available even if not listed above, in reasonable amounts.\n\n"
         "Suggest up to 5 recipes that can realistically be made mostly from "
         "what's listed above. Prefer recipes that use more of the listed "
-        "ingredients and require few or no extra items. For each recipe, "
-        "list which listed ingredients it uses, and separately list any "
-        "additional ingredients needed that are NOT in the list above.\n\n"
+        "ingredients and require few or no extra items. Do not suggest a "
+        "recipe that needs more of a listed ingredient than the amount "
+        "given for it.\n\n"
+        "Be specific everywhere a real recipe would be specific:\n"
+        "- Every ingredient, used or missing, needs a concrete amount (e.g. "
+        "\"2 eggs\", \"1/2 cup flour\", \"1 tsp salt\"), never just a bare name.\n"
+        "- Every instruction step needs concrete numbers wherever they "
+        "matter: oven temperature, cook/bake time in minutes, pan size, the "
+        "quantities being combined at that step. Never write a vague step "
+        "like \"cook until done\" -- say how long and what doneness looks like.\n"
+        "- estimatedMinutes must be the real total active+cook time for that "
+        "specific recipe, not a round guess.\n\n"
         "Respond with ONLY a JSON object of this exact shape, no other "
         "text, no markdown code fences:\n"
-        '{"recipes": [{"title": string, "usesIngredients": [string], '
-        '"missingIngredients": [string], "instructions": [string], '
-        '"estimatedMinutes": number}]}'
+        '{"recipes": [{"title": string, '
+        '"usesIngredients": [{"name": string, "amount": string}], '
+        '"missingIngredients": [{"name": string, "amount": string}], '
+        '"instructions": [string], "estimatedMinutes": number}]}'
     )
 
 

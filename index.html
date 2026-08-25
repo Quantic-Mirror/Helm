@@ -5110,6 +5110,16 @@ function pollRecipeJob(jobId) {
   }, 2000);
 }
 
+// Ingredients used to be plain strings; the prompt now asks for
+// {name, amount} so chips can show quantities. Handles both shapes so an
+// already-persisted state.lastRecipeBatch from before this change doesn't
+// render "undefined".
+function formatRecipeIngredient(i) {
+  if (typeof i === 'string') return i;
+  if (!i) return '';
+  return i.amount ? `${i.name} (${i.amount})` : (i.name || '');
+}
+
 function buildRecipeResultsHTML() {
   const batch = state.lastRecipeBatch;
   if (!batch || !batch.recipes || batch.recipes.length === 0) {
@@ -5120,10 +5130,10 @@ function buildRecipeResultsHTML() {
       <h3 class="recipe-card-title">${escHtml(r.title || 'Untitled recipe')}</h3>
       ${r.estimatedMinutes ? `<div class="recipe-meta">~${escHtml(String(r.estimatedMinutes))} min</div>` : ''}
       ${(r.usesIngredients || []).length ? `<div class="recipe-chip-row">${
-        r.usesIngredients.map(i => `<span class="recipe-chip-uses">${escHtml(i)}</span>`).join('')
+        r.usesIngredients.map(i => `<span class="recipe-chip-uses">${escHtml(formatRecipeIngredient(i))}</span>`).join('')
       }</div>` : ''}
       ${(r.missingIngredients || []).length ? `<div class="recipe-chip-row">${
-        r.missingIngredients.map(i => `<span class="recipe-chip-missing">+ ${escHtml(i)}</span>`).join('')
+        r.missingIngredients.map(i => `<span class="recipe-chip-missing">+ ${escHtml(formatRecipeIngredient(i))}</span>`).join('')
       }</div>` : ''}
       ${(r.instructions || []).length ? `<ol class="recipe-instructions">${
         r.instructions.map(step => `<li>${escHtml(step)}</li>`).join('')
