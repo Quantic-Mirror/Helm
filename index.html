@@ -2503,21 +2503,15 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 }
 .workout-history-list { display: flex; flex-direction: column; gap: 6px; }
 .workout-session-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  display: flex; flex-direction: column; gap: 8px;
   padding: 10px 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   cursor: pointer;
   transition: border-color 0.12s;
 }
 .workout-session-row:hover { border-color: var(--accent); }
-.workout-session-main {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;
-}
+.workout-session-top { display: flex; align-items: center; gap: 8px; }
 .workout-session-date { font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; }
-.workout-session-summary {
-  font-size: 12px; color: var(--text-muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 .workout-exercise-pill {
   font-size: 10px;
   background: var(--surface-2);
@@ -2527,6 +2521,25 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   color: var(--text);
   white-space: nowrap;
   flex-shrink: 0;
+}
+.workout-session-exercises { display: flex; flex-wrap: wrap; gap: 6px; }
+.workout-exercise-detail {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 3px 8px;
+}
+.workout-exercise-detail strong { color: var(--text); font-weight: 600; }
+
+/* Routine list rows (Routines modal) — simpler single-line layout, no set detail */
+.workout-routine-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.workout-routine-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.workout-routine-summary {
+  font-size: 12px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* Exercise / set row editor, shared by the Log Workout and Routine modals */
@@ -4507,6 +4520,14 @@ function renderWorkoutPage() {
   wireWorkoutPage();
 }
 
+// e.g. reps: "20, 18, 15+5 reps" (the "+5" is added resistance on that set)
+// time: "60, 45s"
+function formatWorkoutSets(ex) {
+  if (!ex.sets || ex.sets.length === 0) return 'no sets logged';
+  const unit = ex.type === 'time' ? 's' : ' reps';
+  return ex.sets.map(st => `${st.value}${st.resistance ? '+' + st.resistance : ''}`).join(', ') + unit;
+}
+
 function buildWorkoutHistoryHTML() {
   const sessions = (state.workouts || []).slice().sort((a, b) => b.date.localeCompare(a.date));
   if (sessions.length === 0) {
@@ -4515,17 +4536,19 @@ function buildWorkoutHistoryHTML() {
   return '<div class="workout-history-list">' + sessions.map(s => {
     const d = new Date(s.date + 'T00:00:00');
     const label = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-    const summary = s.exercises.map(ex => ex.name).join(', ');
+    const exerciseDetails = s.exercises.map(ex =>
+      `<span class="workout-exercise-detail"><strong>${escHtml(ex.name)}</strong> ${escHtml(formatWorkoutSets(ex))}</span>`
+    ).join('');
     return `
       <div class="workout-session-row" data-workout-id="${s.id}">
-        <div class="workout-session-main">
+        <div class="workout-session-top">
           <span class="workout-session-date">${label}</span>
           ${s.routineName ? `<span class="workout-exercise-pill">${escHtml(s.routineName)}</span>` : ''}
-          <span class="workout-session-summary">${escHtml(summary)}</span>
+          <div class="col-actions" style="opacity:1;margin-left:auto">
+            <button class="icon-btn danger" title="Delete" data-workout-delete="${s.id}">✕</button>
+          </div>
         </div>
-        <div class="col-actions" style="opacity:1">
-          <button class="icon-btn danger" title="Delete" data-workout-delete="${s.id}">✕</button>
-        </div>
+        <div class="workout-session-exercises">${exerciseDetails}</div>
       </div>`;
   }).join('') + '</div>';
 }
@@ -4737,10 +4760,10 @@ function renderRoutineModalList() {
       routines.length === 0
         ? '<div class="workout-empty">No routines yet.</div>'
         : routines.map(r => `
-            <div class="workout-session-row" data-routine-id="${r.id}" style="cursor:default">
-              <div class="workout-session-main">
+            <div class="workout-routine-row" data-routine-id="${r.id}">
+              <div class="workout-routine-main">
                 <span class="workout-exercise-pill">${escHtml(r.name)}</span>
-                <span class="workout-session-summary">${escHtml(r.exercises.map(ex => ex.name).join(', '))}</span>
+                <span class="workout-routine-summary">${escHtml(r.exercises.map(ex => ex.name).join(', '))}</span>
               </div>
               <div class="col-actions" style="opacity:1">
                 <button class="icon-btn" title="Edit" data-routine-edit="${r.id}">✎</button>
