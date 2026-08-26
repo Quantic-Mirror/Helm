@@ -1983,7 +1983,9 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 #calendar-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
 #calendar-topbar {
   display: flex; align-items: center; gap: 10px;
-  margin-bottom: 20px; flex-wrap: wrap;
+  margin-bottom: 20px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }
 #cal-view-toggle {
   display: flex; gap: 2px;
@@ -1995,22 +1997,24 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   margin-bottom: 4px;
 }
 .calp-weekday {
-  text-align: center; font-size: 11px;
-  color: var(--text-dim); font-weight: 500; padding: 4px 0;
+  text-align: center; font-size: 10px;
+  color: var(--text-dim); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 4px 0;
 }
 
 .calp-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: 6px;
   margin-bottom: 16px;
 }
 .calp-cell {
-  min-height: 90px;
+  min-height: 94px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 8px;
+  border-radius: var(--radius);
+  padding: 8px 9px;
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
   overflow: hidden;
@@ -2020,6 +2024,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 .calp-today {
   border-color: var(--accent);
   background: rgba(88,166,255,0.08);
+  box-shadow: 0 0 6px var(--accent);
 }
 .calp-day-num {
   display: block;
@@ -2029,7 +2034,10 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   margin-bottom: 4px;
 }
 .calp-today .calp-day-num {
-  color: var(--accent);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  background: var(--accent); color: #0D1117;
+  border-radius: 50%; font-weight: 700; margin-bottom: 4px;
 }
 .calp-cell-events { display: flex; flex-direction: column; gap: 2px; }
 .calp-event-pill {
@@ -2038,7 +2046,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   background: var(--accent);
   color: #0D1117;
   border-radius: 4px;
-  padding: 2px 5px;
+  padding: 3px 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2046,12 +2054,20 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   font-weight: 500;
 }
 .calp-event-pill:hover { opacity: 0.85; }
+.calp-event-more {
+  display: block;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-dim);
+  padding: 1px 5px;
+  cursor: default;
+}
 
 /* Agenda view */
 .calp-agenda-list { max-width: 720px; display: flex; flex-direction: column; gap: 1px; }
 .calp-agenda-row {
-  display: flex; align-items: flex-start; gap: 16px;
-  padding: 10px 12px;
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   border-radius: 8px;
@@ -2059,8 +2075,13 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 }
 .calp-agenda-row:hover { background: var(--surface-2); }
 .calp-agenda-row.calp-agenda-today { background: rgba(88,166,255,0.06); }
-.calp-agenda-left { flex-shrink: 0; min-width: 100px; }
-.calp-agenda-weekday { font-size: 13px; font-weight: 600; color: var(--text); }
+.calp-agenda-left {
+  flex-shrink: 0; min-width: 88px; text-align: center;
+  padding: 6px 8px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.calp-agenda-today .calp-agenda-left { background: var(--accent-dim); border-color: var(--accent); }
+.calp-agenda-weekday { font-size: 12px; font-weight: 600; color: var(--text); }
 .calp-agenda-today .calp-agenda-weekday { color: var(--accent); }
 .calp-agenda-date { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 .calp-agenda-events {
@@ -2504,14 +2525,24 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .workout-history-list { display: flex; flex-direction: column; gap: 6px; }
 .workout-session-row {
   display: flex; flex-direction: column; gap: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   cursor: pointer;
   transition: border-color 0.12s;
 }
 .workout-session-row:hover { border-color: var(--accent); }
+.workout-session-row:hover .col-actions { opacity: 1; }
 .workout-session-top { display: flex; align-items: center; gap: 8px; }
-.workout-session-date { font-size: 12px; font-weight: 600; color: var(--text); flex-shrink: 0; }
+.workout-session-date {
+  display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0; padding: 4px 10px; line-height: 1.25;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+}
+.workout-session-weekday {
+  font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+.workout-session-monthday { font-size: 12px; font-weight: 600; color: var(--text); }
 .workout-exercise-pill {
   font-size: 10px;
   background: var(--surface-2);
@@ -2522,13 +2553,24 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   white-space: nowrap;
   flex-shrink: 0;
 }
-.workout-session-exercises { display: flex; flex-wrap: wrap; gap: 6px; }
+.workout-session-exercises {
+  display: flex; flex-direction: column; gap: 4px;
+  padding-top: 8px; margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
 .workout-exercise-detail {
+  display: flex; align-items: center; gap: 8px;
   font-size: 11px; color: var(--text-muted);
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
-  padding: 3px 8px;
+  padding: 5px 10px;
 }
-.workout-exercise-detail strong { color: var(--text); font-weight: 600; }
+.workout-ex-detail-name { color: var(--text); font-weight: 600; flex-shrink: 0; }
+.workout-type-badge {
+  font-size: 9px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
+}
+.workout-ex-detail-sets { color: var(--text-muted); margin-left: auto; text-align: right; }
 
 /* Routine list rows (Routines modal) — simpler single-line layout, no set detail */
 .workout-routine-row {
@@ -2555,15 +2597,45 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .workout-set-row input { width: 100px; }
 
 .workout-progress-view { display: flex; flex-direction: column; gap: 16px; }
-.workout-pb-callout { font-size: 13px; color: var(--text); }
-.workout-progress-bars { display: flex; flex-direction: column; gap: 6px; }
-.workout-progress-bar-row { display: flex; align-items: center; gap: 10px; }
-.workout-progress-bar-date { font-size: 11px; color: var(--text-dim); width: 70px; flex-shrink: 0; }
-.workout-progress-bar-track {
-  flex: 1; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden;
+.workout-pb-callout {
+  display: inline-flex; flex-direction: column; gap: 2px;
+  align-self: flex-start;
+  background: rgba(88,166,255,0.08);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 18px;
 }
-.workout-progress-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
-.workout-progress-bar-value { font-size: 11px; color: var(--text-muted); width: 60px; text-align: right; flex-shrink: 0; }
+.workout-pb-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.workout-pb-value {
+  font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--text);
+  line-height: 1.2;
+}
+.workout-pb-unit { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
+.workout-pb-meta { font-size: 11px; color: var(--text-dim); }
+.workout-progress-bars { display: flex; flex-direction: column; gap: 8px; }
+.workout-progress-bar-row { display: flex; align-items: center; gap: 10px; }
+.workout-progress-bar-date {
+  font-size: 11px; color: var(--text-dim); width: 70px; flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.workout-progress-bar-track {
+  flex: 1; height: 14px; border-radius: 7px; background: var(--surface-2); overflow: hidden;
+}
+.workout-progress-bar-fill {
+  height: 100%; background: var(--accent); border-radius: 7px;
+  display: flex; align-items: center; justify-content: flex-end; padding-right: 6px;
+}
+.wpb-value-inside { font-size: 10px; font-weight: 700; color: #0D1117; white-space: nowrap; }
+.wpb-value-outside { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 8px; white-space: nowrap; }
+.wpb-best .workout-progress-bar-fill { box-shadow: 0 0 6px var(--accent); }
+.wpb-best-badge {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--accent); background: var(--accent-dim); border: 1px solid var(--accent);
+  border-radius: 4px; padding: 1px 5px; flex-shrink: 0;
+}
 
 #news-sort {
   background: var(--surface);
@@ -4357,17 +4429,22 @@ function buildMonthPageHTML() {
   const daysInMonth = new Date(calPageYear, calPageMonth + 1, 0).getDate();
   const events = state.calendarEvents || {};
 
+  const MAX_VISIBLE_EVENTS = 3;
   let cells = '';
   for (let i = 0; i < firstWeekday; i++) cells += '<div class="calp-cell calp-cell-empty"></div>';
   for (let d = 1; d <= daysInMonth; d++) {
     const isToday = isCurrentMonth && d === todayDate;
     const dateKey = calPageYear + '-' + String(calPageMonth + 1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
     const dayEvents = events[dateKey] || [];
+    const visibleEvents = dayEvents.slice(0, MAX_VISIBLE_EVENTS);
+    const overflowCount = dayEvents.length - visibleEvents.length;
+    const overflowTitle = escHtml(dayEvents.slice(MAX_VISIBLE_EVENTS).map(ev => ev.text || ev).join('\n'));
     cells += `
       <div class="calp-cell${isToday ? ' calp-today' : ''}" data-calp-date="${dateKey}">
         <span class="calp-day-num">${d}</span>
         <div class="calp-cell-events">
-          ${dayEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev.text || ev)}</span>`).join('')}
+          ${visibleEvents.map((ev, i) => `<span class="calp-event-pill" data-calp-date="${dateKey}" data-event-idx="${i}">${escHtml(ev.text || ev)}</span>`).join('')}
+          ${overflowCount > 0 ? `<span class="calp-event-more" title="${overflowTitle}">+${overflowCount} more</span>` : ''}
         </div>
       </div>`;
   }
@@ -4536,16 +4613,24 @@ function buildWorkoutHistoryHTML() {
   }
   return '<div class="workout-history-list">' + sessions.map(s => {
     const d = new Date(s.date + 'T00:00:00');
-    const label = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-    const exerciseDetails = s.exercises.map(ex =>
-      `<span class="workout-exercise-detail"><strong>${escHtml(ex.name)}</strong> ${escHtml(formatWorkoutSets(ex))}</span>`
+    const weekday = d.toLocaleDateString([], { weekday: 'short' });
+    const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    const exerciseDetails = s.exercises.map(ex => `
+      <div class="workout-exercise-detail">
+        <span class="workout-ex-detail-name">${escHtml(ex.name)}</span>
+        <span class="workout-type-badge">${ex.type === 'time' ? 'TIME' : 'REPS'}</span>
+        <span class="workout-ex-detail-sets">${escHtml(formatWorkoutSets(ex))}</span>
+      </div>`
     ).join('');
     return `
       <div class="workout-session-row" data-workout-id="${s.id}">
         <div class="workout-session-top">
-          <span class="workout-session-date">${label}</span>
+          <div class="workout-session-date">
+            <span class="workout-session-weekday">${weekday}</span>
+            <span class="workout-session-monthday">${monthDay}</span>
+          </div>
           ${s.routineName ? `<span class="workout-exercise-pill">${escHtml(s.routineName)}</span>` : ''}
-          <div class="col-actions" style="opacity:1;margin-left:auto">
+          <div class="col-actions" style="margin-left:auto">
             <button class="icon-btn danger" title="Delete" data-workout-delete="${s.id}">✕</button>
           </div>
         </div>
@@ -4573,8 +4658,10 @@ function buildWorkoutProgressHTML() {
     });
 
   const max = Math.max(...points.map(p => p.value), 1);
-  const best = Math.max(...points.map(p => p.value), 0);
+  const bestPoint = points.reduce((acc, p) => (!acc || p.value >= acc.value) ? p : acc, null);
+  const best = bestPoint ? bestPoint.value : 0;
   const unit = (points[points.length - 1] || {}).type === 'time' ? 's' : ' reps';
+  const isTimeType = (points[points.length - 1] || {}).type === 'time';
 
   const options = names.map(n =>
     `<option value="${escHtml(n)}"${n === selected ? ' selected' : ''}>${escHtml(n)}</option>`
@@ -4584,11 +4671,17 @@ function buildWorkoutProgressHTML() {
     const d = new Date(p.date + 'T00:00:00');
     const label = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
     const pct = max > 0 ? Math.round((p.value / max) * 100) : 0;
+    const isBest = bestPoint && p.value === bestPoint.value && p.date === bestPoint.date;
+    const valueText = `${p.value}${unit}`;
+    const labelInside = pct >= 20;
     return `
-      <div class="workout-progress-bar-row">
+      <div class="workout-progress-bar-row${isBest ? ' wpb-best' : ''}">
         <span class="workout-progress-bar-date">${label}</span>
-        <div class="workout-progress-bar-track"><div class="workout-progress-bar-fill" style="width:${pct}%"></div></div>
-        <span class="workout-progress-bar-value">${p.value}${unit}</span>
+        <div class="workout-progress-bar-track">
+          <div class="workout-progress-bar-fill" style="width:${pct}%">${labelInside ? `<span class="wpb-value-inside">${valueText}</span>` : ''}</div>
+        </div>
+        ${!labelInside ? `<span class="wpb-value-outside">${valueText}</span>` : ''}
+        ${isBest ? `<span class="wpb-best-badge">PB</span>` : ''}
       </div>`;
   }).join('');
 
@@ -4596,9 +4689,16 @@ function buildWorkoutProgressHTML() {
     <div class="workout-progress-view">
       <div class="field" style="max-width:280px">
         <label for="workout-progress-select">Exercise</label>
-        <select id="workout-progress-select">${options}</select>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <select id="workout-progress-select">${options}</select>
+          <span class="workout-type-badge">${isTimeType ? 'TIME' : 'REPS'}</span>
+        </div>
       </div>
-      <div class="workout-pb-callout">Personal best: <strong>${best}${unit}</strong></div>
+      <div class="workout-pb-callout">
+        <div class="workout-pb-label">Personal Best</div>
+        <div class="workout-pb-value">${best}<span class="workout-pb-unit">${unit}</span></div>
+        ${bestPoint ? `<div class="workout-pb-meta">${new Date(bestPoint.date + 'T00:00:00').toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</div>` : ''}
+      </div>
       <div class="workout-progress-bars">${bars}</div>
     </div>`;
 }
