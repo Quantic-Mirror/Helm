@@ -50,7 +50,6 @@ import json
 import time
 import ssl
 import threading
-import queue
 import urllib.request
 import urllib.error
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -140,178 +139,6 @@ def proxy_to_audio(method, path_and_query, body_bytes=None):
 
 
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
-
-
-# ── RECIPE GENERATION (Recipes tab) ────────────────────────────────────────
-# Ollama runs on hyperion, not here -- same env-var-overridable-constant
-# pattern as VAULT_BACKEND/AUDIO_BACKEND above. Unlike those two, no proxy
-# script is needed: Ollama already speaks plain HTTP, so helm_server.py
-# calls it directly. Change OLLAMA_BASE_URL if hyperion's LAN hostname/IP
-# or Ollama's port ever changes.
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://hyperion:11434")
-OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL", "llama3.1")
-OLLAMA_TIMEOUT  = 300  # seconds -- generous for local CPU inference, mirrors
-                        # the audio download job's 600s precedent for slow work
-
-# helm_server.py runs a plain (non-threaded) HTTPServer -- see the bottom of
-# this file. A blocking Ollama call inside a request handler would freeze
-# the entire dashboard for every device until it finished. This reuses the
-# exact job-queue shape audio_grabber_server.py already established for slow
-# work (_audio_lock/_audio_jobs/_audio_worker, audio_grabber_server.py:163-296):
-# do_POST just enqueues and returns immediately; a background thread does
-# the actual (slow) work; the frontend polls /api/recipes/jobs for status.
-_recipe_lock = threading.Lock()
-_recipe_jobs = {}        # job_id (int) -> job dict
-_recipe_job_seq = 0
-_recipe_queue = queue.Queue()
-
-
-def _new_recipe_job(pantry):
-    global _recipe_job_seq
-    with _recipe_lock:
-        _recipe_job_seq += 1
-        job = {
-            "id": _recipe_job_seq,
-            "status": "queued",
-            "message": "",
-            "recipes": None,
-            "queuedAt": time.time(),
-            "startedAt": None,
-            "finishedAt": None,
-        }
-        _recipe_jobs[job["id"]] = job
-    return job
-
-
-def _build_recipe_prompt(pantry):
-    lines = []
-    for item in pantry:
-        name = (item.get("name") or "").strip()
-        if not name:
-            continue
-        amount = (item.get("amount") or "").strip()
-        lines.append(f"- {name} ({amount})" if amount else f"- {name}")
-    ingredient_list = "\n".join(lines)
-
-    return (
-        "You are a home cooking assistant writing real, usable recipes -- "
-        "not vague summaries. Here is the full list of ingredients "
-        "currently available, with how much of each is on hand where known:\n"
-        f"{ingredient_list}\n\n"
-        "Common pantry staples (salt, pepper, cooking oil, water) may be "
-        "assumed available even if not listed above, in reasonable amounts.\n\n"
-        "Suggest up to 5 recipes that can realistically be made mostly from "
-        "what's listed above. Prefer recipes that use more of the listed "
-        "ingredients and require few or no extra items. Do not suggest a "
-        "recipe that needs more of a listed ingredient than the amount "
-        "given for it.\n\n"
-        "A sous vide immersion circulator is available as equipment. Where "
-        "it genuinely suits an ingredient -- proteins like steak, chicken, "
-        "salmon, or eggs, or anything that benefits from precise "
-        "temperature control -- suggest sous vide as the cooking method "
-        "for that recipe. Don't force it onto things it doesn't suit (e.g. "
-        "salads, baked goods, stir-fries); use normal stovetop/oven methods "
-        "for those.\n\n"
-        "Be specific everywhere a real recipe would be specific:\n"
-        "- Every ingredient, used or missing, needs a concrete amount (e.g. "
-        "\"2 eggs\", \"1/2 cup flour\", \"1 tsp salt\"), never just a bare name.\n"
-        "- Every instruction step needs concrete numbers wherever they "
-        "matter: oven temperature, cook/bake time in minutes, pan size, the "
-        "quantities being combined at that step. Never write a vague step "
-        "like \"cook until done\" -- say how long and what doneness looks like.\n"
-        "- For a sous vide recipe, give the exact water bath temperature and "
-        "time, and describe the finishing step (e.g. searing time per side "
-        "in a hot pan) needed after the bath.\n"
-        "- estimatedMinutes must be the real total active+cook time for that "
-        "specific recipe, not a round guess.\n\n"
-        "Respond with ONLY a JSON object of this exact shape, no other "
-        "text, no markdown code fences:\n"
-        '{"recipes": [{"title": string, '
-        '"usesIngredients": [{"name": string, "amount": string}], '
-        '"missingIngredients": [{"name": string, "amount": string}], '
-        '"instructions": [string], "estimatedMinutes": number}]}'
-    )
-
-
-def _call_ollama(prompt):
-    body = json.dumps({
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "format": "json",
-        "stream": False,
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        OLLAMA_BASE_URL + "/api/generate", data=body, method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as resp:
-        data = json.loads(resp.read())
-    return data.get("response", "")
-
-
-def _run_recipe_generation(job_id, pantry):
-    with _recipe_lock:
-        job = _recipe_jobs.get(job_id)
-        if not job:
-            return
-        job["status"] = "running"
-        job["startedAt"] = time.time()
-
-    try:
-        raw = _call_ollama(_build_recipe_prompt(pantry))
-    except urllib.error.URLError as e:
-        with _recipe_lock:
-            job["status"] = "error"
-            job["message"] = f"Could not reach Ollama at {OLLAMA_BASE_URL} ({e.reason}). Is it running?"
-            job["finishedAt"] = time.time()
-        return
-    except Exception as e:
-        with _recipe_lock:
-            job["status"] = "error"
-            job["message"] = f"Ollama request failed: {e}"
-            job["finishedAt"] = time.time()
-        return
-
-    try:
-        parsed = json.loads(raw)
-        recipes = parsed.get("recipes") if isinstance(parsed, dict) else parsed
-        if not isinstance(recipes, list):
-            raise ValueError("response did not contain a recipe list")
-    except Exception as e:
-        with _recipe_lock:
-            job["status"] = "error"
-            job["message"] = f"Ollama returned something that couldn't be parsed as recipes: {e}"
-            job["finishedAt"] = time.time()
-        return
-
-    with _recipe_lock:
-        job["status"] = "done"
-        job["recipes"] = recipes
-        job["finishedAt"] = time.time()
-
-
-def _recipe_worker():
-    while True:
-        job_id, pantry = _recipe_queue.get()
-        try:
-            _run_recipe_generation(job_id, pantry)
-        except Exception as e:
-            with _recipe_lock:
-                job = _recipe_jobs.get(job_id)
-                if job:
-                    job["status"] = "error"
-                    job["message"] = str(e)
-                    job["finishedAt"] = time.time()
-        finally:
-            _recipe_queue.task_done()
-
-
-threading.Thread(target=_recipe_worker, daemon=True).start()
-
-
-def get_recipe_jobs():
-    with _recipe_lock:
-        return sorted(_recipe_jobs.values(), key=lambda j: j["id"], reverse=True)
 
 
 # ── BACKUP EVENTS (Backup Pipeline tab) ─────────────────────────────────────
@@ -1111,10 +938,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, get_backup_events())
             return
 
-        if parsed.path == "/api/recipes/jobs":
-            self.send_json(200, {"jobs": get_recipe_jobs()})
-            return
-
         if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
                 or parsed.path.startswith("/api/vault/entry/") or parsed.path == "/api/vault/health":
             status, data = proxy_to_vault("GET", self.path)
@@ -1175,22 +998,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
             action = body.get("action", "")
             ok, msg = control_service(service_id, action)
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
-            return
-
-        if parsed.path == "/api/recipes/generate":
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except Exception:
-                self.send_json(400, {"error": "Invalid JSON body"})
-                return
-            pantry = body.get("pantry") or []
-            if not pantry:
-                self.send_json(400, {"error": "Pantry is empty"})
-                return
-            job = _new_recipe_job(pantry)
-            _recipe_queue.put((job["id"], pantry))
-            self.send_json(200, {"jobId": job["id"]})
             return
 
         if parsed.path.startswith("/api/audio/"):

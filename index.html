@@ -1292,54 +1292,6 @@ body.theme-terminal #terminal-login-banner.visible {
 }
 .todo-add-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-/* Pantry list (Recipes tab) — same click-to-edit/hover-to-delete
-   interaction shape as the Todo widget above, sized for a full page
-   rather than a small dashboard card, plus an amount field. */
-.recipes-section-heading {
-  font-family: var(--font-display);
-  font-size: 14px;
-  color: var(--text);
-  margin: 0 0 10px;
-}
-.pantry-list {
-  list-style: none; margin: 0 0 14px; padding: 0;
-  display: flex; flex-wrap: wrap; gap: 8px;
-}
-.pantry-chip {
-  display: flex; align-items: center; gap: 4px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-  padding: 5px 6px 5px 12px;
-  transition: border-color 0.12s;
-}
-.pantry-chip:hover { border-color: var(--accent); }
-.pantry-chip-label { font-size: 12px; color: var(--text); cursor: pointer; white-space: nowrap; }
-.pantry-chip-label:hover { color: var(--accent); }
-.pantry-chip-amount { color: var(--text-muted); font-size: 11px; }
-.pantry-chip-delete {
-  flex-shrink: 0; width: 18px; height: 18px;
-  border: none; border-radius: 50%; background: none;
-  color: var(--text-dim); font-size: 10px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: color 0.12s, background 0.12s;
-}
-.pantry-chip-delete:hover { color: var(--red); background: rgba(248,81,73,0.12); }
-.pantry-add-form { display: flex; gap: 6px; max-width: 480px; margin-bottom: 20px; }
-.pantry-name-input { flex: 1; }
-.pantry-amount-input { width: 130px; flex-shrink: 0; }
-.pantry-name-input, .pantry-amount-input {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  color: var(--text); font-family: var(--font-body); font-size: 13px;
-  padding: 7px 10px; outline: none; transition: border-color 0.15s;
-}
-.pantry-name-input:focus, .pantry-amount-input:focus { border-color: var(--accent); }
-.pantry-add-btn {
-  flex-shrink: 0; width: 32px;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: none; color: var(--text); font-size: 16px; cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
-}
-.pantry-add-btn:hover { border-color: var(--accent); color: var(--accent); }
-
 /* System Stats widget */
 .sysstats-body { padding: 12px 14px 14px; }
 .sysstats-loading, .sysstats-error {
@@ -2613,32 +2565,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .workout-progress-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
 .workout-progress-bar-value { font-size: 11px; color: var(--text-muted); width: 60px; text-align: right; flex-shrink: 0; }
 
-/* ── RECIPES PAGE ─────────────────────────────────────────────────────────── */
-#recipes-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
-#recipes-generate-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-#recipes-status { font-size: 12px; color: var(--text-muted); }
-#recipes-status.recipes-status-error { color: var(--red); }
-.recipes-empty { color: var(--text-dim); font-size: 12px; padding: 12px 4px; }
-.recipes-error-banner {
-  color: var(--red); font-size: 12px;
-  background: rgba(248,81,73,0.1); border: 1px solid var(--red); border-radius: var(--radius);
-  padding: 10px 12px; margin-bottom: 12px; max-width: 640px;
-}
-.recipe-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 14px 16px; margin-bottom: 12px; max-width: 640px;
-}
-.recipe-card-title { font-family: var(--font-display); font-size: 14px; color: var(--text); margin: 0 0 4px; }
-.recipe-meta { font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
-.recipe-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.recipe-chip-uses, .recipe-chip-missing {
-  font-size: 11px; border-radius: 8px; padding: 3px 8px; border: 1px solid transparent;
-}
-.recipe-chip-uses { color: var(--green); background: var(--green-dim); }
-.recipe-chip-missing { color: var(--text-muted); background: var(--surface-2); border-color: var(--border); }
-.recipe-instructions { margin: 10px 0 0; padding-left: 20px; font-size: 12px; color: var(--text); line-height: 1.6; }
-.recipe-instructions li { margin-bottom: 4px; }
-
 #news-sort {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2944,7 +2870,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#audio" data-tab="audio">Audio Grabber</a>
     <a class="tab-btn" href="#player" data-tab="player">🎵 Music</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
-    <a class="tab-btn" href="#recipes" data-tab="recipes">🍳 Recipes</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
   </nav>
@@ -3302,25 +3227,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   </div>
 </div>
 
-<!-- RECIPES PAGE -->
-<div id="recipes-page" style="display:none">
-  <h2 class="recipes-section-heading">Pantry</h2>
-  <ul id="pantry-list" class="pantry-list"></ul>
-  <form id="pantry-add-form" class="pantry-add-form" autocomplete="off">
-    <input id="pantry-name-input" class="pantry-name-input" type="text" placeholder="Ingredient (e.g. eggs)" autocomplete="off" spellcheck="false">
-    <input id="pantry-amount-input" class="pantry-amount-input" type="text" placeholder="Amount (optional)" autocomplete="off" spellcheck="false">
-    <button class="pantry-add-btn" type="submit" title="Add">+</button>
-  </form>
-
-  <div id="recipes-generate-bar">
-    <button class="btn primary" id="btn-generate-recipes">Generate Recipes</button>
-    <button class="btn" id="btn-clear-recipes">Clear Recipes</button>
-    <span id="recipes-status"></span>
-  </div>
-
-  <h2 class="recipes-section-heading">Recipes</h2>
-  <div id="recipes-results"></div>
-</div>
 
 <!-- MODAL -->
 <div id="modal-overlay">
@@ -3626,8 +3532,6 @@ async function initSync() {
       if (!state.newsSources) state.newsSources = [];
       if (!state.workouts) state.workouts = [];
       if (!state.workoutRoutines) state.workoutRoutines = [];
-      if (!state.pantry) state.pantry = [];
-      if (state.lastRecipeBatch === undefined) state.lastRecipeBatch = null;
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       // Reset the last-pulled snapshot so mid-session merge logic has a
       // fresh baseline from this startup, not from a stale previous session.
@@ -3741,8 +3645,6 @@ async function pollForRemoteChanges() {
       if (!state.newsSources) state.newsSources = [];
       if (!state.workouts) state.workouts = [];
       if (!state.workoutRoutines) state.workoutRoutines = [];
-      if (!state.pantry) state.pantry = [];
-      if (state.lastRecipeBatch === undefined) state.lastRecipeBatch = null;
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       render(); // silent — no toast, no dialog
@@ -3786,8 +3688,6 @@ function load() {
   }
   if (!state.workouts) state.workouts = [];
   if (!state.workoutRoutines) state.workoutRoutines = [];
-  if (!state.pantry) state.pantry = [];
-  if (state.lastRecipeBatch === undefined) state.lastRecipeBatch = null;
   if (!state.settings.reminderDays && state.settings.reminderDays !== 0) state.settings.reminderDays = 7;
   // Terminal widget was removed as a feature — drop any leftover instances
   if (state.widgets) state.widgets = state.widgets.filter(w => w.type !== 'terminal');
@@ -4952,194 +4852,6 @@ document.getElementById('workout-routine-select').onchange = (e) => {
   refreshExerciseEditor(document.getElementById('workout-exercise-editor'), workoutModalExercises, true);
 };
 document.getElementById('routine-modal-close').onclick = closeRoutineManagerModal;
-
-// ── RECIPES (PANTRY + LLM-GENERATED RECIPES) ────────────────────────────────
-// state.pantry: ingredients on hand (name + free-text amount, not strictly
-// validated -- there's no reliable local way to hard-check an LLM's
-// quantity math). state.lastRecipeBatch: the most recently completed
-// generation, persisted so it survives a reload (regenerating overwrites
-// it). Generation itself runs on a local Ollama instance via
-// helm_server.py's /api/recipes/* job queue -- a blocking call there would
-// freeze the whole single-threaded dashboard, so the backend queues a
-// background job and this polls for completion rather than awaiting one
-// long request.
-
-let recipeJobPollTimer = null;
-
-function renderRecipesPage() {
-  const list = document.getElementById('pantry-list');
-  if (!list) return;
-  refreshPantryList();
-  document.getElementById('recipes-results').innerHTML = buildRecipeResultsHTML();
-  document.getElementById('btn-generate-recipes').onclick = generateRecipes;
-  document.getElementById('btn-clear-recipes').onclick = clearRecipes;
-}
-
-function clearRecipes() {
-  if (!state.lastRecipeBatch) return;
-  if (!confirm('Clear the generated recipes?')) return;
-  state.lastRecipeBatch = null;
-  save();
-  document.getElementById('recipes-results').innerHTML = buildRecipeResultsHTML();
-}
-
-function buildPantryListHTML() {
-  const pantry = state.pantry || [];
-  if (pantry.length === 0) {
-    return '<li class="recipes-empty">No ingredients yet — add what you have below.</li>';
-  }
-  return pantry.map(item => `
-    <li class="pantry-chip" data-pantry-id="${item.id}">
-      <span class="pantry-chip-label" data-pantry-edit="${item.id}" title="Click to edit">${escHtml(item.name)}${
-        item.amount ? ` <span class="pantry-chip-amount">(${escHtml(item.amount)})</span>` : ''
-      }</span>
-      <button class="pantry-chip-delete" title="Remove" data-pantry-delete="${item.id}">✕</button>
-    </li>`).join('');
-}
-
-function refreshPantryList() {
-  const list = document.getElementById('pantry-list');
-  if (!list) return;
-  list.innerHTML = buildPantryListHTML();
-  wirePantryList();
-}
-
-function wirePantryList() {
-  const form = document.getElementById('pantry-add-form');
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    const nameInput = document.getElementById('pantry-name-input');
-    const amountInput = document.getElementById('pantry-amount-input');
-    const name = nameInput.value.trim();
-    if (!name) return;
-    addPantryItem(name, amountInput.value.trim());
-    nameInput.value = '';
-    amountInput.value = '';
-    nameInput.focus();
-  };
-
-  document.querySelectorAll('[data-pantry-edit]').forEach(span => {
-    span.onclick = () => {
-      const item = (state.pantry || []).find(i => i.id === span.dataset.pantryEdit);
-      if (!item) return;
-      const newName = prompt('Ingredient name:', item.name);
-      if (newName === null) return; // cancelled
-      if (!newName.trim()) { deletePantryItem(item.id); return; }
-      const newAmount = prompt('Amount (optional):', item.amount || '');
-      if (newAmount === null) return; // cancelled — nothing mutated yet, both prompts happen before either write
-      item.name = newName.trim();
-      item.amount = newAmount.trim();
-      save();
-      refreshPantryList();
-    };
-  });
-  document.querySelectorAll('[data-pantry-delete]').forEach(btn => {
-    btn.onclick = () => deletePantryItem(btn.dataset.pantryDelete);
-  });
-}
-
-function addPantryItem(name, amount) {
-  state.pantry.push({ id: uid(), name, amount: amount || '' });
-  save();
-  refreshPantryList();
-}
-
-function deletePantryItem(id) {
-  state.pantry = state.pantry.filter(i => i.id !== id);
-  save();
-  refreshPantryList();
-}
-
-function setRecipesStatus(text, isError) {
-  const el = document.getElementById('recipes-status');
-  el.textContent = text;
-  el.classList.toggle('recipes-status-error', !!isError);
-}
-
-function generateRecipes() {
-  const pantry = state.pantry || [];
-  if (pantry.length === 0) {
-    setRecipesStatus('Add some ingredients first.', true);
-    return;
-  }
-  setRecipesStatus('Generating… this can take a minute or two on local hardware.', false);
-  document.getElementById('btn-generate-recipes').disabled = true;
-
-  fetch('/api/recipes/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pantry }),
-  }).then(r => r.json()).then(data => {
-    if (!data.jobId) throw new Error(data.error || 'Could not start generation');
-    pollRecipeJob(data.jobId);
-  }).catch(e => {
-    setRecipesStatus('Error: ' + e.message, true);
-    document.getElementById('btn-generate-recipes').disabled = false;
-  });
-}
-
-function pollRecipeJob(jobId) {
-  clearInterval(recipeJobPollTimer);
-  recipeJobPollTimer = setInterval(async () => {
-    let data;
-    try {
-      const resp = await fetch('/api/recipes/jobs', { signal: AbortSignal.timeout(10000) });
-      data = await resp.json();
-    } catch(e) {
-      return; // transient fetch hiccup -- keep polling rather than surfacing it
-    }
-    const job = (data.jobs || []).find(j => j.id === jobId);
-    if (!job) return;
-
-    if (job.status === 'done') {
-      clearInterval(recipeJobPollTimer);
-      recipeJobPollTimer = null;
-      state.lastRecipeBatch = { recipes: job.recipes, generatedAt: Date.now(), pantrySnapshot: [...state.pantry] };
-      save();
-      setRecipesStatus('', false);
-      document.getElementById('btn-generate-recipes').disabled = false;
-      document.getElementById('recipes-results').innerHTML = buildRecipeResultsHTML();
-    } else if (job.status === 'error') {
-      clearInterval(recipeJobPollTimer);
-      recipeJobPollTimer = null;
-      setRecipesStatus(job.message || 'Generation failed.', true);
-      document.getElementById('btn-generate-recipes').disabled = false;
-    } else if (job.status === 'running') {
-      setRecipesStatus('Generating… this can take a minute or two on local hardware.', false);
-    }
-  }, 2000);
-}
-
-// Ingredients used to be plain strings; the prompt now asks for
-// {name, amount} so chips can show quantities. Handles both shapes so an
-// already-persisted state.lastRecipeBatch from before this change doesn't
-// render "undefined".
-function formatRecipeIngredient(i) {
-  if (typeof i === 'string') return i;
-  if (!i) return '';
-  return i.amount ? `${i.name} (${i.amount})` : (i.name || '');
-}
-
-function buildRecipeResultsHTML() {
-  const batch = state.lastRecipeBatch;
-  if (!batch || !batch.recipes || batch.recipes.length === 0) {
-    return '<div class="recipes-empty">No recipes generated yet. Add ingredients above and click “Generate Recipes”.</div>';
-  }
-  return batch.recipes.map(r => `
-    <div class="recipe-card">
-      <h3 class="recipe-card-title">${escHtml(r.title || 'Untitled recipe')}</h3>
-      ${r.estimatedMinutes ? `<div class="recipe-meta">~${escHtml(String(r.estimatedMinutes))} min</div>` : ''}
-      ${(r.usesIngredients || []).length ? `<div class="recipe-chip-row">${
-        r.usesIngredients.map(i => `<span class="recipe-chip-uses">${escHtml(formatRecipeIngredient(i))}</span>`).join('')
-      }</div>` : ''}
-      ${(r.missingIngredients || []).length ? `<div class="recipe-chip-row">${
-        r.missingIngredients.map(i => `<span class="recipe-chip-missing">+ ${escHtml(formatRecipeIngredient(i))}</span>`).join('')
-      }</div>` : ''}
-      ${(r.instructions || []).length ? `<ol class="recipe-instructions">${
-        r.instructions.map(step => `<li>${escHtml(step)}</li>`).join('')
-      }</ol>` : ''}
-    </div>`).join('');
-}
 
 // ── UPCOMING EVENTS ALERT STRIP ───────────────────────────────────────────────
 // Shown on the bookmarks page. Each event is checked against its own
@@ -8778,7 +8490,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'player', 'workout', 'recipes'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'player', 'workout'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -8955,21 +8667,19 @@ function switchTab(tab) {
   show('wiki-page',      tab === 'wiki');
   show('player-page',    tab === 'player');
   show('workout-page',   tab === 'workout');
-  show('recipes-page',   tab === 'recipes');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', wiki: 'Helm — Wiki', player: 'Helm — Music', workout: 'Helm — Workout', recipes: 'Helm — Recipes' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', wiki: 'Helm — Wiki', player: 'Helm — Music', workout: 'Helm — Workout' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
   if (tab === 'news')      renderNews();
   if (tab === 'calendar')  renderCalendarPage();
   if (tab === 'workout')   renderWorkoutPage();
-  if (tab === 'recipes')   renderRecipesPage();
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'services')  { renderServicesPage(); startServicesPolling(); }
   else stopServicesPolling();
