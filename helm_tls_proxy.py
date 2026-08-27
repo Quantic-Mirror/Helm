@@ -132,9 +132,24 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         url = BACKEND_BASE + self.path
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length else None
-        req = urllib.request.Request(url, data=body, method=method)
-        # Forward headers the backend actually needs; skip hop-by-hop ones
-        # that only make sense for the client<->proxy leg.
+        # Preserve the client's original Host so backends that validate the
+        # Host/Origin against browser-sent values (e.g. hermes-webui's CSRF
+        # same-origin check against X-Forwarded-Host) see the public hostname
+        # the browser actually used, not the loopback address urllib would
+        # otherwise synthesize from BACKEND_HOST. We ALSO forward the original
+        # host via X-Forwarded-Host so backends that don't read the raw Host
+        # (and instead trust the forwarded header behind a reverse proxy) keep
+        # working when HERMES_WEBUI_TRUST_FORWARDED_HOST=1 is set.
+        client_host = self.headers.get("Host", "")
+        if client_host:
+            req = urllib.request.Request(url, data=body, method=method, headers={"Host": client_host})
+        else:
+            req = urllib.request.Request(url, data=body, method=method)
+        if client_host:
+            req.add_header("X-Forwarded-Host", client_host)
+        # Forward remaining headers the backend needs; skip hop-by-hop ones
+        # that only make sense for the client<->proxy leg, and skip Host too
+        # (already set above) so it isn't duplicated.
         skip = {"host", "content-length", "transfer-encoding", "connection"}
         for k, v in self.headers.items():
             if k.lower() not in skip:
