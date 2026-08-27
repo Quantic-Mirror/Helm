@@ -37,8 +37,13 @@ BACKEND_HOST = sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1"
 BACKEND_BASE = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
-KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
+# Defaults look for cert.pem/key.pem next to this script (the layout the
+# kiwix proxy uses via its WorkingDirectory). Override via env when the
+# trusted cert lives elsewhere — e.g. the shared Helm Local CA keypair at
+# ~/.config/mympd/ssl/hyperion-{cert,key}.pem — so a service doesn't have to
+# symlink or copy cert files into its working directory.
+CERT_FILE = os.environ.get("HELM_TLS_CERT", os.path.join(SCRIPT_DIR, "cert.pem"))
+KEY_FILE = os.environ.get("HELM_TLS_KEY", os.path.join(SCRIPT_DIR, "key.pem"))
 
 # Many self-hosted apps (Wiki.js, and likely Forgejo/Element/Elk later) ship
 # their own clickjacking protection by default — X-Frame-Options: SAMEORIGIN
