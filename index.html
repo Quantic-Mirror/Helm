@@ -1841,6 +1841,16 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   height: calc(100vh - 56px);
   overflow: hidden;
 }
+#hermes-page {
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+#hermes-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
 #player-frame {
   width: 100%;
   height: 100%;
@@ -2944,6 +2954,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
     <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
+    <a class="tab-btn" href="#hermes" data-tab="hermes">Hermes</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -3216,6 +3227,19 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 <!-- WIKI PAGE -->
 <div id="wiki-page" style="display:none">
   <iframe id="wiki-frame" src="https://popcorn:9002" allow="fullscreen"></iframe>
+</div>
+
+<!-- HERMES WEBUI PAGE -->
+<!-- Hermes Web UI is embedded via helm_tls_proxy.py, which strips its
+     X-Frame-Options: DENY / CSP frame-ancestors 'none' and rewrites session
+     cookies to SameSite=None; Secure — mirroring the Wiki.js setup. The proxy
+     is managed by hermes-webui-proxy.service on popcorn (listens on 9006,
+     forwards to the webui backend on 8787). Auth on the webui is off by
+     default (trusted LAN), so the basic embed needs no login redirect or
+     cookie round-tripping — the proxy's cookie rewriting handles it if a
+     password is later enabled. -->
+<div id="hermes-page" style="display:none">
+  <iframe id="hermes-frame" src="https://popcorn:9006" allow="clipboard-write; microphone; camera"></iframe>
 </div>
 
 <!-- MEALIE PAGE -->
