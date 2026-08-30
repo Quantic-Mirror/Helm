@@ -1,0 +1,12 @@
+.git
+node_modules
+__pycache__
+*.pyc
+.env
+data/
+*.pem
+*.md
+searxng-settings/
+searxng-data/
+rabbitmq-data/
+*.bak

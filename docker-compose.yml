@@ -1,0 +1,154 @@
+# ── Helm dashboard, containerized ───────────────────────────────────────────────
+#
+# The Helm server and SearXNG run as containers on the host.
+# The password vault (pass + gpg) and audio grabber (yt-dlp) run natively on
+# a separate Linux host and are reached over HTTP.
+# See CONTAINER_SETUP.md + WSL2_VAULT_SETUP.md for the full dual-boot topology.
+#
+# Why vault/audio stay on a separate host, not in containers:
+# - vault_api.py shells out to `pass` → gpg-agent → your real GPG key.
+#   pass + gpg are Linux-only; running vault_server.py on the host (and WSL2
+#   on the Windows side) with the pass store on a USB drive is the path.
+# - audio_grabber_server.py runs yt-dlp with browser cookies + ~/.local/bin
+#   in PATH — easiest to keep on the host where those live.
+#
+# Music tab: Removed from Helm. MPD runs on the host (native on Linux,
+# WSL2 on Windows). Use a native MPD client app instead of a browser iframe.
+# See CONTAINER_SETUP.md for details.
+#
+# All hostnames are configurable via .env variables — no hardcoding.
+# Adapt this setup to any host by setting the variables in .env.
+#
+# ── Deployment modes ───────────────────────────────────────────────────────────
+#
+#   1. Tailscale-only (recommended for single user):
+#      Set SERVE_VIA_TAILSCALE=true in .env. Containers bind to 127.0.0.1 only.
+#      Access via your Tailscale IP (e.g. https://100.x.x.x:8443).
+#      No public certs needed — self-signed cert works since Tailscale encrypts
+#      in transit and you're the only user.
+#
+#   2. Public/LAN access:
+#      Set SERVE_VIA_TAILSCALE=false (or unset) in .env. Containers bind to 0.0.0.0.
+#      Use Let's Encrypt certs for TLS. Reverse proxy with nginx/caddy.
+#
+# To start:
+#   docker compose up -d
+#
+# State, TLS certs, and tokens live in ./data, mounted to /app in the
+# container (since the server resolves paths relative to SCRIPT_DIR).
+
+services:
+  # ── The main dashboard server ───────────────────────────────────────────────
+  helm:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: helm
+    restart: unless-stopped
+    # Port binding depends on deployment mode:
+    # - Tailscale-only: bind to 127.0.0.1 only (access via Tailscale IP)
+    # - Public/LAN:     bind to 0.0.0.0 (access via hostname/IP)
+    # The port mapping below reads from .env so you can switch modes easily.
+    ports:
+      - "${HELM_HTTP_PORT:-127.0.0.1:8080:8080}"     # HTTP
+      - "${HELM_HTTPS_PORT:-127.0.0.1:8443:8443}"   # HTTPS (if certs are present)
+    # Run as the host user so systemd --user works for service monitoring.
+    # Find yours: id -u && id -g
+    user: "${HELM_UID:-1000}:${HELM_GID:-1000}"
+    group_add:
+      # Add the container process to the host docker group so it can
+      # control Docker containers via the socket API.
+      # Find yours: getent group docker | cut -d: -f3
+      - "${DOCKER_GID:-999}"
+    # All state, certs, and tokens live under /app (SCRIPT_DIR).
+    # Inside ./data, you need:
+    #   marks_state.json      (created at runtime if missing)
+    #   vault_token.txt       (shared secret, also on the vault host)
+    #   audio_token.txt       (shared secret, also on the audio host)
+    #   cert.pem + key.pem    (for HTTPS — optional)
+    #   helm-backups/         (created at runtime, rolling state snapshots)
+    volumes:
+      - ./data:/app
+      # Docker socket: needed so MONITORED_SERVICES can list/control containers
+      #                (searxng, etc.) via the Docker socket API.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # systemd user session: needed for systemctl --user and journalctl --user
+      #                       to monitor systemd-user services and timers.
+      # NOTE: The "helm" entry in MONITORED_SERVICES is type=systemd-user on
+      # the host. Inside the container, helm IS the container. You can either
+      # leave it (shows "unknown") or change it to type="docker" with
+      # container="helm" so it shows container status via the Docker socket.
+      - /run/user/${HELM_UID:-1000}/systemd/private:/run/user/${HELM_UID:-1000}/systemd/private:rw
+      # journalctl --user reads from the user journal via this socket.
+      - /run/user/${HELM_UID:-1000}/journal/socket:/run/user/${HELM_UID:-1000}/journal/socket:ro
+    environment:
+      # SERVER_HOST must match the hostname browsers will use to reach this
+      # container. The frontend uses it to construct URLs for /api/config.
+      # For Tailscale: set to your Tailscale IP (e.g. 100.x.x.x)
+      # For public/LAN: set to your domain or LAN IP
+      SERVER_HOST: "${SERVER_HOST:-localhost}"
+      SERVER_PORT: "8080"
+      # vault_server.py runs on a separate host (where pass + gpg live).
+      # Copy vault_token.txt into ./data so it's accessible inside the container.
+      VAULT_BACKEND_URL: "http://${VAULT_HOST:-hyperion}:8090"
+      # audio_grabber_server.py runs on a separate host (where yt-dlp + cookies live).
+      # Copy audio_token.txt into ./data so it's accessible inside the container.
+      AUDIO_BACKEND_URL: "http://${AUDIO_HOST:-hyperion}:8091"
+      # SearXNG URL — the frontend fetches this to populate the search engine URL.
+      SEARXNG_URL: "http://${SEARXNG_HOST:-localhost}:8081"
+    command: ["python3", "helm_server.py", "8080"]
+
+  # NOTE: Helm no longer iframes any external apps (the Wiki.js / Hermes tabs
+  # were removed), so there is no helm_tls_proxy.py service here. If you later
+  # re-add an iframed cross-origin app, add a service that runs
+  #   python3 helm_tls_proxy.py <listen_port> <backend_port> [backend_host]
+  # — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" (no WebSocket).
+
+  # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
+  # The frontend populates the Searx engine URL dynamically from /api/config,
+  # which pulls SEARXNG_URL from the helm service's environment (set above).
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng-core
+    restart: unless-stopped
+    ports:
+      - "${SEARXNG_PORT:-127.0.0.1:8081:8080}"
+    volumes:
+      - ./searxng-settings:/etc/searxng
+      - ./searxng-data:/var/lib/searxng
+    environment:
+      - "BASE_URL=http://${SEARXNG_HOST:-localhost}:8081/"
+      - "SECRET_KEY=${SEARXNG_SECRET_KEY:-changeme}"
+
+  # ── Backup event worker (drains RabbitMQ for the /api/backup-events feed) ────
+  # Polls RabbitMQ mgmt API, writes backup_events.json to ./data which
+  # helm_server.py reads. If you already have RabbitMQ on the host, remove
+  # the rabbitmq service and point RABBITMQ_MGMT_URL at your broker.
+  backup-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: backup-event-worker
+    restart: unless-stopped
+    volumes:
+      - ./data:/app
+    environment:
+      RABBITMQ_MGMT_URL: "http://rabbitmq:15672"
+    command: ["python3", "backup_event_worker.py"]
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    restart: unless-stopped
+    volumes:
+      - ./rabbitmq-data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-helm}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-changeme}
+
+# ── Network: all containers on an isolated bridge so they can reach each other
+# by service name. The host (and LAN browsers) reach helm on published ports.
+networks:
+  default:
+    name: helm-net
+    driver: bridge

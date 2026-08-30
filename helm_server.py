@@ -138,6 +138,12 @@ def proxy_to_audio(method, path_and_query, body_bytes=None):
         return 502, msg.encode("utf-8"), {"Content-Type": "application/json"}
 
 
+# ── SERVER HOST (for generating correct URLs in /api/config) ────────────────────
+# Used by the frontend to construct absolute URLs for proxied services.
+# Defaults to "localhost" — override with SERVER_HOST env var.
+SERVER_HOST = os.environ.get("SERVER_HOST", "localhost")
+SERVER_PORT = os.environ.get("SERVER_PORT", "8080")
+
 CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 
 
@@ -909,6 +915,19 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        if parsed.path == "/api/config":
+            # Expose runtime configuration to the frontend so it can construct
+            # correct URLs without hardcoding hostnames. All values come from
+            # env vars in docker-compose.yml, defaulting to localhost.
+            self.send_json(200, {
+                "server_host": SERVER_HOST,
+                "server_port": SERVER_PORT,
+                "searxng_url": os.environ.get("SEARXNG_URL", f"http://{SERVER_HOST}:{SERVER_PORT}"),
+                "vault_url": VAULT_BACKEND.rsplit("/", 1)[0] if VAULT_BACKEND else f"http://{SERVER_HOST}:8090",
+                "audio_url": AUDIO_BACKEND.rsplit("/", 1)[0] if AUDIO_BACKEND else f"http://{SERVER_HOST}:8091",
+            })
             return
 
         if parsed.path == "/api/network":

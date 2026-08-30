@@ -4035,8 +4035,11 @@ function render() {
 
 
 // ── SEARCH WIDGET ────────────────────────────────────────────────────────────
+// The Searx engine URL is populated from /api/config at startup — see
+// initConfig() below. If the config endpoint isn't available, falls back to
+// a localhost URL (useful for local dev without docker-compose).
 const ENGINES = {
-  searx:     { label: 'Searx',     url: 'http://popcorn:8080/search?q=',                        icon: '🔍' },
+  searx:     { label: 'Searx',     url: null, icon: '🔍' },  // set by initConfig()
   startpage: { label: 'Startpage', url: 'https://www.startpage.com/search?q=',                  icon: '🌐' },
   youtube:   { label: 'YouTube',   url: 'https://www.youtube.com/results?search_query=',         icon: '▶' },
 };
@@ -7996,15 +7999,30 @@ function updateSomaFMPlayIcons(forceIcon) {
   document.querySelectorAll('[data-somafm-playtoggle]').forEach(el => { el.title = title; });
 }
 
-// Controls the always-on background player on hyperion (soma-radio.service,
+// Controls the always-on background player on the audio host (soma-radio.service,
 // mpv) via audio_grabber_server.py's new radio/status + radio/control
 // routes, proxied through the same /api/audio/* tunnel submitAudioDownload()
 // already uses. Deliberately a separate control from toggleSomaFMPlayback()
 // above -- that one plays through *this browser tab*; this one plays
-// through hyperion's own speakers regardless of whether any browser is open.
+// through the host's own speakers regardless of whether any browser is open.
+let AUDIO_HOST_LABEL = 'audio host';
+
 async function loadSomaFMRadioStatus(widgetId) {
   const el = document.getElementById('somafm-radio-' + widgetId);
   if (!el) return;
+
+  // Populate AUDIO_HOST_LABEL from /api/config if available
+  try {
+    const cfgResp = await fetch('/api/config', { signal: AbortSignal.timeout(2000) });
+    if (cfgResp.ok) {
+      const cfg = await cfgResp.json();
+      if (cfg.audio_url) {
+        const u = new URL(cfg.audio_url);
+        AUDIO_HOST_LABEL = u.hostname;
+      }
+    }
+  } catch (e) { /* use default */ }
+
   try {
     const resp = await fetch('/api/audio/radio/status', { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -8020,7 +8038,7 @@ function renderSomaFMRadioCtrl(widgetId, running) {
   if (!el) return;
   el.innerHTML = `
     <span class="somafm-radio-dot${running ? ' somafm-radio-dot-on' : ''}"></span>
-    <span class="somafm-radio-label">Speaker (hyperion): ${running ? 'On' : 'Off'}</span>
+    <span class="somafm-radio-label">Speaker (${AUDIO_HOST_LABEL}): ${running ? 'On' : 'Off'}</span>
     <button class="btn somafm-radio-btn" data-somafm-radio-action="${running ? 'stop' : 'start'}">${running ? 'Turn off' : 'Turn on'}</button>
   `;
   el.querySelector('[data-somafm-radio-action]').onclick = async (e) => {
@@ -8664,6 +8682,25 @@ document.querySelectorAll('[data-calpage-view]').forEach(btn => {
   btn.onclick = () => { calPageView = btn.dataset.calpageView; renderCalendarPage(); };
 });
 
+// ── RUNTIME CONFIG ─────────────────────────────────────────────────────────────
+// Pull /api/config to get runtime hostnames/URLs so nothing is hardcoded.
+// Fallback to localhost defaults for local dev (python3 helm_server.py).
+async function initConfig() {
+  try {
+    const resp = await fetch('/api/config', { signal: AbortSignal.timeout(5000) });
+    if (resp.ok) {
+      const cfg = await resp.json();
+      if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
+    }
+  } catch (e) {
+    // Config endpoint not available (e.g. running via python3 directly).
+    // Fall back to localhost for SearxNG.
+    ENGINES.searx.url = 'http://localhost:8080/search?q=';
+  }
+}
+
+// ── STARTUP ────────────────────────────────────────────────────────────────────
+initConfig();
 initSync();
 renderUpcomingEvents();
 
