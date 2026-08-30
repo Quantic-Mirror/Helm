@@ -43,7 +43,7 @@ How this works without hardcoded hostnames: `helm_server.py` exposes an
 `/api/config` endpoint that returns `SERVER_HOST` / `SEARXNG_URL` (etc.) from
 its environment, and `index.html`'s `initConfig()` fetches it at startup to
 build the SearXNG search URL. The port bind interface comes from `HELM_BIND`
-(default `127.0.0.1`); `HELM_HTTP_PORT` / `HELM_HTTPS_PORT` / `SEARXNG_PORT`
+(default `127.0.0.1`); `HELM_PORT` / `SEARXNG_PORT`
 override the whole `ip:hostport:containerport` mapping if you also need a
 different host port.
 
@@ -188,8 +188,8 @@ missing socket path, which is why those mounts ship commented out.
 
 If you prefer to expose Helm publicly instead of over Tailscale:
 
-1. Set `HELM_BIND=0.0.0.0` in `.env` (or an explicit `HELM_HTTP_PORT` /
-   `HELM_HTTPS_PORT` if you also need a different host port, e.g. 443)
+1. Set `HELM_BIND=0.0.0.0` in `.env` (or `HELM_PORT=0.0.0.0:443:8443` to also
+   move the host port)
 2. Use Let's Encrypt certs (via nginx/caddy reverse proxy)
 3. Point `SERVER_HOST` to your public domain
 4. **Add authentication** — Helm has no built-in auth; protect `/api/*`

@@ -27,8 +27,8 @@
 #   HELM_BIND=0.0.0.0               every interface — only behind a reverse
 #                                   proxy + auth (Helm has none built in).
 #
-# HELM_HTTP_PORT / HELM_HTTPS_PORT / SEARXNG_PORT still override the whole
-# "ip:hostport:containerport" mapping when you also need a different host port.
+# HELM_PORT / SEARXNG_PORT still override the whole "ip:hostport:containerport"
+# mapping when you also need a different host port.
 #
 # To start on a fresh host:
 #   git clone <repo> && cd <repo>
@@ -49,9 +49,11 @@ services:
     container_name: helm
     restart: unless-stopped
     # Bind interface comes from HELM_BIND (default 127.0.0.1); see the header.
+    # helm_server.py binds ONE port (the `command:` arg) and TLS-wraps it when
+    # data/cert.pem + data/key.pem exist — so this is HTTPS on 8443 with a cert,
+    # plain HTTP on 8443 without one. There is no separate HTTP port.
     ports:
-      - "${HELM_HTTP_PORT:-${HELM_BIND:-127.0.0.1}:8080:8080}"     # HTTP
-      - "${HELM_HTTPS_PORT:-${HELM_BIND:-127.0.0.1}:8443:8443}"   # HTTPS (if certs are present)
+      - "${HELM_PORT:-${HELM_BIND:-127.0.0.1}:8443:8443}"
     # Run as the host user so systemd --user works for service monitoring.
     # Find yours: id -u && id -g
     user: "${HELM_UID:-1000}:${HELM_GID:-1000}"
@@ -88,7 +90,7 @@ services:
       # For Tailscale: set to your Tailscale IP (e.g. 100.x.x.x)
       # For public/LAN: set to your domain or LAN IP
       SERVER_HOST: "${SERVER_HOST:-localhost}"
-      SERVER_PORT: "8080"
+      SERVER_PORT: "8443"
       # vault_server.py runs on a separate host (where pass + gpg live).
       # Copy vault_token.txt into ./data so it's accessible inside the container.
       VAULT_BACKEND_URL: "http://${VAULT_HOST:-hyperion}:8090"
@@ -97,7 +99,7 @@ services:
       AUDIO_BACKEND_URL: "http://${AUDIO_HOST:-hyperion}:8091"
       # SearXNG URL — the frontend fetches this to populate the search engine URL.
       SEARXNG_URL: "http://${SEARXNG_HOST:-localhost}:8081"
-    command: ["python3", "helm_server.py", "8080"]
+    command: ["python3", "helm_server.py", "8443"]
 
   # NOTE: Helm no longer iframes any external apps (the Wiki.js / Hermes tabs
   # were removed), so there is no helm_tls_proxy.py service here. If you later
