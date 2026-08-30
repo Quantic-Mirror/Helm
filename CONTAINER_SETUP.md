@@ -82,21 +82,26 @@ variables — no hardcoding. Adapt this setup to any host.
    #   DOCKER_GID        — find with: getent group docker | cut -d: -f3
    ```
 
-5. **Set up the data directory:**
+5. **Set up the data directory (optional — it's created empty on first run):**
    ```bash
    mkdir -p data
-   # Copy your existing state + secrets from your previous setup:
+   ```
+   The code is baked into the image, so nothing needs copying here.
+   `data/` is bind-mounted to `/app/state`; `marks_state.json` and
+   `helm-backups/` are created automatically. Add these only if you use the
+   corresponding feature:
+   ```bash
+   # Bring your existing bookmarks/state across (optional):
    cp /path/to/marks_state.json data/
-   cp /path/to/vault_token.txt data/        # shared secret for the vault host
-   cp /path/to/audio_token.txt data/        # shared secret for the audio host
 
-   # Generate a self-signed TLS cert for your Tailscale IP:
+   # Shared secrets for the vault / audio hosts (only if those are deployed):
+   cp /path/to/vault_token.txt data/
+   cp /path/to/audio_token.txt data/
+
+   # Self-signed TLS cert for HTTPS on :8443 (optional):
    openssl req -x509 -newkey rsa:2048 -nodes \
      -keyout data/key.pem -out data/cert.pem -days 3650 \
      -subj "/CN=$(grep SERVER_HOST .env | cut -d= -f2)"
-
-   # Generate a fresh state file if you don't have one:
-   echo '{"state":{},"version":0,"updatedAt":null}' > data/marks_state.json
    ```
 
 6. **Start the stack:**

@@ -31,11 +31,15 @@
 #      Set SERVE_VIA_TAILSCALE=false (or unset) in .env. Containers bind to 0.0.0.0.
 #      Use Let's Encrypt certs for TLS. Reverse proxy with nginx/caddy.
 #
-# To start:
+# To start on a fresh host:
+#   git clone <repo> && cd <repo>
+#   cp .env.example .env   # then edit — see CONTAINER_SETUP.md
 #   docker compose up -d
 #
-# State, TLS certs, and tokens live in ./data, mounted to /app in the
-# container (since the server resolves paths relative to SCRIPT_DIR).
+# The code is baked into the image (Dockerfile.helm `COPY . .`). Mutable
+# state, TLS certs and tokens live in ./data on the host, bind-mounted to
+# /app/state and pointed at via HELM_STATE_DIR — so they survive image
+# rebuilds and stay editable from the host.
 
 services:
   # ── The main dashboard server ───────────────────────────────────────────────
@@ -60,28 +64,29 @@ services:
       # control Docker containers via the socket API.
       # Find yours: getent group docker | cut -d: -f3
       - "${DOCKER_GID:-999}"
-    # All state, certs, and tokens live under /app (SCRIPT_DIR).
-    # Inside ./data, you need:
-    #   marks_state.json      (created at runtime if missing)
+    # Host ./data is bind-mounted to /app/state (HELM_STATE_DIR below). It may
+    # be empty on first run — marks_state.json and helm-backups/ are created
+    # automatically. Drop in as needed:
     #   vault_token.txt       (shared secret, also on the vault host)
     #   audio_token.txt       (shared secret, also on the audio host)
-    #   cert.pem + key.pem    (for HTTPS — optional)
-    #   helm-backups/         (created at runtime, rolling state snapshots)
+    #   cert.pem + key.pem    (for HTTPS on 8443 — optional)
     volumes:
-      - ./data:/app
-      # Docker socket: needed so MONITORED_SERVICES can list/control containers
-      #                (searxng, etc.) via the Docker socket API.
+      - ./data:/app/state
+      # Docker socket: lets MONITORED_SERVICES list/control containers
+      # (searxng, etc.) via the Docker socket API. Safe to remove if you
+      # don't need the Services tab to see other containers.
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # systemd user session: needed for systemctl --user and journalctl --user
-      #                       to monitor systemd-user services and timers.
-      # NOTE: The "helm" entry in MONITORED_SERVICES is type=systemd-user on
-      # the host. Inside the container, helm IS the container. You can either
-      # leave it (shows "unknown") or change it to type="docker" with
-      # container="helm" so it shows container status via the Docker socket.
-      - /run/user/${HELM_UID:-1000}/systemd/private:/run/user/${HELM_UID:-1000}/systemd/private:rw
-      # journalctl --user reads from the user journal via this socket.
-      - /run/user/${HELM_UID:-1000}/journal/socket:/run/user/${HELM_UID:-1000}/journal/socket:ro
+      # OPTIONAL — only for monitoring the *host's* systemd-user services from
+      # the Services/Logs tabs. Requires a running user session + journal on
+      # the host (`loginctl enable-linger <user>`), otherwise `docker compose
+      # up` fails on the missing socket path. Most containerized deployments
+      # have no host systemd-user units to watch — leave these commented and
+      # trim the systemd-user entries from MONITORED_SERVICES.
+      # - /run/user/${HELM_UID:-1000}/systemd/private:/run/user/${HELM_UID:-1000}/systemd/private:rw
+      # - /run/user/${HELM_UID:-1000}/journal/socket:/run/user/${HELM_UID:-1000}/journal/socket:ro
     environment:
+      # Mutable state / secrets / certs dir (the ./data bind mount above).
+      HELM_STATE_DIR: "/app/state"
       # SERVER_HOST must match the hostname browsers will use to reach this
       # container. The frontend uses it to construct URLs for /api/config.
       # For Tailscale: set to your Tailscale IP (e.g. 100.x.x.x)
@@ -131,8 +136,10 @@ services:
     container_name: backup-event-worker
     restart: unless-stopped
     volumes:
-      - ./data:/app
+      # Writes backup_events.json into the same state dir helm reads it from.
+      - ./data:/app/state
     environment:
+      HELM_STATE_DIR: "/app/state"
       RABBITMQ_MGMT_URL: "http://rabbitmq:15672"
     command: ["python3", "backup_event_worker.py"]
 

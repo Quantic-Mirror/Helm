@@ -37,7 +37,13 @@ from collections import defaultdict
 import emit_event
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-EVENTS_FILE = os.path.join(SCRIPT_DIR, "backup_events.json")
+
+# Must resolve to the same file helm_server.py reads as BACKUP_EVENTS_FILE.
+# Defaults to next-to-the-script; in the container both processes set
+# HELM_STATE_DIR=/app/state (a bind mount) so they share it. See docker-compose.yml.
+STATE_DIR = os.environ.get("HELM_STATE_DIR", SCRIPT_DIR)
+os.makedirs(STATE_DIR, exist_ok=True)
+EVENTS_FILE = os.path.join(STATE_DIR, "backup_events.json")
 
 POLL_INTERVAL_SECONDS = 3
 MAX_EVENTS = 500
