@@ -15,13 +15,11 @@ __pycache__/
 *.bak
 vault_token.txt
 audio_token.txt
-CLAUDE.md
-vault_token.txt
+backup_token.txt
 
 # Container deployment runtime (see docker-compose.yml / CONTAINER_SETUP.md)
 .env
 data/
 searxng-settings/
 searxng-data/
-rabbitmq-data/
 *.tar.gz
