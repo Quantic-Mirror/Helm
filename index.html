@@ -3064,11 +3064,10 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 <!-- LOGS PAGE -->
 <div id="logs-page" style="display:none">
   <div id="logs-topbar">
+    <!-- Options past "All services" are filled in by populateLogsServiceFilter()
+         from /api/services, so this stays in sync with MONITORED_SERVICES. -->
     <select id="logs-service-filter" class="btn" style="cursor:pointer">
       <option value="all">All services</option>
-      <option value="helm">Helm</option>
-      <option value="searxng-core">SearXNG</option>
-      <option value="r2-sync">Cloudflare R2 Sync</option>
     </select>
     <div class="logs-search-wrap">
       <input type="text" id="logs-search" placeholder="Filter logs…" autocomplete="off" spellcheck="false">
@@ -8663,7 +8662,12 @@ function switchTab(tab) {
   else stopBackupsPolling();
   if (tab === 'audio')     { fetchAudioData(); startAudioPolling(); }
   else stopAudioPolling();
-  if (tab === 'logs')      { fetchLogs(); startLogsPolling(); }
+  if (tab === 'logs')      {
+    fetchLogs(); startLogsPolling();
+    // Populate the service filter from /api/services if we haven't already
+    // (e.g. Logs opened without visiting Services first).
+    if (!servicesData.length) fetchServices(); else populateLogsServiceFilter();
+  }
   else stopLogsPolling();
 }
 
@@ -9770,10 +9774,22 @@ async function fetchServiceStatus() {
     const data = await resp.json();
     servicesData = data.services || [];
     renderServicesPage();
+    populateLogsServiceFilter();
   } catch(e) {
     document.getElementById('services-grid').innerHTML =
       `<div class="svc-error">Could not fetch service status: ${escHtml(e.message)}</div>`;
   }
+}
+
+// Keep the Logs tab's service filter in sync with MONITORED_SERVICES instead
+// of hand-maintaining <option>s. Called after every /api/services fetch.
+function populateLogsServiceFilter() {
+  const sel = document.getElementById('logs-service-filter');
+  if (!sel || !servicesData.length) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">All services</option>' +
+    servicesData.map(s => `<option value="${escHtml(s.id)}">${escHtml(s.label)}</option>`).join('');
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
 }
 
 function renderServicesPage() {

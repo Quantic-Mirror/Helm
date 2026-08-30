@@ -165,14 +165,20 @@ There is no broker: an event emitted while the Helm host is unreachable is
 retried for ~3 minutes and then dropped. The backup itself is unaffected —
 `emit_event.py` failures are non-fatal to the calling script.
 
-## The systemd-user monitoring caveat
+## The Services / Logs tabs
 
-`MONITORED_SERVICES` in `helm_server.py` may include `systemd-user` entries
-for services running on the container host. Inside the container, these resolve
-via the mounted systemd D-Bus socket (`/run/user/${UID}/systemd/private`).
+`MONITORED_SERVICES` in `helm_server.py` ships **docker-only** — the `helm` and
+`searxng-core` containers, watched through the mounted Docker socket. The
+Services tab is a container-health panel and the Logs tab shows `docker logs`
+for those containers. The Logs filter dropdown is generated from
+`/api/services`, so adding an entry to `MONITORED_SERVICES` is all it takes.
 
-If you're monitoring a service that runs differently inside vs. outside the
-container, you may need to adjust the entry type (`systemd-user` → `docker`).
+To also watch a **host** `systemd --user` unit, add a `systemd-user` (or
+`systemd` / `systemd-timer`) entry — the generic dispatch still supports it —
+and uncomment the `/run/user/${UID}/...` socket mounts in `docker-compose.yml`.
+That needs a running user session + journal on the host
+(`loginctl enable-linger <user>`); without it `docker compose up` fails on the
+missing socket path, which is why those mounts ship commented out.
 
 ## Public/LAN deployment (alternative to Tailscale)
 
