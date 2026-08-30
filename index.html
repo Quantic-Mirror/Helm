@@ -9893,10 +9893,11 @@ function stopServicesPolling() {
 
 // ── BACKUP PIPELINE PAGE ─────────────────────────────════════════════════════
 // Polls /api/backup-events every 30s while the tab is active. helm_server.py
-// serves this straight off backup_events.json, which backup_event_worker.py
-// (a separate process) keeps updated by draining RabbitMQ. Two stage cards
-// (Hyperion → popcorn, popcorn → R2) show the latest status light for each
-// pipeline stage, plus a scrolling list of the most recent raw events.
+// serves this straight off backup_events.json, which it writes on each
+// token-authed POST /api/backup-events from emit_event.py (called by the
+// external backup scripts). Two stage cards (Hyperion → popcorn, popcorn → R2)
+// show the latest status light for each pipeline stage, plus a scrolling list
+// of the most recent raw events.
 // ════════════════════════════════════════════════════════════════════════════
 
 const BACKUP_STAGES = [

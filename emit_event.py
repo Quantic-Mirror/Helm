@@ -1,33 +1,32 @@
 #!/usr/bin/env python3
 """
-emit_event.py — publish a backup-pipeline event onto RabbitMQ.
+emit_event.py — publish a backup-pipeline event to helm_server.py.
 
-Talks straight to the RabbitMQ management HTTP API (urllib, stdlib only)
-rather than pulling in an AMQP client library like pika — same "reuse the
-daemon's own interface instead of adding a dependency" precedent as the
-Docker Unix-socket helpers and the `pass`-backed vault in this repo. The
-management plugin must be enabled on the broker:
-    rabbitmq-plugins enable rabbitmq_management
+POSTs a single JSON event to helm_server.py's POST /api/backup-events with a
+shared-secret header (X-Backup-Token), the same lightweight auth model as
+vault_token.txt / audio_token.txt. helm_server.py stores it in
+backup_events.json (pruned server-side) for the Backup Pipeline tab to read.
 
-Used two ways:
-  1. As a CLI, from hyperion-backup.sh / rclone-sync-to-r2.sh:
-       python3 emit_event.py <stage> <status> [--name NAME] [--message MSG] [--data JSON]
-  2. As a module, imported by backup_event_worker.py for the RabbitMQ
-     connection constants and the credential-fetching logic.
+This replaced a RabbitMQ broker + a drainer process (backup_event_worker.py)
+that existed only to buffer a handful of status events a day — same "reuse
+what's already running, don't stand up new infra" bias as the rest of the
+repo. Trade-off: without the broker, an event emitted while helm_server.py is
+unreachable is retried for ~3 minutes and then dropped. That's acceptable —
+the backup scripts already treat emit_event.py as non-fatal telemetry.
 
-Credential fetch branches on hostname, because `pass` + gpg-agent only
-live on hyperion:
-  - On hyperion: `pass show infra/rabbitmq/helm_producer` directly.
-  - On popcorn (no GPG/pass setup): go through helm_server.py's existing
-    vault proxy instead — the same one vault_token.txt secures for the
-    browser-facing /api/vault/* routes (see VAULT PROXY in helm_server.py).
-    emit_event.py just hits that proxy's GET /api/vault/entry/<path> over
-    loopback; helm_server.py is the one that holds vault_token.txt and
-    forwards to vault_server.py on hyperion.
+Used as a CLI, from the backup scripts (separate repo):
+    python3 emit_event.py <stage> <status> [--name NAME] [--message MSG] [--data JSON]
+
+Config (all env, with defaults):
+    HELM_URL              base URL of helm_server.py   (default http://localhost:8080)
+    HELM_BACKUP_TOKEN     the shared secret, inline
+    HELM_BACKUP_TOKEN_FILE  path to a file holding it  (else ./backup_token.txt
+                            next to this script, or ~/.config/helm/backup_token.txt)
+    HELM_CA_FILE          CA cert to verify HELM_URL's TLS against
+    HELM_TLS_INSECURE     set truthy to skip TLS verification (ok on a Tailscale link)
 """
 
 import argparse
-import base64
 import json
 import os
 import socket
@@ -35,58 +34,47 @@ import ssl
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 import uuid
 
-RABBITMQ_HOST = os.environ.get("RABBITMQ_HOST", "192.168.1.168")
-RABBITMQ_MGMT_PORT = int(os.environ.get("RABBITMQ_MGMT_PORT", "15672"))
-RABBITMQ_VHOST = "/helm"
-RABBITMQ_USER = "helm_producer"
-RABBITMQ_QUEUE = "backup.events"
-
-PASS_ENTRY = "infra/rabbitmq/helm_producer"
-
-# Where popcorn reaches its own helm_server.py to use the vault proxy.
-# Override if this deployment runs helm_server.py on a different port, or
-# behind HTTPS with a cert not signed by helm-ca.crt (see
-# _https_context_for_helm_url).
-HELM_URL = os.environ.get("HELM_URL", "http://localhost:8080")
-HELM_CA_FILE = os.environ.get("HELM_CA_FILE", "")
+HELM_URL          = os.environ.get("HELM_URL", "http://localhost:8080")
+HELM_CA_FILE      = os.environ.get("HELM_CA_FILE", "")
+HELM_TLS_INSECURE = os.environ.get("HELM_TLS_INSECURE", "").strip().lower() not in ("", "0", "false", "no")
 
 HOSTNAME = socket.gethostname().split(".")[0]
 
 
-def _password_via_pass():
-    """hyperion: pass + gpg-agent live here, so fetch directly."""
-    import subprocess
-
-    result = subprocess.run(
-        ["pass", "show", PASS_ENTRY], capture_output=True, text=True
+def _backup_token():
+    tok = os.environ.get("HELM_BACKUP_TOKEN", "").strip()
+    if tok:
+        return tok
+    path = os.environ.get("HELM_BACKUP_TOKEN_FILE", "").strip()
+    if not path:
+        for cand in (
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "backup_token.txt"),
+            os.path.expanduser("~/.config/helm/backup_token.txt"),
+        ):
+            if os.path.exists(cand):
+                path = cand
+                break
+    if path and os.path.exists(path):
+        with open(path) as f:
+            return f.read().strip()
+    raise RuntimeError(
+        "no backup token: set HELM_BACKUP_TOKEN or HELM_BACKUP_TOKEN_FILE "
+        "(or drop backup_token.txt next to emit_event.py)"
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"pass show {PASS_ENTRY} failed: {result.stderr.strip()}")
-    secret = result.stdout.splitlines()[0] if result.stdout else ""
-    if not secret:
-        raise RuntimeError(f"pass show {PASS_ENTRY} returned no secret")
-    return secret
 
 
-def _https_context_for_helm_url(url):
-    """
-    Build an SSL context for talking to helm_server.py's own vault proxy.
-    If HELM_CA_FILE (helm-ca.crt) is available, verify against it like a
-    browser would. Otherwise, for a loopback URL only, skip verification --
-    this is a same-machine call to a service we're about to trust with a
-    RabbitMQ password anyway, so a missing local CA file shouldn't be a
-    harder failure than not fetching the secret at all.
-    """
+def _tls_context(url):
+    """SSL context for talking to helm_server.py. Verify against HELM_CA_FILE if
+    given; else skip verification if HELM_TLS_INSECURE is set (fine over a
+    Tailscale-encrypted link); else fall back to the system trust store."""
     if not url.startswith("https://"):
         return None
     if HELM_CA_FILE and os.path.exists(HELM_CA_FILE):
         return ssl.create_default_context(cafile=HELM_CA_FILE)
-    host = urllib.parse.urlparse(url).hostname or ""
-    if host in ("localhost", "127.0.0.1", "::1"):
+    if HELM_TLS_INSECURE:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -94,107 +82,50 @@ def _https_context_for_helm_url(url):
     return ssl.create_default_context()
 
 
-def _password_via_vault_proxy():
-    """popcorn: no GPG/pass here, so go through helm_server.py's vault proxy.
+def post_event(event):
+    """POST the event to helm_server.py's /api/backup-events.
 
-    Retries several times over a few minutes on a genuine network-level
-    failure (timeout, connection refused) -- not on an HTTP error
-    response, which means the proxy WAS reached and answered, just not
-    with what we wanted, so retrying wouldn't help.
-
-    This is deliberately a much longer retry window than a normal
-    transient-blip fix would need. The actual mechanism behind scheduled
-    (systemd timer-triggered) runs failing here, while manual runs and
-    direct diagnostics moments earlier succeed, was not confirmed despite
-    ruling out: the server being down, session/lingering configuration,
-    a competing scheduled task (certbot), the specific hour (moving the
-    schedule entirely did not help), and the environment variables
-    themselves (confirmed correctly applied via `systemctl show`).
-    What IS empirically true, every time this has been checked: a manual
-    retry shortly after a failed scheduled run has always succeeded. This
-    retry loop leans on that observed pattern directly, giving a failure
-    several minutes to resolve on its own rather than assuming a handful
-    of seconds is enough.
+    Best-effort: retry a few times over a few minutes on a network-level
+    failure (connection refused, timeout) -- this keeps the empirically
+    observed pattern that a scheduled run failing here succeeds on a manual
+    retry moments later. An HTTP error response means the server WAS reached
+    and answered, so fail immediately with the real reason.
     """
-    url = HELM_URL.rstrip("/") + "/api/vault/entry/" + urllib.parse.quote(PASS_ENTRY)
-    ctx = _https_context_for_helm_url(url)
+    url = HELM_URL.rstrip("/") + "/api/backup-events"
+    ctx = _tls_context(url)
+    token = _backup_token()
+    body = json.dumps(event).encode("utf-8")
 
     max_attempts = 6
     delay_seconds = 30
-
     last_error = None
+
     for attempt in range(1, max_attempts + 1):
-        req = urllib.request.Request(url, method="GET")
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("X-Backup-Token", token)
         try:
             with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-                data = json.loads(resp.read())
-            secret = data.get("secret", "")
-            if not secret:
-                raise RuntimeError(f"vault proxy returned no secret for {PASS_ENTRY}")
-            return secret
+                resp.read()
+            return
         except urllib.error.HTTPError as e:
-            # Reached the proxy, got a real HTTP error back -- retrying
-            # won't change that, fail immediately with the real reason.
             raise RuntimeError(
-                f"vault proxy at {url} returned HTTP {e.code}: {e.read().decode(errors='replace')}"
+                f"{url} returned HTTP {e.code}: {e.read().decode(errors='replace')}"
             )
         except urllib.error.URLError as e:
             last_error = e.reason
             if attempt < max_attempts:
                 print(
-                    f"emit_event: vault proxy attempt {attempt}/{max_attempts} failed "
+                    f"emit_event: attempt {attempt}/{max_attempts} failed "
                     f"({e.reason}), retrying in {delay_seconds}s...",
                     file=sys.stderr,
                 )
                 time.sleep(delay_seconds)
 
     raise RuntimeError(
-        f"could not reach helm_server.py vault proxy at {url} after {max_attempts} attempts "
+        f"could not reach {url} after {max_attempts} attempts "
         f"over ~{max_attempts * delay_seconds}s: {last_error}"
     )
-
-
-def get_rabbitmq_password():
-    if HOSTNAME == "hyperion":
-        return _password_via_pass()
-    return _password_via_vault_proxy()
-
-
-def publish_event(event):
-    """POST the event to RabbitMQ's management API publish endpoint."""
-    password = get_rabbitmq_password()
-    vhost_enc = urllib.parse.quote(RABBITMQ_VHOST, safe="")
-    url = f"http://{RABBITMQ_HOST}:{RABBITMQ_MGMT_PORT}/api/exchanges/{vhost_enc}/amq.default/publish"
-
-    payload = {
-        "properties": {"content_type": "application/json", "delivery_mode": 2},
-        "routing_key": RABBITMQ_QUEUE,
-        "payload": json.dumps(event),
-        "payload_encoding": "string",
-    }
-    body = json.dumps(payload).encode("utf-8")
-    creds = base64.b64encode(f"{RABBITMQ_USER}:{password}".encode()).decode()
-    req = urllib.request.Request(url, data=body, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Authorization", f"Basic {creds}")
-
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            result = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"RabbitMQ publish returned HTTP {e.code}: {e.read().decode(errors='replace')}")
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"could not reach RabbitMQ management API at {RABBITMQ_HOST}:{RABBITMQ_MGMT_PORT}: {e.reason}")
-
-    if not result.get("routed"):
-        # Published fine, but nothing was listening -- almost always means
-        # backup_event_worker.py hasn't declared the queue yet (it hasn't
-        # been started, or lacks configure permission on the vhost).
-        print(
-            f"emit_event: warning: event was not routed to a queue "
-            f"(does '{RABBITMQ_QUEUE}' exist on vhost {RABBITMQ_VHOST}?)",
-            file=sys.stderr,
-        )
 
 
 def build_event(stage, status, name="", message="", data=None):
@@ -211,7 +142,7 @@ def build_event(stage, status, name="", message="", data=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Emit a backup-pipeline event to RabbitMQ")
+    parser = argparse.ArgumentParser(description="Emit a backup-pipeline event to helm_server.py")
     parser.add_argument("stage", help="e.g. hyperion_backup, r2_sync")
     parser.add_argument("status", help="e.g. started, ok, failed")
     parser.add_argument("--name", default="", help="backup/folder name this event is about")
@@ -230,9 +161,9 @@ def main():
     event = build_event(args.stage, args.status, args.name, args.message, extra)
 
     try:
-        publish_event(event)
+        post_event(event)
     except Exception as e:
-        print(f"emit_event: failed to publish event: {e}", file=sys.stderr)
+        print(f"emit_event: failed to post event: {e}", file=sys.stderr)
         sys.exit(1)
 
 
