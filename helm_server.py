@@ -52,6 +52,7 @@ import ssl
 import threading
 import urllib.request
 import urllib.error
+from collections import defaultdict
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -156,12 +157,17 @@ CERT_FILE = os.path.join(STATE_DIR, "cert.pem")
 
 
 # ── BACKUP EVENTS (Backup Pipeline tab) ─────────────────────────────────────
-# backup_event_worker.py (a separate long-running process, also on popcorn)
-# drains the RabbitMQ backup.events queue and writes this file atomically.
-# This endpoint just reads it straight off disk -- no proxy needed here,
-# unlike /api/vault/*, because the worker and helm_server.py both run on
-# popcorn. See emit_event.py / backup_event_worker.py for the producer side.
-BACKUP_EVENTS_FILE = os.path.join(STATE_DIR, "backup_events.json")
+# The external backup scripts (a separate repo, run on hyperion/popcorn) call
+# emit_event.py, which POSTs each event to POST /api/backup-events below with a
+# shared-secret token. store_backup_event() prunes and writes this file
+# atomically; GET /api/backup-events just reads it straight off disk. This
+# replaced a RabbitMQ broker + backup_event_worker.py drainer -- same "talk
+# directly, don't stand up new infra" bias as the vault/audio token proxies.
+BACKUP_EVENTS_FILE   = os.path.join(STATE_DIR, "backup_events.json")
+BACKUP_TOKEN_FILE    = os.path.join(STATE_DIR, "backup_token.txt")
+BACKUP_KEEP_PER_KEY  = 2     # keep this many events per distinct (stage, name)
+BACKUP_MAX_EVENTS    = 500   # flat cap after per-key pruning
+_backup_events_lock  = threading.Lock()
 
 
 def get_backup_events():
@@ -172,6 +178,43 @@ def get_backup_events():
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return {"events": [], "updated_at": None}
+
+
+def _backup_token():
+    if os.path.exists(BACKUP_TOKEN_FILE):
+        with open(BACKUP_TOKEN_FILE) as f:
+            return f.read().strip()
+    return None
+
+
+def _prune_backup_events(events):
+    """Keep only the last BACKUP_KEEP_PER_KEY events per distinct (stage, name),
+    preserving chronological order. A chatty stage (many per-folder events in
+    one run) must not crowd out rarer stages, so group first, then cap. Empty
+    string `name` is its own group. Order is preserved because the frontend
+    relies on "last matching element = most recent" for a stage's status card.
+    (Moved verbatim from the old backup_event_worker.prune_events.)"""
+    groups = defaultdict(list)
+    for i, ev in enumerate(events):
+        groups[(ev.get("stage"), ev.get("name", ""))].append(i)
+    keep = set()
+    for _key, idxs in groups.items():
+        keep.update(idxs[-BACKUP_KEEP_PER_KEY:])
+    return [ev for i, ev in enumerate(events) if i in keep]
+
+
+def store_backup_event(event):
+    """Append one event, prune per key, apply the flat cap, write atomically
+    (tmp + os.replace, same as _write_state_to_disk). Returns the new count."""
+    with _backup_events_lock:
+        events = get_backup_events().get("events", [])
+        events.append(event)
+        events = _prune_backup_events(events)[-BACKUP_MAX_EVENTS:]
+        tmp = BACKUP_EVENTS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"events": events, "updated_at": time.time()}, f)
+        os.replace(tmp, BACKUP_EVENTS_FILE)
+        return len(events)
 
 
 KEY_FILE = os.path.join(STATE_DIR, "key.pem")
@@ -372,28 +415,27 @@ def gather_system_stats():
 import subprocess
 
 # ── SERVICE MONITORING ────────────────────────────────────────────────────────
+# Helm runs as a container now, so everything worth watching is a sibling
+# container reached through the mounted Docker socket. The systemd-user /
+# systemd / systemd-timer branches in gather_services_status / gather_logs /
+# control_service are kept for the generic type-dispatch (add an entry here to
+# use them) but nothing ships with those types anymore.
 MONITORED_SERVICES = [
     {
-        "id":    "helm",
-        "label": "Helm",
-        "type":  "systemd-user",
-        "unit":  "helm.service",
-        "controllable": True,
+        "id":        "helm",
+        "label":     "Helm",
+        "type":      "docker",
+        "container": "helm",
+        # Not controllable: stop/restart would kill the process serving this
+        # very request. Monitor-only.
+        "controllable": False,
     },
     {
-        "id":    "searxng-core",
-        "label": "SearXNG",
-        "type":  "docker",
+        "id":        "searxng-core",
+        "label":     "SearXNG",
+        "type":      "docker",
         "container": "searxng-core",
         "controllable": True,
-    },
-    {
-        "id":    "r2-sync",
-        "label": "Cloudflare R2 Sync",
-        "type":  "systemd-timer",
-        "unit":  "popcorn-r2-sync.timer",
-        "service_unit": "popcorn-r2-sync.service",
-        "controllable": False,
     },
 ]
 
@@ -1016,6 +1058,37 @@ class HelmHandler(SimpleHTTPRequestHandler):
             action = body.get("action", "")
             ok, msg = control_service(service_id, action)
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
+        if parsed.path == "/api/backup-events":
+            # Ingest one backup-pipeline event from emit_event.py. Token-authed
+            # like the vault/audio proxies (X-Backup-Token vs X-Vault-Token).
+            # Fail closed: this is a write endpoint and the port is reachable
+            # over Tailscale, so no token file means reject everything.
+            expected = _backup_token()
+            if not expected:
+                self.send_json(503, {"error": "backup ingest not configured (no backup_token.txt in STATE_DIR)"})
+                return
+            if self.headers.get("X-Backup-Token", "") != expected:
+                self.send_json(401, {"error": "bad or missing X-Backup-Token"})
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                event = json.loads(self.rfile.read(length)) if length else None
+            except Exception:
+                event = None
+            if not isinstance(event, dict) or not event.get("stage") or not event.get("status"):
+                self.send_json(400, {"error": "body must be a JSON object with non-empty stage and status"})
+                return
+            # Fill out the backup_events.json schema so a minimal poster still
+            # round-trips through the frontend (which multiplies ts by 1000).
+            event.setdefault("id", "")
+            event.setdefault("ts", time.time())
+            event.setdefault("host", "")
+            event.setdefault("name", "")
+            event.setdefault("message", "")
+            event.setdefault("data", {})
+            self.send_json(200, {"ok": True, "stored": store_backup_event(event)})
             return
 
         if parsed.path.startswith("/api/audio/"):

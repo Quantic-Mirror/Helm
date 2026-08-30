@@ -125,33 +125,10 @@ services:
       - "BASE_URL=http://${SEARXNG_HOST:-localhost}:8081/"
       - "SECRET_KEY=${SEARXNG_SECRET_KEY:-changeme}"
 
-  # ── Backup event worker (drains RabbitMQ for the /api/backup-events feed) ────
-  # Polls RabbitMQ mgmt API, writes backup_events.json to ./data which
-  # helm_server.py reads. If you already have RabbitMQ on the host, remove
-  # the rabbitmq service and point RABBITMQ_MGMT_URL at your broker.
-  backup-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.helm
-    container_name: backup-event-worker
-    restart: unless-stopped
-    volumes:
-      # Writes backup_events.json into the same state dir helm reads it from.
-      - ./data:/app/state
-    environment:
-      HELM_STATE_DIR: "/app/state"
-      RABBITMQ_MGMT_URL: "http://rabbitmq:15672"
-    command: ["python3", "backup_event_worker.py"]
-
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: rabbitmq
-    restart: unless-stopped
-    volumes:
-      - ./rabbitmq-data:/var/lib/rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-helm}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-changeme}
+  # NOTE: the Backup Pipeline tab no longer needs a service here. The external
+  # backup scripts call emit_event.py, which POSTs each event straight to
+  # helm_server.py's token-authed POST /api/backup-events. There used to be a
+  # rabbitmq broker + a backup-worker drainer container; both are gone.
 
 # ── Network: all containers on an isolated bridge so they can reach each other
 # by service name. The host (and LAN browsers) reach helm on published ports.

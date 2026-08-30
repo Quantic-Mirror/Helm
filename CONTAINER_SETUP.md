@@ -10,7 +10,6 @@ natively on a separate host:
 |---|---|---|
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
-| Backup worker + RabbitMQ | **Container (any host)** | Backup pipeline events |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store lives on a USB drive |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
 | **Music / Wiki / Hermes tabs** | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes are no longer iframed. |
@@ -143,14 +142,43 @@ python3 /path/to/helm/audio_grabber_server.py 8091
 `AUDIO_BACKEND_URL=http://<AUDIO_HOST_TAILSCALE_IP>:8091` in the Helm container
 handles the proxy.
 
-## The systemd-user monitoring caveat
+### Backup pipeline events (`emit_event.py`)
 
-`MONITORED_SERVICES` in `helm_server.py` may include `systemd-user` entries
-for services running on the container host. Inside the container, these resolve
-via the mounted systemd D-Bus socket (`/run/user/${UID}/systemd/private`).
+The Backup Pipeline tab is fed by the external backup scripts calling
+`emit_event.py`, which POSTs each event to the Helm container's token-authed
+`POST /api/backup-events`. On every host that runs those scripts:
 
-If you're monitoring a service that runs differently inside vs. outside the
-container, you may need to adjust the entry type (`systemd-user` → `docker`).
+```bash
+openssl rand -hex 32 > data/backup_token.txt          # on the Helm host, once
+# copy that exact file to /etc/helm/backup_token.txt on each backup-script host
+```
+
+Then set for the scripts (or their systemd units):
+
+```bash
+HELM_URL=https://<HELM_TAILSCALE_IP>:8443
+HELM_BACKUP_TOKEN_FILE=/etc/helm/backup_token.txt
+HELM_CA_FILE=/etc/helm/helm-ca.crt      # or HELM_TLS_INSECURE=1 on a Tailscale link
+```
+
+There is no broker: an event emitted while the Helm host is unreachable is
+retried for ~3 minutes and then dropped. The backup itself is unaffected —
+`emit_event.py` failures are non-fatal to the calling script.
+
+## The Services / Logs tabs
+
+`MONITORED_SERVICES` in `helm_server.py` ships **docker-only** — the `helm` and
+`searxng-core` containers, watched through the mounted Docker socket. The
+Services tab is a container-health panel and the Logs tab shows `docker logs`
+for those containers. The Logs filter dropdown is generated from
+`/api/services`, so adding an entry to `MONITORED_SERVICES` is all it takes.
+
+To also watch a **host** `systemd --user` unit, add a `systemd-user` (or
+`systemd` / `systemd-timer`) entry — the generic dispatch still supports it —
+and uncomment the `/run/user/${UID}/...` socket mounts in `docker-compose.yml`.
+That needs a running user session + journal on the host
+(`loginctl enable-linger <user>`); without it `docker compose up` fails on the
+missing socket path, which is why those mounts ship commented out.
 
 ## Public/LAN deployment (alternative to Tailscale)
 
