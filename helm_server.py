@@ -905,14 +905,19 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/config":
             # Expose runtime configuration to the frontend so it can construct
-            # correct URLs without hardcoding hostnames. All values come from
-            # env vars in docker-compose.yml, defaulting to localhost.
+            # correct URLs without hardcoding hostnames. Values come from env
+            # vars set in docker-compose.yml (SERVER_HOST / SEARXNG_URL /
+            # VAULT_BACKEND_URL / AUDIO_BACKEND_URL), each with a fallback.
+            # VAULT_BACKEND / AUDIO_BACKEND are already bare "scheme://host:port"
+            # origins (see how they're used above: BACKEND + path_and_query), so
+            # they're passed through as-is — an earlier rsplit("/", 1)[0] here
+            # was wrong and turned "http://host:8090" into "http:/".
             self.send_json(200, {
                 "server_host": SERVER_HOST,
                 "server_port": SERVER_PORT,
                 "searxng_url": os.environ.get("SEARXNG_URL", f"http://{SERVER_HOST}:{SERVER_PORT}"),
-                "vault_url": VAULT_BACKEND.rsplit("/", 1)[0] if VAULT_BACKEND else f"http://{SERVER_HOST}:8090",
-                "audio_url": AUDIO_BACKEND.rsplit("/", 1)[0] if AUDIO_BACKEND else f"http://{SERVER_HOST}:8091",
+                "vault_url": VAULT_BACKEND,
+                "audio_url": AUDIO_BACKEND,
             })
             return
 
