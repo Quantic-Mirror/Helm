@@ -1,0 +1,11 @@
+FROM python:3.11-slim
+
+# Minimal image: Helm server is stdlib-only.
+# curl/ffmpeg are for the audio grabber (yt-dlp wrapper) — not used inside
+# the container but kept for compatibility with future tooling.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl \
+      ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
