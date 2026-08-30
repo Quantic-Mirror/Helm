@@ -415,28 +415,27 @@ def gather_system_stats():
 import subprocess
 
 # ── SERVICE MONITORING ────────────────────────────────────────────────────────
+# Helm runs as a container now, so everything worth watching is a sibling
+# container reached through the mounted Docker socket. The systemd-user /
+# systemd / systemd-timer branches in gather_services_status / gather_logs /
+# control_service are kept for the generic type-dispatch (add an entry here to
+# use them) but nothing ships with those types anymore.
 MONITORED_SERVICES = [
     {
-        "id":    "helm",
-        "label": "Helm",
-        "type":  "systemd-user",
-        "unit":  "helm.service",
-        "controllable": True,
+        "id":        "helm",
+        "label":     "Helm",
+        "type":      "docker",
+        "container": "helm",
+        # Not controllable: stop/restart would kill the process serving this
+        # very request. Monitor-only.
+        "controllable": False,
     },
     {
-        "id":    "searxng-core",
-        "label": "SearXNG",
-        "type":  "docker",
+        "id":        "searxng-core",
+        "label":     "SearXNG",
+        "type":      "docker",
         "container": "searxng-core",
         "controllable": True,
-    },
-    {
-        "id":    "r2-sync",
-        "label": "Cloudflare R2 Sync",
-        "type":  "systemd-timer",
-        "unit":  "popcorn-r2-sync.timer",
-        "service_unit": "popcorn-r2-sync.service",
-        "controllable": False,
     },
 ]
 
