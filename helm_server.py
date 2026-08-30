@@ -387,20 +387,6 @@ MONITORED_SERVICES = [
         "service_unit": "popcorn-r2-sync.service",
         "controllable": False,
     },
-    {
-        "id":    "wikijs",
-        "label": "Wiki.js",
-        "type":  "docker",
-        "container": "wikijs",
-        "controllable": True,
-    },
-    {
-        "id":    "wiki-tls-proxy",
-        "label": "Wiki TLS Frontend",
-        "type":  "systemd-user",
-        "unit":  "wiki-tls-proxy.service",
-        "controllable": True,
-    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────

@@ -1826,90 +1826,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 }
 .backup-restore-btn { padding: 4px 10px; font-size: 11px; }
 
-#wiki-page {
-  height: calc(100vh - 56px);
-  overflow: hidden;
-}
-#wiki-frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
 
-#player-page {
-  height: calc(100vh - 56px);
-  overflow: hidden;
-}
-#player-frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
-
-#btn-ncmpcpp-cheatsheet {
-  position: fixed;
-  top: 68px;
-  right: 20px;
-  z-index: 25;
-  width: 34px; height: 34px;
-  border-radius: 50%;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 15px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-}
-#btn-ncmpcpp-cheatsheet:hover { border-color: var(--accent); color: var(--accent); }
-#ncmpcpp-cheatsheet {
-  position: fixed;
-  top: 68px;
-  right: 20px;
-  z-index: 26;
-  width: 300px;
-  max-height: calc(100vh - 100px);
-  overflow-y: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  display: flex;
-  flex-direction: column;
-}
-.cheatsheet-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px; font-weight: 600; color: var(--text);
-  flex-shrink: 0;
-}
-.cheatsheet-header button {
-  background: none; border: none; color: var(--text-dim);
-  cursor: pointer; font-size: 13px; padding: 2px 4px;
-}
-.cheatsheet-header button:hover { color: var(--text); }
-.cheatsheet-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
-.cheatsheet-group-title {
-  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--text-dim); margin-bottom: 6px;
-}
-.cheatsheet-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12px; }
-.cheatsheet-row kbd {
-  flex-shrink: 0; min-width: 20px; text-align: center;
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px;
-  padding: 1px 6px; font-family: monospace; font-size: 11px; color: var(--text);
-}
-.cheatsheet-row span { color: var(--text-muted); }
-.cheatsheet-note {
-  font-size: 11px; color: var(--text-dim); line-height: 1.5;
-  border-top: 1px solid var(--border); padding-top: 10px;
-}
-.cheatsheet-note kbd {
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px;
-  padding: 0 5px; font-family: monospace;
-}
 
 /* ── UPCOMING EVENTS STRIP ───────────────────────────────────────────────────── */
 #upcoming-events-strip {
@@ -2940,10 +2857,8 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#services" data-tab="services">Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">Backup Pipeline</a>
     <a class="tab-btn" href="#audio" data-tab="audio">Audio Grabber</a>
-    <a class="tab-btn" href="#player" data-tab="player">🎵 Music</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
     <a class="tab-btn" href="#logs" data-tab="logs">Logs</a>
-    <a class="tab-btn" href="#wiki" data-tab="wiki">Wiki</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
   <span id="sync-indicator" title="Multi-device sync status"></span>
@@ -3142,80 +3057,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <div class="audio-section-title">Files</div>
     <div id="audio-files"></div>
   </div>
-</div>
-
-<!-- MEDIA PLAYER PAGE -->
-<!-- ncmpcpp (terminal MPD client) shared over the web by ttyd, iframed
-     directly at its own origin -- no Helm proxy in front, same reasoning
-     as myMPD before it (which this replaced, same port): ttyd terminates
-     its own TLS with the real hyperion-cert.pem/key.pem, sends neither
-     X-Frame-Options nor a CSP, so it's iframe-friendly with no config, and
-     its WebSocket (the actual terminal stream) connects same-origin to
-     hyperion:8443 itself, never touching helm_tls_proxy.py, which is why
-     this works despite that proxy not supporting WebSocket upgrades. -->
-<div id="player-page" style="display:none">
-  <iframe id="player-frame" src="https://hyperion:8443" allow="fullscreen"></iframe>
-  <!-- The iframe is a different origin (hyperion:8443 vs. Helm's own
-       origin), so its content can't be touched from here -- this cheatsheet
-       lives in Helm's own page, floating over the iframe, not inside it. -->
-  <button id="btn-ncmpcpp-cheatsheet" title="ncmpcpp keybindings">⌨</button>
-  <div id="ncmpcpp-cheatsheet" style="display:none">
-    <div class="cheatsheet-header">
-      <span>ncmpcpp keybindings</span>
-      <button id="btn-ncmpcpp-cheatsheet-close" title="Close">✕</button>
-    </div>
-    <div class="cheatsheet-body">
-      <div class="cheatsheet-group">
-        <div class="cheatsheet-group-title">Screens</div>
-        <div class="cheatsheet-row"><kbd>1</kbd><span>Playlist</span></div>
-        <div class="cheatsheet-row"><kbd>2</kbd><span>Browser</span></div>
-        <div class="cheatsheet-row"><kbd>3</kbd><span>Search</span></div>
-        <div class="cheatsheet-row"><kbd>4</kbd><span>Media library</span></div>
-        <div class="cheatsheet-row"><kbd>5</kbd><span>Playlist editor</span></div>
-        <div class="cheatsheet-row"><kbd>7</kbd><span>Outputs</span></div>
-        <div class="cheatsheet-row"><kbd>8</kbd><span>Visualizer</span></div>
-        <div class="cheatsheet-row"><kbd>Tab</kbd><span>Next screen</span></div>
-      </div>
-      <div class="cheatsheet-group">
-        <div class="cheatsheet-group-title">Playback</div>
-        <div class="cheatsheet-row"><kbd>Enter</kbd><span>Play selected</span></div>
-        <div class="cheatsheet-row"><kbd>Space</kbd><span>Add to queue</span></div>
-        <div class="cheatsheet-row"><kbd>p</kbd><span>Pause</span></div>
-        <div class="cheatsheet-row"><kbd>s</kbd><span>Stop</span></div>
-        <div class="cheatsheet-row"><kbd>&gt; / &lt;</kbd><span>Next / previous track</span></div>
-        <div class="cheatsheet-row"><kbd>&larr; / &rarr;</kbd><span>Volume down / up</span></div>
-        <div class="cheatsheet-row"><kbd>f / b</kbd><span>Seek forward / back</span></div>
-        <div class="cheatsheet-row"><kbd>r</kbd><span>Toggle repeat</span></div>
-        <div class="cheatsheet-row"><kbd>z</kbd><span>Toggle random</span></div>
-      </div>
-      <div class="cheatsheet-group">
-        <div class="cheatsheet-group-title">Queue &amp; playlists</div>
-        <div class="cheatsheet-row"><kbd>a</kbd><span>Add selected items</span></div>
-        <div class="cheatsheet-row"><kbd>c</kbd><span>Clear playlist</span></div>
-        <div class="cheatsheet-row"><kbd>Del</kbd><span>Remove item</span></div>
-        <div class="cheatsheet-row"><kbd>m / n</kbd><span>Move item up / down</span></div>
-        <div class="cheatsheet-row"><kbd>S</kbd><span>Save playlist</span></div>
-        <div class="cheatsheet-row"><kbd>o</kbd><span>Jump to playing song</span></div>
-      </div>
-      <div class="cheatsheet-group">
-        <div class="cheatsheet-group-title">Search &amp; library</div>
-        <div class="cheatsheet-row"><kbd>/</kbd><span>Find</span></div>
-        <div class="cheatsheet-row"><kbd>. / ,</kbd><span>Next / previous match</span></div>
-        <div class="cheatsheet-row"><kbd>u</kbd><span>Update database (rescan)</span></div>
-      </div>
-      <div class="cheatsheet-group">
-        <div class="cheatsheet-group-title">Info</div>
-        <div class="cheatsheet-row"><kbd>l</kbd><span>Lyrics for current song</span></div>
-        <div class="cheatsheet-row"><kbd>i</kbd><span>Song info</span></div>
-      </div>
-      <div class="cheatsheet-note">Quit (<kbd>q</kbd>) is disabled here on purpose — it would end this shared terminal session for everyone viewing the tab, not just you.</div>
-    </div>
-  </div>
-</div>
-
-<!-- WIKI PAGE -->
-<div id="wiki-page" style="display:none">
-  <iframe id="wiki-frame" src="https://popcorn:9002" allow="fullscreen"></iframe>
 </div>
 
 <!-- MEALIE PAGE -->
@@ -8608,7 +8449,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'logs', 'wiki', 'player', 'workout'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'audio', 'logs', 'workout'];
 const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -8801,8 +8642,6 @@ function switchTab(tab) {
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
   show('audio-page',     tab === 'audio');
-  show('wiki-page',      tab === 'wiki');
-  show('player-page',    tab === 'player');
   show('workout-page',   tab === 'workout');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
@@ -8810,7 +8649,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', wiki: 'Helm — Wiki', player: 'Helm — Music', workout: 'Helm — Workout' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', workout: 'Helm — Workout' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -8884,12 +8723,6 @@ document.getElementById('btn-audio-batch-download').onclick = () => {
   if (!batchEl.value.trim()) { toast('Enter at least one "Artist | Song Title" line'); return; }
   submitAudioDownload('', '', batchEl.value);
   batchEl.value = '';
-};
-document.getElementById('btn-ncmpcpp-cheatsheet').onclick = () => {
-  document.getElementById('ncmpcpp-cheatsheet').style.display = 'flex';
-};
-document.getElementById('btn-ncmpcpp-cheatsheet-close').onclick = () => {
-  document.getElementById('ncmpcpp-cheatsheet').style.display = 'none';
 };
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
