@@ -15,6 +15,5 @@ Dockerfile*
 docker-compose*
 searxng-settings/
 searxng-data/
-rabbitmq-data/
 *.bak
 *.tar.gz

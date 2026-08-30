@@ -10,7 +10,6 @@ natively on a separate host:
 |---|---|---|
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
-| Backup worker + RabbitMQ | **Container (any host)** | Backup pipeline events |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store lives on a USB drive |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
 | **Music / Wiki / Hermes tabs** | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes are no longer iframed. |
@@ -142,6 +141,29 @@ python3 /path/to/helm/audio_grabber_server.py 8091
 
 `AUDIO_BACKEND_URL=http://<AUDIO_HOST_TAILSCALE_IP>:8091` in the Helm container
 handles the proxy.
+
+### Backup pipeline events (`emit_event.py`)
+
+The Backup Pipeline tab is fed by the external backup scripts calling
+`emit_event.py`, which POSTs each event to the Helm container's token-authed
+`POST /api/backup-events`. On every host that runs those scripts:
+
+```bash
+openssl rand -hex 32 > data/backup_token.txt          # on the Helm host, once
+# copy that exact file to /etc/helm/backup_token.txt on each backup-script host
+```
+
+Then set for the scripts (or their systemd units):
+
+```bash
+HELM_URL=https://<HELM_TAILSCALE_IP>:8443
+HELM_BACKUP_TOKEN_FILE=/etc/helm/backup_token.txt
+HELM_CA_FILE=/etc/helm/helm-ca.crt      # or HELM_TLS_INSECURE=1 on a Tailscale link
+```
+
+There is no broker: an event emitted while the Helm host is unreachable is
+retried for ~3 minutes and then dropped. The backup itself is unaffected —
+`emit_event.py` failures are non-fatal to the calling script.
 
 ## The systemd-user monitoring caveat
 
