@@ -57,14 +57,22 @@ from urllib.parse import urlparse, parse_qs, quote
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-STATE_FILE = os.path.join(SCRIPT_DIR, "marks_state.json")
+
+# Where mutable state / secrets / certs live. Defaults to SCRIPT_DIR (the
+# original layout — state files sit next to the script). In the container the
+# code is baked into the image at /app and this is pointed at a bind-mounted
+# /app/state so state survives image rebuilds; see docker-compose.yml.
+STATE_DIR = os.environ.get("HELM_STATE_DIR", SCRIPT_DIR)
+os.makedirs(STATE_DIR, exist_ok=True)
+
+STATE_FILE = os.path.join(STATE_DIR, "marks_state.json")
 
 # ── VAULT PROXY ──────────────────────────────────────────────────────────────
 # pass + the GPG agent live on hyperion, not here. Requests to /api/vault/*
 # get forwarded there rather than handled locally. Change VAULT_BACKEND if
 # hyperion's LAN hostname/IP or the vault_server.py port ever changes.
 VAULT_BACKEND = os.environ.get("VAULT_BACKEND_URL", "http://hyperion:8090")
-VAULT_TOKEN_FILE = os.path.join(SCRIPT_DIR, "vault_token.txt")
+VAULT_TOKEN_FILE = os.path.join(STATE_DIR, "vault_token.txt")
 
 
 def _vault_token():
@@ -101,7 +109,7 @@ def proxy_to_vault(method, path_and_query, body_bytes=None):
 # vault proxy above. Change AUDIO_BACKEND if hyperion's LAN hostname/IP or
 # audio_grabber_server.py's port ever changes.
 AUDIO_BACKEND = os.environ.get("AUDIO_BACKEND_URL", "http://hyperion:8091")
-AUDIO_TOKEN_FILE = os.path.join(SCRIPT_DIR, "audio_token.txt")
+AUDIO_TOKEN_FILE = os.path.join(STATE_DIR, "audio_token.txt")
 
 
 def _audio_token():
@@ -144,7 +152,7 @@ def proxy_to_audio(method, path_and_query, body_bytes=None):
 SERVER_HOST = os.environ.get("SERVER_HOST", "localhost")
 SERVER_PORT = os.environ.get("SERVER_PORT", "8080")
 
-CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
+CERT_FILE = os.path.join(STATE_DIR, "cert.pem")
 
 
 # ── BACKUP EVENTS (Backup Pipeline tab) ─────────────────────────────────────
@@ -153,7 +161,7 @@ CERT_FILE = os.path.join(SCRIPT_DIR, "cert.pem")
 # This endpoint just reads it straight off disk -- no proxy needed here,
 # unlike /api/vault/*, because the worker and helm_server.py both run on
 # popcorn. See emit_event.py / backup_event_worker.py for the producer side.
-BACKUP_EVENTS_FILE = os.path.join(SCRIPT_DIR, "backup_events.json")
+BACKUP_EVENTS_FILE = os.path.join(STATE_DIR, "backup_events.json")
 
 
 def get_backup_events():
@@ -166,10 +174,10 @@ def get_backup_events():
         return {"events": [], "updated_at": None}
 
 
-KEY_FILE = os.path.join(SCRIPT_DIR, "key.pem")
+KEY_FILE = os.path.join(STATE_DIR, "key.pem")
 
 # Rolling backup settings
-BACKUP_DIR      = os.path.join(SCRIPT_DIR, "helm-backups")
+BACKUP_DIR      = os.path.join(STATE_DIR, "helm-backups")
 BACKUP_KEEP     = 10    # number of snapshots to retain
 BACKUP_MIN_SECS = 3600  # minimum seconds between automatic snapshots (1 hour)
 
@@ -319,9 +327,9 @@ def _get_memory():
 
 
 def _get_disk():
-    """Returns (used_bytes, total_bytes) for the filesystem this script lives on."""
+    """Returns (used_bytes, total_bytes) for the filesystem state is stored on."""
     try:
-        usage = shutil.disk_usage(SCRIPT_DIR)
+        usage = shutil.disk_usage(STATE_DIR)
         return usage.used, usage.total
     except Exception:
         return None, None

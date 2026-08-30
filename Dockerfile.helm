@@ -1,11 +1,26 @@
 FROM python:3.11-slim
 
-# Minimal image: Helm server is stdlib-only.
-# curl/ffmpeg are for the audio grabber (yt-dlp wrapper) — not used inside
-# the container but kept for compatibility with future tooling.
+# Minimal image: the Helm server is stdlib-only.
+# curl/ffmpeg are here for audio_grabber_server.py (yt-dlp wrapper) in case
+# it's ever run from this image; the Helm server itself needs neither.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl \
       ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Bake the code into the image so a fresh host only needs `git clone` + `.env`
+# + `docker compose up` — no hand-copying source into a bind mount. The build
+# context is filtered by .dockerignore, which excludes .git, data/, .env,
+# *.pem and the *.md docs. Mutable state (marks_state.json, helm-backups/,
+# backup_events.json), secrets (vault_token.txt, audio_token.txt) and TLS
+# certs live in a bind-mounted ./data -> /app/state instead (HELM_STATE_DIR),
+# so they survive image rebuilds and stay editable from the host.
+COPY . .
+
+EXPOSE 8080 8443
+
+# Default entrypoint runs the Helm server. Other services (backup-worker)
+# override `command:` in docker-compose.yml to run a different script.
+CMD ["python3", "helm_server.py", "8080"]
