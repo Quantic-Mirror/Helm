@@ -29,20 +29,23 @@ with `CN=<Tailscale-IP>` works because Tailscale encrypts in transit and
 browsers will accept one-time cert warnings.
 
 Key `.env` settings for this mode:
-- `SERVER_HOST=<Tailscale-IP>` — the VPS's Tailscale address
+- `HELM_BIND=<Tailscale-IP>` — publish the container ports on the tailnet
+  interface only, so the stack isn't exposed to the internet
+- `SERVER_HOST=<Tailscale-IP>` — same value; feeds `/api/config` so the
+  frontend builds correct URLs
 - `VAULT_HOST=<hyperion-Tailscale-IP>` — the vault host's Tailscale address
 - `AUDIO_HOST=<hyperion-Tailscale-IP>` — the audio host's Tailscale address
 - `SEARXNG_HOST=localhost` — SearXNG runs as a sibling container
 
-Ports bind to `127.0.0.1` only (not `0.0.0.0`), so the stack isn't directly
-exposed to the internet. Access is via `https://<Tailscale-IP>:8443`.
+Access is via `https://<Tailscale-IP>:8443`.
 
 How this works without hardcoded hostnames: `helm_server.py` exposes an
 `/api/config` endpoint that returns `SERVER_HOST` / `SEARXNG_URL` (etc.) from
 its environment, and `index.html`'s `initConfig()` fetches it at startup to
-build the SearXNG search URL. Port bindings are driven by the
-`HELM_HTTP_PORT` / `HELM_HTTPS_PORT` / `SEARXNG_PORT` variables in `.env`
-(host-IP-prefixed, e.g. `127.0.0.1:8080:8080` for Tailscale-only).
+build the SearXNG search URL. The port bind interface comes from `HELM_BIND`
+(default `127.0.0.1`); `HELM_HTTP_PORT` / `HELM_HTTPS_PORT` / `SEARXNG_PORT`
+override the whole `ip:hostport:containerport` mapping if you also need a
+different host port.
 
 All hostnames in the docker-compose stack are configurable via `.env`
 variables — no hardcoding. Adapt this setup to any host.
@@ -73,7 +76,8 @@ variables — no hardcoding. Adapt this setup to any host.
    ```bash
    cp .env.example .env
    # Edit .env:
-   #   SERVER_HOST       — your Tailscale IP (from `tailscale ip`)
+   #   HELM_BIND         — your Tailscale IP (tailnet-only), or 0.0.0.0 for public
+   #   SERVER_HOST       — same Tailscale IP (from `tailscale ip -4`)
    #   VAULT_HOST        — Tailscale IP of the host running vault_server.py
    #   AUDIO_HOST        — Tailscale IP of the host running audio_grabber_server.py
    #   SEARXNG_HOST      — leave as "localhost" (runs in the container)
@@ -184,11 +188,11 @@ missing socket path, which is why those mounts ship commented out.
 
 If you prefer to expose Helm publicly instead of over Tailscale:
 
-1. Set `SERVE_VIA_TAILSCALE=false` in `.env`
-2. Uncomment the port override lines to bind to `0.0.0.0`
-3. Use Let's Encrypt certs (via nginx/caddy reverse proxy)
-4. Point `SERVER_HOST` to your public domain
-5. **Add authentication** — Helm has no built-in auth; protect `/api/*`
+1. Set `HELM_BIND=0.0.0.0` in `.env` (or an explicit `HELM_HTTP_PORT` /
+   `HELM_HTTPS_PORT` if you also need a different host port, e.g. 443)
+2. Use Let's Encrypt certs (via nginx/caddy reverse proxy)
+3. Point `SERVER_HOST` to your public domain
+4. **Add authentication** — Helm has no built-in auth; protect `/api/*`
    behind nginx basic auth or similar
 
 See the commented-out section in `.env.example` for the exact settings.
