@@ -35,7 +35,10 @@ Key `.env` settings for this mode:
   frontend builds correct URLs
 - `VAULT_HOST=<hyperion-Tailscale-IP>` — the vault host's Tailscale address
 - `AUDIO_HOST=<hyperion-Tailscale-IP>` — the audio host's Tailscale address
-- `SEARXNG_HOST=localhost` — SearXNG runs as a sibling container
+- `SEARXNG_HOST=<Tailscale-IP>` — same value as `SERVER_HOST`. SearXNG runs as
+  a sibling container, but the **browser** connects to it directly (the Search
+  widget opens this address in a new tab), so it must be an address the browser
+  can reach. `localhost` only works when you browse from the container host.
 
 Access is via `https://<Tailscale-IP>:8443`.
 
@@ -80,7 +83,8 @@ variables — no hardcoding. Adapt this setup to any host.
    #   SERVER_HOST       — same Tailscale IP (from `tailscale ip -4`)
    #   VAULT_HOST        — Tailscale IP of the host running vault_server.py
    #   AUDIO_HOST        — Tailscale IP of the host running audio_grabber_server.py
-   #   SEARXNG_HOST      — leave as "localhost" (runs in the container)
+   #   SEARXNG_HOST      — same as SERVER_HOST (the browser hits SearXNG directly;
+   #                       "localhost" only works when browsing from the host)
    #   HELM_UID/GID      — find with: id -u && id -g
    #   DOCKER_GID        — find with: getent group docker | cut -d: -f3
    ```
