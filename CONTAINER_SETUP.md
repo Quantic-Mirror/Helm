@@ -10,7 +10,7 @@ natively on a separate host:
 |---|---|---|
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
-| **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store lives on a USB drive |
+| **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
 | **Music / Wiki / Hermes tabs** | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes are no longer iframed. |
 
@@ -133,8 +133,8 @@ The vault uses `pass` + gpg. See [`WSL2_VAULT_SETUP.md`](./WSL2_VAULT_SETUP.md)
 for the full WSL2 setup. In short:
 
 - **Linux:** `python3 vault_server.py 8090` (natively)
-- **Windows:** `vault_server.py` runs in WSL2, with the pass store on a
-  USB drive mounted at `/mnt/usb/`.
+- **Windows:** `vault_server.py` runs in WSL2, with the pass store cloned
+  from its private git remote into WSL2-native storage (`~/.password-store`).
 
 Either way, `VAULT_BACKEND_URL=http://<VAULT_HOST_TAILSCALE_IP>:8090` in the
 Helm container's `.env` points to it. The Helm container proxies `/api/vault/*`.
