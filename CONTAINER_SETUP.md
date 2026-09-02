@@ -33,8 +33,9 @@ Key `.env` settings for this mode:
   interface only, so the stack isn't exposed to the internet
 - `SERVER_HOST=<Tailscale-IP>` — same value; feeds `/api/config` so the
   frontend builds correct URLs
-- `VAULT_HOST=<hyperion-Tailscale-IP>` — the vault host's Tailscale address
-- `AUDIO_HOST=<hyperion-Tailscale-IP>` — the audio host's Tailscale address
+- `VAULT_HOSTS=<ip>[,<ip>…]` — the vault host's Tailscale address; on a dual-boot
+  workstation list every OS's IP, comma-separated (helm_server fails over)
+- `AUDIO_HOSTS=<ip>[,<ip>…]` — same, for the audio host
 - `SEARXNG_HOST=<Tailscale-IP>` — same value as `SERVER_HOST`. SearXNG runs as
   a sibling container, but the **browser** connects to it directly (the Search
   widget opens this address in a new tab), so it must be an address the browser
@@ -81,8 +82,9 @@ variables — no hardcoding. Adapt this setup to any host.
    # Edit .env:
    #   HELM_BIND         — your Tailscale IP (tailnet-only), or 0.0.0.0 for public
    #   SERVER_HOST       — same Tailscale IP (from `tailscale ip -4`)
-   #   VAULT_HOST        — Tailscale IP of the host running vault_server.py
-   #   AUDIO_HOST        — Tailscale IP of the host running audio_grabber_server.py
+   #   VAULT_HOSTS       — Tailscale IP(s) of the host running vault_server.py,
+   #                       comma-separated for a dual-boot workstation
+   #   AUDIO_HOSTS       — likewise for audio_grabber_server.py
    #   SEARXNG_HOST      — same as SERVER_HOST (the browser hits SearXNG directly;
    #                       "localhost" only works when browsing from the host)
    #   HELM_UID/GID      — find with: id -u && id -g
@@ -136,8 +138,10 @@ for the full WSL2 setup. In short:
 - **Windows:** `vault_server.py` runs in WSL2, with the pass store cloned
   from its private git remote into WSL2-native storage (`~/.password-store`).
 
-Either way, `VAULT_BACKEND_URL=http://<VAULT_HOST_TAILSCALE_IP>:8090` in the
-Helm container's `.env` points to it. The Helm container proxies `/api/vault/*`.
+Either way, `VAULT_HOSTS=<tailscale-ip>[,<tailscale-ip>…]` in the Helm
+container's `.env` points to it (list every OS's IP on a dual-boot workstation;
+helm_server tries each and sticks to whichever answers). The Helm container
+proxies `/api/vault/*`.
 
 ### Audio grabber (`audio_grabber_server.py`)
 
@@ -147,8 +151,8 @@ Same pattern — run on the separate host wherever yt-dlp + your cookies live:
 python3 /path/to/helm/audio_grabber_server.py 8091
 ```
 
-`AUDIO_BACKEND_URL=http://<AUDIO_HOST_TAILSCALE_IP>:8091` in the Helm container
-handles the proxy.
+`AUDIO_HOSTS=<tailscale-ip>[,<tailscale-ip>…]` in the Helm container handles the
+proxy (same comma-separated failover as `VAULT_HOSTS`).
 
 ### Backup pipeline events (`emit_event.py`)
 

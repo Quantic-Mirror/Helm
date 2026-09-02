@@ -147,7 +147,7 @@ around the gap.
   `_write_state_to_disk`, `_maybe_write_backup`, `_irc_save_ack` in
   `helm_server.py`).
 - **Section headers in Python files** use a `# ── NAME ──────...` banner
-  comment to delimit major regions of `helm_server.py` (VAULT PROXY, IRC
+  comment to delimit major regions of `helm_server.py` (VAULT / AUDIO PROXY, IRC
   ALERTS, SYSTEM STATS, SERVICE MONITORING, LOG VIEWER, ...). Add new
   functionality under an existing banner if it fits, or add a new one rather
   than interleaving unrelated logic.

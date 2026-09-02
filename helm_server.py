@@ -68,12 +68,50 @@ os.makedirs(STATE_DIR, exist_ok=True)
 
 STATE_FILE = os.path.join(STATE_DIR, "marks_state.json")
 
-# ── VAULT PROXY ──────────────────────────────────────────────────────────────
-# pass + the GPG agent live on hyperion, not here. Requests to /api/vault/*
-# get forwarded there rather than handled locally. Change VAULT_BACKEND if
-# hyperion's LAN hostname/IP or the vault_server.py port ever changes.
-VAULT_BACKEND = os.environ.get("VAULT_BACKEND_URL", "http://hyperion:8090")
+# ── VAULT / AUDIO PROXY ──────────────────────────────────────────────────────
+# pass + the GPG agent (vault) and yt-dlp + cookies (audio) live on the
+# workstation, not here. /api/vault/* and /api/audio/* requests get forwarded
+# there rather than handled locally.
+#
+# The workstation dual-boots and each OS is a distinct tailnet node (hyperion
+# when booted to Linux, shrike when booted to Windows/WSL2), so no single
+# static address always works. VAULT_HOSTS / AUDIO_HOSTS list every candidate
+# host (comma-separated, no scheme/port); the proxy tries them in order,
+# remembers whichever answered, and tries that one first next time -- so steady
+# state is a single request and only the first call after a boot switch pays a
+# failover timeout. When VAULT_HOSTS is unset the legacy single
+# VAULT_BACKEND_URL / VAULT_HOST is used, so existing deployments are unchanged.
 VAULT_TOKEN_FILE = os.path.join(STATE_DIR, "vault_token.txt")
+AUDIO_TOKEN_FILE = os.path.join(STATE_DIR, "audio_token.txt")
+
+
+def _backend_urls(hosts_env, port, legacy_url_env, legacy_default):
+    hosts = os.environ.get(hosts_env, "").strip()
+    if hosts:
+        return [f"http://{h.strip()}:{port}" for h in hosts.split(",") if h.strip()]
+    return [os.environ.get(legacy_url_env, legacy_default)]
+
+
+VAULT_BACKENDS = _backend_urls("VAULT_HOSTS", os.environ.get("VAULT_BACKEND_PORT", "8090"),
+                               "VAULT_BACKEND_URL", "http://hyperion:8090")
+AUDIO_BACKENDS = _backend_urls("AUDIO_HOSTS", os.environ.get("AUDIO_BACKEND_PORT", "8091"),
+                               "AUDIO_BACKEND_URL", "http://hyperion:8091")
+
+# What /api/config advertises and the startup banner prints; also updated in
+# place to the last backend that actually answered.
+VAULT_BACKEND = VAULT_BACKENDS[0]
+AUDIO_BACKEND = AUDIO_BACKENDS[0]
+
+# Last backend that answered for each kind, tried first on the next request.
+_live_backend = {"vault": None, "audio": None}
+
+
+def _ordered_backends(kind, backends):
+    """`backends` with the last-known-good one moved to the front."""
+    live = _live_backend[kind]
+    if live in backends and backends[0] != live:
+        return [live] + [b for b in backends if b != live]
+    return backends
 
 
 def _vault_token():
@@ -84,33 +122,41 @@ def _vault_token():
 
 
 def proxy_to_vault(method, path_and_query, body_bytes=None):
-    """Forward a request to vault_server.py running on hyperion.
+    """Forward a request to vault_server.py on the workstation, trying each
+    VAULT_BACKENDS entry until one is reachable.
     Returns (status_code, response_body_bytes)."""
+    global VAULT_BACKEND
     token = _vault_token()
-    url = VAULT_BACKEND + path_and_query
-    req = urllib.request.Request(url, data=body_bytes, method=method)
-    if token:
-        req.add_header("X-Vault-Token", token)
-    if body_bytes:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.status, resp.read()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read()
-    except urllib.error.URLError as e:
-        msg = json.dumps({"error": f"Could not reach vault backend on hyperion: {e.reason}"})
-        return 502, msg.encode("utf-8")
+    last_reason = "no vault backend configured"
+    for base in _ordered_backends("vault", VAULT_BACKENDS):
+        req = urllib.request.Request(base + path_and_query, data=body_bytes, method=method)
+        if token:
+            req.add_header("X-Vault-Token", token)
+        if body_bytes:
+            req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                _live_backend["vault"] = VAULT_BACKEND = base
+                return resp.status, resp.read()
+        except urllib.error.HTTPError as e:
+            # Backend reached -- an error status is a real answer, not a
+            # connectivity failure, so don't fail over to the other host.
+            _live_backend["vault"] = VAULT_BACKEND = base
+            return e.code, e.read()
+        except urllib.error.URLError as e:
+            last_reason = str(e.reason)
+            continue
+    msg = json.dumps({"error": f"Could not reach any vault backend "
+                               f"({', '.join(VAULT_BACKENDS)}): {last_reason}"})
+    return 502, msg.encode("utf-8")
 
 
 # ── AUDIO GRABBER PROXY ──────────────────────────────────────────────────────
-# audio_grabber_server.py runs on hyperion (so downloaded files land there,
-# not on popcorn) and does the actual yt-dlp work. Requests to /api/audio/*
-# get forwarded there rather than handled locally -- same pattern as the
-# vault proxy above. Change AUDIO_BACKEND if hyperion's LAN hostname/IP or
-# audio_grabber_server.py's port ever changes.
-AUDIO_BACKEND = os.environ.get("AUDIO_BACKEND_URL", "http://hyperion:8091")
-AUDIO_TOKEN_FILE = os.path.join(STATE_DIR, "audio_token.txt")
+# audio_grabber_server.py runs on the workstation (so downloaded files land
+# there) and does the actual yt-dlp work. Same multi-host failover as
+# proxy_to_vault above. One route here (file download) returns raw audio bytes
+# rather than JSON, so its Content-Type / Content-Disposition are forwarded
+# through rather than hardcoded.
 
 
 def _audio_token():
@@ -121,30 +167,38 @@ def _audio_token():
 
 
 def proxy_to_audio(method, path_and_query, body_bytes=None):
-    """Forward a request to audio_grabber_server.py running on hyperion.
-    Returns (status_code, response_body_bytes, headers_dict). Unlike the
-    vault proxy above, one route here (file download) returns raw audio
-    bytes rather than JSON, so the response Content-Type/Content-Disposition
-    are forwarded through rather than hardcoded."""
+    """Forward a request to audio_grabber_server.py on the workstation, trying
+    each AUDIO_BACKENDS entry until one is reachable.
+    Returns (status_code, response_body_bytes, headers_dict)."""
+    global AUDIO_BACKEND
     token = _audio_token()
-    url = AUDIO_BACKEND + path_and_query
-    req = urllib.request.Request(url, data=body_bytes, method=method)
-    if token:
-        req.add_header("X-Audio-Token", token)
-    if body_bytes:
-        req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=40) as resp:
-            headers = {"Content-Type": resp.headers.get("Content-Type", "application/json")}
-            cd = resp.headers.get("Content-Disposition")
-            if cd:
-                headers["Content-Disposition"] = cd
-            return resp.status, resp.read(), headers
-    except urllib.error.HTTPError as e:
-        return e.code, e.read(), {"Content-Type": "application/json"}
-    except urllib.error.URLError as e:
-        msg = json.dumps({"error": f"Could not reach audio backend on hyperion: {e.reason}"})
-        return 502, msg.encode("utf-8"), {"Content-Type": "application/json"}
+    last_reason = "no audio backend configured"
+    for base in _ordered_backends("audio", AUDIO_BACKENDS):
+        req = urllib.request.Request(base + path_and_query, data=body_bytes, method=method)
+        if token:
+            req.add_header("X-Audio-Token", token)
+        if body_bytes:
+            req.add_header("Content-Type", "application/json")
+        try:
+            # Long timeout: a download route streams the file through this call.
+            # After a boot switch the first audio request waits this out on the
+            # now-dead host before failing over; later calls hit the live one.
+            with urllib.request.urlopen(req, timeout=40) as resp:
+                headers = {"Content-Type": resp.headers.get("Content-Type", "application/json")}
+                cd = resp.headers.get("Content-Disposition")
+                if cd:
+                    headers["Content-Disposition"] = cd
+                _live_backend["audio"] = AUDIO_BACKEND = base
+                return resp.status, resp.read(), headers
+        except urllib.error.HTTPError as e:
+            _live_backend["audio"] = AUDIO_BACKEND = base
+            return e.code, e.read(), {"Content-Type": "application/json"}
+        except urllib.error.URLError as e:
+            last_reason = str(e.reason)
+            continue
+    msg = json.dumps({"error": f"Could not reach any audio backend "
+                               f"({', '.join(AUDIO_BACKENDS)}): {last_reason}"})
+    return 502, msg.encode("utf-8"), {"Content-Type": "application/json"}
 
 
 # ── SERVER HOST (for generating correct URLs in /api/config) ────────────────────
@@ -1220,7 +1274,8 @@ def main():
     print(f"  State sync available at /api/state (GET/PUT)")
     print(f"  State persisted to {STATE_FILE}")
     print(f"  Rolling backups (up to {BACKUP_KEEP}, hourly) in {BACKUP_DIR}")
-    print(f"  Audio Grabber proxied to {AUDIO_BACKEND} (audio_grabber_server.py on hyperion)")
+    print(f"  Vault proxied to {' / '.join(VAULT_BACKENDS)}")
+    print(f"  Audio Grabber proxied to {' / '.join(AUDIO_BACKENDS)}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
