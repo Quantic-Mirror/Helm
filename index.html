@@ -9911,13 +9911,18 @@ function stopServicesPolling() {
 // Polls /api/backup-events every 30s while the tab is active. helm_server.py
 // serves this straight off backup_events.json, which it writes on each
 // token-authed POST /api/backup-events from emit_event.py (called by the
-// external backup scripts). Two stage cards (Hyperion → popcorn, popcorn → R2)
+// external backup scripts). Two stage cards (Hyperion → GitHub, popcorn → R2)
 // show the latest status light for each pipeline stage, plus a scrolling list
-// of the most recent raw events.
+// of the most recent raw events. hyperion_backup used to mean "rsync to
+// popcorn's staging dir" under the old two-hop pipeline; the backup overhaul
+// (see helm-and-backup-runbook.md Part 2) replaced that with hyperion pushing
+// chezmoi/gopass straight to GitHub, so the id stayed but the label changed —
+// popcorn now only pulls from GitHub to mirror into R2 (r2_sync), it's no
+// longer a relay hyperion pushes through.
 // ════════════════════════════════════════════════════════════════════════════
 
 const BACKUP_STAGES = [
-  { id: 'hyperion_backup', label: 'Hyperion → popcorn' },
+  { id: 'hyperion_backup', label: 'Hyperion → GitHub' },
   { id: 'r2_sync',         label: 'popcorn → R2' },
 ];
 
