@@ -91,11 +91,18 @@ services:
       # For public/LAN: set to your domain or LAN IP
       SERVER_HOST: "${SERVER_HOST:-localhost}"
       SERVER_PORT: "8443"
-      # vault_server.py runs on a separate host (where pass + gpg live).
-      # Copy vault_token.txt into ./data so it's accessible inside the container.
+      # vault_server.py (pass + gpg) and audio_grabber_server.py (yt-dlp +
+      # cookies) run on the workstation. Copy vault_token.txt / audio_token.txt
+      # into ./data so they're readable inside the container.
+      #
+      # The workstation dual-boots and each OS is its own tailnet node, so list
+      # every candidate host in VAULT_HOSTS / AUDIO_HOSTS (comma-separated, no
+      # scheme/port) -- helm_server tries each and sticks to whichever answers.
+      # VAULT_HOST / AUDIO_HOST stay as the single-host fallback when *_HOSTS
+      # is unset.
+      VAULT_HOSTS: "${VAULT_HOSTS:-}"
+      AUDIO_HOSTS: "${AUDIO_HOSTS:-}"
       VAULT_BACKEND_URL: "http://${VAULT_HOST:-hyperion}:8090"
-      # audio_grabber_server.py runs on a separate host (where yt-dlp + cookies live).
-      # Copy audio_token.txt into ./data so it's accessible inside the container.
       AUDIO_BACKEND_URL: "http://${AUDIO_HOST:-hyperion}:8091"
       # SearXNG URL — the frontend fetches this to populate the search engine URL.
       SEARXNG_URL: "http://${SEARXNG_HOST:-localhost}:8081"

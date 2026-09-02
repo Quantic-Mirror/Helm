@@ -144,11 +144,27 @@ One box, two OSes, one Helm container pointed at it:
   (or lives on a partition shared with Windows).
 - **Windows boot:** both run in WSL2, as above.
 
-`VAULT_HOST` / `AUDIO_HOST` in the container's `.env` must resolve to the **same
-address on both boots**. Either give the machine one fixed LAN IP (a DHCP
-reservation on the shared NIC covers both OSes) and route it to the container
-host via a subnet router, or pin one OS's Tailscale IP and accept that the other
-boot loses vault/audio. See `CONTAINER_SETUP.md`.
+Each OS is its own Tailscale node with its own IP, so there is no single address
+that reaches the backends on both boots. Set **`VAULT_HOSTS` / `AUDIO_HOSTS`** in
+the container's `.env` to a comma-separated list of both nodes' Tailscale IPs
+(no scheme, no port):
+
+```
+VAULT_HOSTS=<hyperion-tailscale-ip>,<shrike-tailscale-ip>
+AUDIO_HOSTS=<hyperion-tailscale-ip>,<shrike-tailscale-ip>
+```
+
+`helm_server.py` tries each in turn, sticks to whichever answers, and fails over
+on its own when a boot switch flips which one is live — nothing to change per
+boot. (Legacy single `VAULT_HOST` / `AUDIO_HOST` still work when `*_HOSTS` is
+unset; a fixed LAN IP + subnet router is also still an option.) See
+`CONTAINER_SETUP.md`.
+
+On the Windows boot the WSL2 backend must actually be reachable at shrike's
+Tailscale IP — default NAT-mode WSL2 only forwards the host's `127.0.0.1`, not
+its other interfaces. Set `networkingMode=mirrored` in `C:\Users\<you>\.wslconfig`
+(then `wsl --shutdown` once) so the WSL2 listeners bind the host's real
+interfaces, including Tailscale, on every boot with no portproxy.
 
 ## GPG agent caching
 
