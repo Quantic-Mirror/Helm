@@ -53,7 +53,7 @@ import threading
 import urllib.request
 import urllib.error
 from collections import defaultdict
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
@@ -888,6 +888,15 @@ def get_network_info():
 
 
 class HelmHandler(SimpleHTTPRequestHandler):
+    # A client that disappears mid-connection without a clean TCP close (e.g.
+    # a laptop sleeping/losing wifi) would otherwise leave the handler thread
+    # blocked in a read forever. With the single-threaded HTTPServer this
+    # used to run under, that one stale connection wedged the whole server —
+    # nobody else could connect until the process was restarted. Now that
+    # ThreadingHTTPServer gives each connection its own thread, this timeout
+    # just makes sure that thread eventually exits instead of leaking.
+    timeout = 60
+
     def log_message(self, fmt, *args):
         path = args[0] if args else ""
         if "/api/" in path:
@@ -1175,7 +1184,13 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
 
 def main():
-    server = HTTPServer(("0.0.0.0", PORT), HelmHandler)
+    # ThreadingHTTPServer, not plain HTTPServer: a single-threaded server
+    # means one client connection that never cleanly closes (e.g. a laptop
+    # losing network without sending FIN/RST) blocks the accept loop forever
+    # — every other client then gets connection timeouts with no error in
+    # the logs, until the process is restarted. See git history for the
+    # incident this fixed.
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), HelmHandler)
 
     use_tls = os.path.exists(CERT_FILE) and os.path.exists(KEY_FILE)
     scheme = "http"
