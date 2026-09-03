@@ -3492,6 +3492,15 @@ async function initSync() {
       // fresh baseline from this startup, not from a stale previous session.
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       render();
+      // `state` was just reassigned wholesale. If the Dashboard tab is the
+      // default landing tab, switchTab('dashboard') already ran renderDashboard()
+      // synchronously at boot, before this fetch resolved — its widgets'
+      // click handlers close over the pre-sync `state.widgets` entries, which
+      // are now orphaned. Re-render so widgets act on the live objects;
+      // otherwise a widget mutation (e.g. picking a SomaFM station) writes to
+      // the orphaned copy while save()/reload logic reads the real one,
+      // silently reverting to the old value.
+      renderDashboard();
       renderUpcomingEvents();
     } else {
       // Server is empty — push our local state to seed it
@@ -3552,6 +3561,7 @@ async function pushStateToBackend() {
         state = merged;
         localStorage.setItem(LS_KEY, JSON.stringify(state));
         render();
+        renderDashboard(); // state was just reassigned — Dashboard widgets rendered against the old object would otherwise keep mutating an orphaned copy (see initSync()'s comment on the same issue)
         renderUpcomingEvents();
       }
       SYNC_VERSION = serverVersion;
@@ -3603,6 +3613,7 @@ async function pollForRemoteChanges() {
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       render(); // silent — no toast, no dialog
+      renderDashboard(); // same reassignment issue as initSync() — see its comment
       renderUpcomingEvents();
     }
   } catch(e) { /* polling is best-effort */ }
