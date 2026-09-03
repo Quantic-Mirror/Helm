@@ -379,8 +379,8 @@ def delete_audio_file(filename):
 
 # ── SOMAFM RADIO PLAYER CONTROL ──────────────────────────────────────────────
 # Runs helm_server.py's SomaFM widget "always on" background player: mpv,
-# playing the Indie Pop Rocks stream, as a `soma-radio.service` systemd
-# --user unit on this host (hyperion -- has real audio output, unlike
+# playing whichever station is currently selected, as a `soma-radio.service`
+# systemd --user unit on this host (hyperion -- has real audio output, unlike
 # popcorn, per the user). helm_server.py's Services page can't reach this
 # directly: gather_services_status()/control_service() there only ever run
 # systemctl/docker against the local host helm_server.py itself is on (no
@@ -391,6 +391,62 @@ def delete_audio_file(filename):
 # helm_server.py, so these two routes just ride along on that for free.
 SOMA_RADIO_UNIT = "soma-radio.service"
 
+# Duplicated from SOMAFM_STATIONS in index.html -- there's no shared runtime
+# between the browser frontend and this backend, so keep both in sync when
+# adding a station (id -> direct stream mount, from https://somafm.com/<id>.pls).
+SOMA_STATIONS = {
+    "indiepop": "https://ice2.somafm.com/indiepop-128-mp3",
+    "seventies": "https://ice2.somafm.com/seventies-128-mp3",
+}
+SOMA_DEFAULT_STATION = "indiepop"
+
+# Persists which station is selected, independent of soma-radio.service's own
+# on/off state, so the choice survives both this server and the player
+# restarting. SOMA_RADIO_ENV_FILE is read by soma-radio.service itself
+# (EnvironmentFile=) to know which URL to play -- %h there and
+# os.path.expanduser("~") here both resolve to the invoking user's home dir,
+# a fixed location both sides can agree on without the unit file (which is
+# static text, not a script) needing to know this repo's checkout path.
+SOMA_RADIO_STATE_FILE = os.path.join(SCRIPT_DIR, "soma_radio_station.txt")
+SOMA_RADIO_ENV_FILE = os.path.expanduser("~/.config/soma-radio-station.env")
+
+
+def get_soma_radio_station():
+    try:
+        with open(SOMA_RADIO_STATE_FILE) as f:
+            station = f.read().strip()
+        if station in SOMA_STATIONS:
+            return station
+    except OSError:
+        pass
+    return SOMA_DEFAULT_STATION
+
+
+def _write_soma_env_file(station):
+    os.makedirs(os.path.dirname(SOMA_RADIO_ENV_FILE), exist_ok=True)
+    tmp = SOMA_RADIO_ENV_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(f"SOMA_STREAM_URL={SOMA_STATIONS[station]}\n")
+    os.replace(tmp, SOMA_RADIO_ENV_FILE)
+
+
+def set_soma_radio_station(station):
+    if station not in SOMA_STATIONS:
+        return False, "Unknown station"
+    tmp = SOMA_RADIO_STATE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        f.write(station)
+    os.replace(tmp, SOMA_RADIO_STATE_FILE)
+    _write_soma_env_file(station)
+    # If the player is already running, restart it so the new station takes
+    # effect immediately; if it's off, the env file is now in place for
+    # whenever it's next turned on -- no restart needed.
+    if get_soma_radio_status()["running"]:
+        _, err, rc = _run(["systemctl", "--user", "restart", SOMA_RADIO_UNIT], timeout=15)
+        if rc != 0:
+            return False, err or "Restart failed"
+    return True, "Station set"
+
 
 def get_soma_radio_status():
     out, err, rc = _run(
@@ -399,7 +455,7 @@ def get_soma_radio_status():
     )
     active = "ActiveState=active" in out
     running = "SubState=running" in out
-    return {"running": active and running, "raw": out or err}
+    return {"running": active and running, "raw": out or err, "station": get_soma_radio_station()}
 
 
 def control_soma_radio(action):
@@ -541,6 +597,16 @@ class AudioHandler(BaseHTTPRequestHandler):
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
             return
 
+        if parsed.path == "/api/audio/radio/station":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            ok, msg = set_soma_radio_station(body.get("station", ""))
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
+            return
+
         self.send_json(404, {"error": "Not found"})
 
     def log_message(self, format, *args):
@@ -549,6 +615,12 @@ class AudioHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    # Regenerate soma-radio-station.env from persisted state (or the
+    # default) on every startup, so soma-radio.service always has a valid
+    # SOMA_STREAM_URL to read even on a fresh install where the station has
+    # never been explicitly switched from the widget.
+    _write_soma_env_file(get_soma_radio_station())
+
     server = ThreadingHTTPServer(("0.0.0.0", PORT), AudioHandler)
     print(f"Audio Grabber server running at http://0.0.0.0:{PORT}")
     print(f"Downloads saved to {AUDIO_DIR} (using {YT_DLP_BIN})")

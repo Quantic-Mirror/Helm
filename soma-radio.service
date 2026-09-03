@@ -1,16 +1,24 @@
 [Unit]
-Description=SomaFM Indie Pop Rocks stream player (mpv, audio-only) -- started/stopped on demand by the Helm widget, not enabled at boot
+Description=SomaFM stream player (mpv, audio-only) -- started/stopped on demand by the Helm widget, not enabled at boot
 After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+# SOMA_STREAM_URL comes from soma-radio-station.env, (re)written by
+# audio_grabber_server.py's set_soma_radio_station() whenever the station is
+# switched from the Helm widget, and regenerated from persisted state on
+# every audio_grabber_server.py startup -- so it should always exist by the
+# time this unit runs. The "-" prefix just makes a missing file non-fatal
+# rather than a hard failure, in case this unit is started before that
+# server has run even once.
+EnvironmentFile=-%h/.config/soma-radio-station.env
 # --no-video: audio-only, no window needed. --no-config avoids picking up
 # any interactive mpv.conf that might set video/OSD options meant for
 # manual use. --loop-playlist=inf so a single URL "playlist" of one keeps
 # reconnecting rather than exiting when the stream briefly drops --
 # Restart=on-failure below is the real safety net if mpv itself dies.
-ExecStart=/usr/bin/mpv --no-video --no-config --volume=100 --loop-playlist=inf https://ice2.somafm.com/indiepop-128-mp3
+ExecStart=/usr/bin/mpv --no-video --no-config --volume=100 --loop-playlist=inf ${SOMA_STREAM_URL}
 Restart=on-failure
 RestartSec=5
 # If there's truly no audio sink to play through, mpv will fail immediately

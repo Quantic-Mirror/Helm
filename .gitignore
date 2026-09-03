@@ -10,6 +10,7 @@ audio-downloads/
 audio-cookies.txt
 marks_state.json
 backup_events.json
+soma_radio_station.txt
 *.tmp
 __pycache__/
 *.bak

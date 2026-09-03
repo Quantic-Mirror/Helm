@@ -7861,6 +7861,7 @@ function renderSomaFMWidget(w) {
       w.station = e.target.value;
       save();
       loadSomaFMWidget(w.id);
+      setSomaFMRadioStation(w.id, w.station);
       clearInterval(SOMAFM_TIMERS[w.id]);
       SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
     };
@@ -8061,18 +8062,39 @@ async function loadSomaFMRadioStatus(widgetId) {
     const resp = await fetch('/api/audio/radio/status', { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    renderSomaFMRadioCtrl(widgetId, data.running);
+    renderSomaFMRadioCtrl(widgetId, data.running, data.station);
   } catch (e) {
     el.innerHTML = `<span class="somafm-radio-label">Speaker status unavailable</span>`;
   }
 }
 
-function renderSomaFMRadioCtrl(widgetId, running) {
+// Pushes the widget's selected station to the always-on host speaker so it
+// follows the same dropdown (see SOMA_STATIONS in audio_grabber_server.py,
+// a necessary duplicate of SOMAFM_STATIONS since frontend/backend share no
+// runtime). Best-effort: most setups don't have the audio host speaker
+// wired up at all, so a failure here shouldn't interrupt the browser-side
+// station switch, which already happened by the time this is called.
+async function setSomaFMRadioStation(widgetId, station) {
+  try {
+    const resp = await fetch('/api/audio/radio/station', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ station }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = await resp.json();
+    if (!data.ok) toast('Could not switch the speaker: ' + (data.message || 'unknown error'));
+  } catch (e) { /* speaker likely not configured on this deployment */ }
+  loadSomaFMRadioStatus(widgetId);
+}
+
+function renderSomaFMRadioCtrl(widgetId, running, station) {
   const el = document.getElementById('somafm-radio-' + widgetId);
   if (!el) return;
+  const stationName = station && SOMAFM_STATIONS[station] ? SOMAFM_STATIONS[station].name : null;
   el.innerHTML = `
     <span class="somafm-radio-dot${running ? ' somafm-radio-dot-on' : ''}"></span>
-    <span class="somafm-radio-label">Speaker (${AUDIO_HOST_LABEL}): ${running ? 'On' : 'Off'}</span>
+    <span class="somafm-radio-label">Speaker (${AUDIO_HOST_LABEL})${stationName ? ' — ' + escHtml(stationName) : ''}: ${running ? 'On' : 'Off'}</span>
     <button class="btn somafm-radio-btn" data-somafm-radio-action="${running ? 'stop' : 'start'}">${running ? 'Turn off' : 'Turn on'}</button>
   `;
   el.querySelector('[data-somafm-radio-action]').onclick = async (e) => {
