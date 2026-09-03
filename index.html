@@ -7703,42 +7703,57 @@ function renderComicsManage(widgetId) {
 // reuses submitAudioDownload() from the Audio Grabber page verbatim — same
 // "search yt-dlp's top hit and queue it" flow as that page's own "Quick
 // download" button — so there's no second download code path to maintain.
-const SOMAFM_INDIEPOP_URL = 'https://somafm.com/indiepop/songhistory.html';
-// Highest-quality direct MP3 stream mount, from https://somafm.com/indiepop.pls
-// (SomaFM publishes these .pls files precisely so third-party apps can play
-// the live stream directly — no station-side API or auth needed). Playing it
-// via a plain <audio src> doesn't require CORS the way fetch()/XHR would, so
-// this doesn't need to go through fetchViaProxy() like the history scrape.
-const SOMAFM_STREAM_URL = 'https://ice2.somafm.com/indiepop-128-mp3';
+// Station registry — add a station here (id, display name, songhistory page,
+// stream mount) to make it selectable from the widget. streamUrl is File1
+// from https://somafm.com/<id>.pls (SomaFM publishes these precisely so
+// third-party apps can play the live stream directly — no station-side API
+// or auth needed); historyUrl is that same station's songhistory.html.
+const SOMAFM_STATIONS = {
+  indiepop: {
+    name: 'Indie Pop Rocks',
+    historyUrl: 'https://somafm.com/indiepop/songhistory.html',
+    streamUrl: 'https://ice2.somafm.com/indiepop-128-mp3',
+  },
+  seventies: {
+    name: 'Left Coast 70s',
+    historyUrl: 'https://somafm.com/seventies/songhistory.html',
+    streamUrl: 'https://ice2.somafm.com/seventies-128-mp3',
+  },
+};
+const SOMAFM_DEFAULT_STATION = 'indiepop';
 const SOMAFM_POLL_MS = 90 * 1000;
 const SOMAFM_TIMERS = {};
-let SOMAFM_AUDIO = null;       // shared <audio> element, created lazily on first play
-let SOMAFM_PLAYING = false;    // whether the live stream is currently playing
+let SOMAFM_AUDIO = null;              // shared <audio> element, created lazily on first play
+let SOMAFM_PLAYING = false;           // whether the live stream is currently playing
+let SOMAFM_PLAYING_STATION = null;    // which station id SOMAFM_AUDIO is tuned to
 
-// Shared across the Now Playing widget and the Lyrics widget so having both
-// on the dashboard at once doesn't double the scrape traffic to
-// songhistory.html (fetchViaProxy()'s fallback path hits public,
+// Keyed by station id so multiple Now Playing widgets on different stations
+// don't clobber each other's history. Still shared across widgets on the
+// *same* station (including the Lyrics widget, which always uses the
+// default station) so having several open at once doesn't double the scrape
+// traffic to songhistory.html (fetchViaProxy()'s fallback path hits public,
 // rate-limit-sensitive CORS proxies). Short freshness window, not "forever"
 // — this genuinely changes as songs change, unlike the art/lyrics caches
 // below which key on an (artist, song) pair that never changes once fetched.
 const SOMAFM_TRACKS_FRESH_MS = 20 * 1000;
-let SOMAFM_TRACKS_CACHE = { tracks: null, ts: 0 };
-let SOMAFM_TRACKS_FETCH_PROMISE = null; // in-flight de-dupe, same pattern as BACKEND_CHECK_PROMISE
+const SOMAFM_TRACKS_CACHE = {};         // station id → { tracks, ts }
+const SOMAFM_TRACKS_FETCH_PROMISE = {}; // station id → in-flight promise, same de-dupe pattern as BACKEND_CHECK_PROMISE
 
-async function fetchSomaFMTracks() {
-  if (SOMAFM_TRACKS_CACHE.tracks && Date.now() - SOMAFM_TRACKS_CACHE.ts < SOMAFM_TRACKS_FRESH_MS) {
-    return SOMAFM_TRACKS_CACHE.tracks;
+async function fetchSomaFMTracks(station = SOMAFM_DEFAULT_STATION) {
+  const cached = SOMAFM_TRACKS_CACHE[station];
+  if (cached && Date.now() - cached.ts < SOMAFM_TRACKS_FRESH_MS) {
+    return cached.tracks;
   }
-  if (SOMAFM_TRACKS_FETCH_PROMISE) return SOMAFM_TRACKS_FETCH_PROMISE;
-  SOMAFM_TRACKS_FETCH_PROMISE = (async () => {
-    const html = await fetchViaProxy(SOMAFM_INDIEPOP_URL);
+  if (SOMAFM_TRACKS_FETCH_PROMISE[station]) return SOMAFM_TRACKS_FETCH_PROMISE[station];
+  SOMAFM_TRACKS_FETCH_PROMISE[station] = (async () => {
+    const html = await fetchViaProxy(SOMAFM_STATIONS[station].historyUrl);
     const tracks = parseSomaFMHistory(html);
     if (!tracks.length) throw new Error('No tracks found on the page');
-    SOMAFM_TRACKS_CACHE = { tracks, ts: Date.now() };
+    SOMAFM_TRACKS_CACHE[station] = { tracks, ts: Date.now() };
     return tracks;
   })();
-  try { return await SOMAFM_TRACKS_FETCH_PROMISE; }
-  finally { SOMAFM_TRACKS_FETCH_PROMISE = null; }
+  try { return await SOMAFM_TRACKS_FETCH_PROMISE[station]; }
+  finally { delete SOMAFM_TRACKS_FETCH_PROMISE[station]; }
 }
 
 // Keyed by "artist::song" — an (artist, song) pair's art doesn't change,
@@ -7787,15 +7802,25 @@ async function fetchSomaFMLyrics(artist, song) {
   }
 }
 
+// Saved widgets from before station switching existed have no `station`
+// field — fall back to the original hardcoded station rather than breaking.
+function getSomaFMWidgetStation(w) {
+  return (w.station && SOMAFM_STATIONS[w.station]) ? w.station : SOMAFM_DEFAULT_STATION;
+}
+
 function renderSomaFMWidget(w) {
   const el = document.createElement('div');
   el.className = 'folder-card widget-card somafm-widget';
   el.dataset.widgetId = w.id;
   el.draggable = false;
+  const station = getSomaFMWidgetStation(w);
+  const stationOptions = Object.entries(SOMAFM_STATIONS).map(([id, s]) =>
+    `<option value="${id}"${id === station ? ' selected' : ''}>SomaFM: ${escHtml(s.name)}</option>`
+  ).join('');
   el.innerHTML = `
     <div class="folder-header widget-header">
       <span class="col-dot" style="background:#FFA657"></span>
-      <span class="column-title" style="cursor:default">SomaFM: Indie Pop Rocks</span>
+      <select class="column-title" style="cursor:pointer" data-somafm-station="${w.id}" title="Switch station">${stationOptions}</select>
       <div class="col-actions" style="opacity:1">
         <button class="icon-btn" title="Refresh now" data-somafm-refresh="${w.id}">↻</button>
         <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
@@ -7816,6 +7841,15 @@ function renderSomaFMWidget(w) {
       e.stopPropagation();
       loadSomaFMWidget(w.id);
       // Reset the timer so the next auto-poll doesn't fire seconds later.
+      clearInterval(SOMAFM_TIMERS[w.id]);
+      SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
+    };
+
+    el.querySelector('[data-somafm-station]').onclick = (e) => e.stopPropagation();
+    el.querySelector('[data-somafm-station]').onchange = (e) => {
+      w.station = e.target.value;
+      save();
+      loadSomaFMWidget(w.id);
       clearInterval(SOMAFM_TIMERS[w.id]);
       SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
     };
@@ -7859,15 +7893,17 @@ function parseSomaFMHistory(html) {
 async function loadSomaFMWidget(widgetId) {
   const body = document.getElementById('somafm-' + widgetId);
   if (!body) { clearInterval(SOMAFM_TIMERS[widgetId]); return; }
+  const w = (state.widgets || []).find(x => x.id === widgetId);
+  const station = w ? getSomaFMWidgetStation(w) : SOMAFM_DEFAULT_STATION;
   try {
-    const tracks = await fetchSomaFMTracks();
-    renderSomaFMBody(widgetId, tracks);
+    const tracks = await fetchSomaFMTracks(station);
+    renderSomaFMBody(widgetId, tracks, station);
   } catch (e) {
     body.innerHTML = `<div class="somafm-error">Could not load song history.<br><small>${escHtml(e.message)}</small></div>`;
   }
 }
 
-function renderSomaFMBody(widgetId, tracks) {
+function renderSomaFMBody(widgetId, tracks, station) {
   const body = document.getElementById('somafm-' + widgetId);
   if (!body) return;
 
@@ -7878,18 +7914,23 @@ function renderSomaFMBody(widgetId, tracks) {
     <button class="${cls}" data-somafm-grab title="Send &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to Audio Grabber"
       data-artist="${escHtml(t.artist)}" data-song="${escHtml(t.song)}">⬇</button>`;
 
-  const playIcon = SOMAFM_PLAYING ? '⏸' : '▶';
+  // SOMAFM_AUDIO is a single shared <audio> element (only one stream can
+  // play in a browser tab at once), so "is playing" is only true for the
+  // one widget/station SOMAFM_PLAYING_STATION currently points at — every
+  // other station's card shows a plain play icon regardless of SOMAFM_PLAYING.
+  const isThisPlaying = SOMAFM_PLAYING && SOMAFM_PLAYING_STATION === station;
+  const playIcon = isThisPlaying ? '⏸' : '▶';
   // Clicking tunes into the live stream, not this specific track — there's
   // no way to "replay" a moment from a live radio feed, only listen to
   // whatever's airing right now (which, if this row still says the same
   // song, happens to be this one).
-  const playTitle = SOMAFM_PLAYING ? 'Pause live stream' : 'Play live stream (Indie Pop Rocks)';
+  const playTitle = isThisPlaying ? 'Pause live stream' : `Play live stream (${SOMAFM_STATIONS[station].name})`;
 
   body.innerHTML = `
     <div class="somafm-now-label">Now Playing</div>
     <div class="somafm-now-track">
       <img class="somafm-art somafm-art-empty" id="somafm-art-${widgetId}" alt="" />
-      <div class="somafm-now-info" data-somafm-playtoggle title="${escHtml(playTitle)}">
+      <div class="somafm-now-info" data-somafm-playtoggle="${station}" title="${escHtml(playTitle)}">
         <div class="somafm-now-song"><span class="somafm-play-icon">${playIcon}</span>${escHtml(now.song)}</div>
         <div class="somafm-now-artist">${escHtml(now.artist)}</div>
         ${now.album ? `<div class="somafm-now-album">${escHtml(now.album)}</div>` : ''}
@@ -7910,13 +7951,13 @@ function renderSomaFMBody(widgetId, tracks) {
     <div class="somafm-radio-ctrl" id="somafm-radio-${widgetId}">
       <span class="somafm-radio-label">Checking speaker…</span>
     </div>
-    <a class="somafm-link" href="${SOMAFM_INDIEPOP_URL}" target="_blank" rel="noopener">Full song history ↗</a>
+    <a class="somafm-link" href="${SOMAFM_STATIONS[station].historyUrl}" target="_blank" rel="noopener">Full song history ↗</a>
   `;
 
   body.querySelectorAll('[data-somafm-grab]').forEach(btn => {
     btn.onclick = () => submitAudioDownload(btn.dataset.artist, btn.dataset.song, '');
   });
-  body.querySelector('[data-somafm-playtoggle]').onclick = toggleSomaFMPlayback;
+  body.querySelector('[data-somafm-playtoggle]').onclick = (e) => toggleSomaFMPlayback(e.currentTarget.dataset.somafmPlaytoggle);
   loadSomaFMRadioStatus(widgetId);
 
   // Resolved asynchronously so artwork lookup latency never blocks showing
@@ -7929,36 +7970,56 @@ function renderSomaFMBody(widgetId, tracks) {
   });
 }
 
-function toggleSomaFMPlayback() {
+function toggleSomaFMPlayback(station) {
+  const stationName = SOMAFM_STATIONS[station].name;
+
+  // Switching to a different station than whatever's currently loaded: tear
+  // down the old <audio> element and start fresh rather than repointing
+  // .src on a live/buffering stream.
+  if (SOMAFM_AUDIO && SOMAFM_PLAYING_STATION !== station) {
+    SOMAFM_AUDIO.pause();
+    SOMAFM_AUDIO = null;
+  }
+
   if (!SOMAFM_AUDIO) {
-    SOMAFM_AUDIO = new Audio(SOMAFM_STREAM_URL);
+    SOMAFM_PLAYING_STATION = station;
+    SOMAFM_AUDIO = new Audio(SOMAFM_STATIONS[station].streamUrl);
     SOMAFM_AUDIO.preload = 'none';
     SOMAFM_AUDIO.addEventListener('playing', () => { SOMAFM_PLAYING = true; updateSomaFMPlayIcons(); });
     SOMAFM_AUDIO.addEventListener('pause', () => { SOMAFM_PLAYING = false; updateSomaFMPlayIcons(); });
     SOMAFM_AUDIO.addEventListener('error', () => {
       SOMAFM_PLAYING = false;
       updateSomaFMPlayIcons();
-      toast('Could not play the Indie Pop Rocks stream');
+      toast(`Could not play the ${stationName} stream`);
     });
   }
 
   if (SOMAFM_AUDIO.paused) {
-    updateSomaFMPlayIcons('…'); // immediate feedback while the stream buffers
+    updateSomaFMPlayIcons('…', station); // immediate feedback while the stream buffers
     SOMAFM_AUDIO.play().catch(() => {
       SOMAFM_PLAYING = false;
       updateSomaFMPlayIcons();
-      toast('Could not play the Indie Pop Rocks stream');
+      toast(`Could not play the ${stationName} stream`);
     });
   } else {
     SOMAFM_AUDIO.pause();
   }
 }
 
-function updateSomaFMPlayIcons(forceIcon) {
-  const icon = forceIcon || (SOMAFM_PLAYING ? '⏸' : '▶');
-  const title = SOMAFM_PLAYING ? 'Pause live stream' : 'Play live stream (Indie Pop Rocks)';
-  document.querySelectorAll('.somafm-play-icon').forEach(el => { el.textContent = icon; });
-  document.querySelectorAll('[data-somafm-playtoggle]').forEach(el => { el.title = title; });
+// Each [data-somafm-playtoggle] card carries its own station id, so this
+// recomputes every card's icon/title independently against the single
+// shared SOMAFM_PLAYING_STATION rather than assuming one global state.
+// forceIcon/forceStation give the clicked card immediate "buffering"
+// feedback without flipping icons on other stations' cards.
+function updateSomaFMPlayIcons(forceIcon, forceStation) {
+  document.querySelectorAll('[data-somafm-playtoggle]').forEach(el => {
+    const station = el.dataset.somafmPlaytoggle;
+    const isThisPlaying = SOMAFM_PLAYING && station === SOMAFM_PLAYING_STATION;
+    const icon = (forceIcon && station === forceStation) ? forceIcon : (isThisPlaying ? '⏸' : '▶');
+    const iconEl = el.querySelector('.somafm-play-icon');
+    if (iconEl) iconEl.textContent = icon;
+    el.title = isThisPlaying ? 'Pause live stream' : `Play live stream (${SOMAFM_STATIONS[station].name})`;
+  });
 }
 
 // Controls the always-on background player on the audio host (soma-radio.service,
