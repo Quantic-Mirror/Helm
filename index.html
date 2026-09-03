@@ -508,6 +508,18 @@ body.theme-terminal #terminal-login-banner.visible {
   margin-top: 20px;
 }
 
+/* Modals whose content can grow (more exercises, more sets, more routines)
+   cap height and scroll internally instead of growing past the viewport —
+   same idea as backups-modal, generalized so header/footer stay put while
+   the middle scrolls. */
+.modal.modal-scrollable {
+  max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column;
+}
+.modal.modal-scrollable .modal-header,
+.modal.modal-scrollable .modal-footer { flex-shrink: 0; }
+.modal-scroll-body { overflow-y: auto; flex: 1; min-height: 0; }
+
 
 /* EXPAND / COLLAPSE */
 .expand-btn {
@@ -2470,6 +2482,11 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   white-space: nowrap;
   flex-shrink: 0;
 }
+.workout-session-summary {
+  font-size: 11px; color: var(--text-muted);
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .workout-session-exercises {
   display: flex; flex-direction: column; gap: 4px;
   padding-top: 8px; margin-top: 2px;
@@ -2501,16 +2518,39 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* Exercise / set row editor, shared by the Log Workout and Routine modals */
-.workout-exercise-row {
+/* Exercise editor cards, shared by the Log Workout and Routine modals.
+   Accordion: only one card's details are expanded at a time (tracked by
+   workoutExpandedExIdx) so opening an existing multi-exercise session, or
+   adding exercises/sets one at a time, never grows the whole list — only
+   the single open card grows, and the modal itself scrolls internally
+   (.modal-scrollable) rather than pushing its footer off-screen. */
+.workout-exercise-card {
   border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 8px; margin-bottom: 8px;
+  margin-bottom: 8px; overflow: hidden;
+}
+.workout-exercise-card-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; cursor: pointer;
+}
+.workout-exercise-card-header:hover { background: var(--surface-2); }
+.workout-exercise-card-chevron { color: var(--text-dim); font-size: 11px; flex-shrink: 0; width: 10px; }
+.workout-exercise-card-name {
+  font-weight: 600; color: var(--text); flex-shrink: 0;
+  max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workout-exercise-card-name.placeholder { color: var(--text-dim); font-weight: 500; font-style: italic; }
+.workout-exercise-card-summary {
+  font-size: 11px; color: var(--text-muted); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workout-exercise-card-body {
+  padding: 10px; border-top: 1px solid var(--border);
 }
 .workout-exercise-row-main { display: flex; gap: 6px; align-items: center; }
 .workout-exercise-row-main .workout-ex-name { flex: 1; }
 .workout-exercise-row-main .workout-ex-type { width: 90px; flex-shrink: 0; }
 .workout-set-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-.workout-set-row { display: flex; gap: 6px; align-items: center; padding-left: 12px; }
+.workout-set-row { display: flex; gap: 6px; align-items: center; }
 .workout-set-row input { width: 100px; }
 
 .workout-progress-view { display: flex; flex-direction: column; gap: 16px; }
@@ -3097,29 +3137,31 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 
 <!-- WORKOUT SESSION MODAL -->
 <div id="workout-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:24px">
-  <div class="modal" style="max-width:560px">
+  <div class="modal modal-scrollable" style="max-width:560px">
     <div class="modal-header">
       <span class="modal-title" id="workout-modal-title">Log Workout</span>
       <button class="icon-btn" id="workout-modal-close">✕</button>
     </div>
-    <div class="field">
-      <label for="workout-date-input">Date</label>
-      <input id="workout-date-input" type="date">
-    </div>
-    <div class="field">
-      <label for="workout-routine-select">Routine</label>
-      <select id="workout-routine-select">
-        <option value="">— Freeform —</option>
-      </select>
-    </div>
-    <div class="field">
-      <label>Exercises</label>
-      <div id="workout-exercise-editor"></div>
-      <button class="btn" id="workout-add-exercise" type="button" style="margin-top:8px">+ Add Exercise</button>
-    </div>
-    <div class="field">
-      <label for="workout-notes-input">Notes</label>
-      <textarea id="workout-notes-input" rows="3" placeholder="Optional notes…"></textarea>
+    <div class="modal-scroll-body">
+      <div class="field">
+        <label for="workout-date-input">Date</label>
+        <input id="workout-date-input" type="date">
+      </div>
+      <div class="field">
+        <label for="workout-routine-select">Routine</label>
+        <select id="workout-routine-select">
+          <option value="">— Freeform —</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Exercises</label>
+        <div id="workout-exercise-editor"></div>
+        <button class="btn" id="workout-add-exercise" type="button" style="margin-top:8px">+ Add Exercise</button>
+      </div>
+      <div class="field">
+        <label for="workout-notes-input">Notes</label>
+        <textarea id="workout-notes-input" rows="3" placeholder="Optional notes…"></textarea>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn" id="workout-modal-cancel">Cancel</button>
@@ -3130,12 +3172,12 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 
 <!-- ROUTINE MANAGER MODAL -->
 <div id="routine-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:24px">
-  <div class="modal" style="max-width:520px">
+  <div class="modal modal-scrollable" style="max-width:520px">
     <div class="modal-header">
       <span class="modal-title" id="routine-modal-title">Routines</span>
       <button class="icon-btn" id="routine-modal-close">✕</button>
     </div>
-    <div id="routine-modal-body"></div>
+    <div id="routine-modal-body" class="modal-scroll-body"></div>
   </div>
 </div>
 
@@ -3346,6 +3388,7 @@ let calPageMonth = new Date().getMonth();
 let newsViewMode = 'cards';
 let workoutViewMode = 'history'; // 'history' | 'progress'
 let WORKOUT_PROGRESS_EXERCISE = null; // currently selected exercise in the progress view
+let workoutHistoryExpandedIds = new Set(); // session ids currently showing their exercise detail, in the History list
 let servicesData = [];
 let servicesPollTimer = null;
 const SERVICES_POLL_MS = 2 * 60 * 1000;
@@ -4432,6 +4475,7 @@ let workoutModalExercises = [];
 let workoutModalEditingId = null; // id of the session being edited, or null for a new one
 let workoutRoutineEditExercises = [];
 let workoutRoutineEditId = null; // id of the routine being edited, or null for a new one
+let workoutExpandedExIdx = null; // index of the exercise card currently expanded in whichever editor is open (accordion — only one at a time)
 
 function renderWorkoutPage() {
   const body = document.getElementById('workout-page-body');
@@ -4458,13 +4502,15 @@ function buildWorkoutHistoryHTML() {
     const d = new Date(s.date + 'T00:00:00');
     const weekday = d.toLocaleDateString([], { weekday: 'short' });
     const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-    const exerciseDetails = s.exercises.map(ex => `
+    const expanded = workoutHistoryExpandedIds.has(s.id);
+    const summary = s.exercises.map(ex => ex.name).join(', ');
+    const exerciseDetails = expanded ? s.exercises.map(ex => `
       <div class="workout-exercise-detail">
         <span class="workout-ex-detail-name">${escHtml(ex.name)}</span>
         <span class="workout-type-badge">${ex.type === 'time' ? 'TIME' : 'REPS'}</span>
         <span class="workout-ex-detail-sets">${escHtml(formatWorkoutSets(ex))}</span>
       </div>`
-    ).join('');
+    ).join('') : '';
     return `
       <div class="workout-session-row" data-workout-id="${s.id}">
         <div class="workout-session-top">
@@ -4473,11 +4519,15 @@ function buildWorkoutHistoryHTML() {
             <span class="workout-session-monthday">${monthDay}</span>
           </div>
           ${s.routineName ? `<span class="workout-exercise-pill">${escHtml(s.routineName)}</span>` : ''}
-          <div class="col-actions" style="margin-left:auto">
-            <button class="icon-btn danger" title="Delete" data-workout-delete="${s.id}">✕</button>
+          ${!expanded ? `<span class="workout-session-summary">${escHtml(summary)}</span>` : ''}
+          <div style="display:flex;align-items:center;gap:2px;margin-left:auto;flex-shrink:0">
+            <button class="icon-btn collapse-toggle" title="${expanded ? 'Collapse' : 'Expand'}" data-toggle-session="${s.id}">${expanded ? '▾' : '▸'}</button>
+            <div class="col-actions">
+              <button class="icon-btn danger" title="Delete" data-workout-delete="${s.id}">✕</button>
+            </div>
           </div>
         </div>
-        <div class="workout-session-exercises">${exerciseDetails}</div>
+        ${expanded ? `<div class="workout-session-exercises">${exerciseDetails}</div>` : ''}
       </div>`;
   }).join('') + '</div>';
 }
@@ -4555,13 +4605,22 @@ function wireWorkoutPage() {
 
   document.querySelectorAll('.workout-session-row[data-workout-id]').forEach(row => {
     row.onclick = (e) => {
-      if (e.target.closest('[data-workout-delete]')) return;
+      if (e.target.closest('[data-workout-delete], [data-toggle-session]')) return;
       const session = (state.workouts || []).find(s => s.id === row.dataset.workoutId);
       if (session) openWorkoutSessionModal(session);
     };
   });
   document.querySelectorAll('[data-workout-delete]').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); deleteWorkoutSession(btn.dataset.workoutDelete); };
+  });
+  document.querySelectorAll('[data-toggle-session]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.toggleSession;
+      if (workoutHistoryExpandedIds.has(id)) workoutHistoryExpandedIds.delete(id);
+      else workoutHistoryExpandedIds.add(id);
+      renderWorkoutPage();
+    };
   });
 
   const progressSelect = document.getElementById('workout-progress-select');
@@ -4574,45 +4633,97 @@ function wireWorkoutPage() {
 // (withSets: false, routines only store exercise name+type, not sets) — same
 // add/remove-row shape as the Todo widget (renderTodoWidget etc.), just
 // nested one level deeper for sets within an exercise.
-function buildExerciseRowsEditor(exercises, withSets) {
+//
+// Rendered as an accordion: exIdx === workoutExpandedExIdx is the only card
+// showing its editable body (name/type/sets). Collapsed cards show a
+// one-line summary instead. This is what keeps the modal from growing
+// without bound as exercises/sets are added — only one card's contents are
+// ever on screen at a time, and the modal itself scrolls (.modal-scrollable)
+// as a second line of defense.
+function summarizeExerciseCard(ex, withSets) {
+  const type = ex.type === 'time' ? 'TIME' : 'REPS';
+  if (!withSets) return type;
+  const setCount = (ex.sets || []).length;
+  return setCount ? `${type} · ${setCount} set${setCount === 1 ? '' : 's'}` : `${type} · no sets`;
+}
+
+function buildExerciseRowsEditor(exercises, withSets, expandedIdx) {
   if (!exercises.length) {
     return '<div class="workout-editor-empty">No exercises yet — click “+ Add Exercise”.</div>';
   }
-  return exercises.map((ex, exIdx) => `
-    <div class="workout-exercise-row" data-ex-idx="${exIdx}">
-      <div class="workout-exercise-row-main">
-        <input type="text" class="workout-ex-name" data-ex-idx="${exIdx}" placeholder="Exercise name" value="${escHtml(ex.name || '')}">
-        <select class="workout-ex-type" data-ex-idx="${exIdx}">
-          <option value="reps"${ex.type === 'reps' ? ' selected' : ''}>Reps</option>
-          <option value="time"${ex.type === 'time' ? ' selected' : ''}>Time</option>
-        </select>
+  return exercises.map((ex, exIdx) => {
+    const isOpen = exIdx === expandedIdx;
+    const hasName = ex.name && ex.name.trim();
+    return `
+    <div class="workout-exercise-card" data-ex-idx="${exIdx}">
+      <div class="workout-exercise-card-header" data-toggle-exercise="${exIdx}">
+        <span class="workout-exercise-card-chevron">${isOpen ? '▾' : '▸'}</span>
+        <span class="workout-exercise-card-name${hasName ? '' : ' placeholder'}">${hasName ? escHtml(ex.name) : 'New exercise'}</span>
+        <span class="workout-exercise-card-summary">${summarizeExerciseCard(ex, withSets)}</span>
         <button class="icon-btn danger" type="button" data-remove-exercise="${exIdx}" title="Remove exercise">✕</button>
       </div>
-      ${withSets ? `
-        <div class="workout-set-list">
-          ${(ex.sets || []).map((st, setIdx) => `
-            <div class="workout-set-row" data-ex-idx="${exIdx}" data-set-idx="${setIdx}">
-              <input type="number" min="0" class="workout-set-value" data-ex-idx="${exIdx}" data-set-idx="${setIdx}"
-                placeholder="${ex.type === 'time' ? 'Seconds' : 'Reps'}" value="${st.value || ''}">
-              <input type="number" min="0" class="workout-set-resistance" data-ex-idx="${exIdx}" data-set-idx="${setIdx}"
-                placeholder="+resistance (optional)" value="${st.resistance ?? ''}">
-              <button class="icon-btn danger" type="button" data-remove-set="${exIdx}:${setIdx}" title="Remove set">✕</button>
-            </div>`).join('')}
-          <button class="btn" type="button" data-add-set="${exIdx}" style="margin-top:2px">+ Add Set</button>
-        </div>` : ''}
-    </div>`).join('');
+      ${isOpen ? `
+      <div class="workout-exercise-card-body">
+        <div class="workout-exercise-row-main">
+          <input type="text" class="workout-ex-name" data-ex-idx="${exIdx}" placeholder="Exercise name" value="${escHtml(ex.name || '')}">
+          <select class="workout-ex-type" data-ex-idx="${exIdx}">
+            <option value="reps"${ex.type === 'reps' ? ' selected' : ''}>Reps</option>
+            <option value="time"${ex.type === 'time' ? ' selected' : ''}>Time</option>
+          </select>
+        </div>
+        ${withSets ? `
+          <div class="workout-set-list">
+            ${(ex.sets || []).map((st, setIdx) => `
+              <div class="workout-set-row" data-ex-idx="${exIdx}" data-set-idx="${setIdx}">
+                <input type="number" min="0" class="workout-set-value" data-ex-idx="${exIdx}" data-set-idx="${setIdx}"
+                  placeholder="${ex.type === 'time' ? 'Seconds' : 'Reps'}" value="${st.value || ''}">
+                <input type="number" min="0" class="workout-set-resistance" data-ex-idx="${exIdx}" data-set-idx="${setIdx}"
+                  placeholder="+resistance (optional)" value="${st.resistance ?? ''}">
+                <button class="icon-btn danger" type="button" data-remove-set="${exIdx}:${setIdx}" title="Remove set">✕</button>
+              </div>`).join('')}
+            <button class="btn" type="button" data-add-set="${exIdx}" style="margin-top:2px">+ Add Set</button>
+          </div>` : ''}
+      </div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function refreshExerciseEditor(container, exercises, withSets) {
-  container.innerHTML = buildExerciseRowsEditor(exercises, withSets);
+  if (workoutExpandedExIdx !== null && (workoutExpandedExIdx < 0 || workoutExpandedExIdx >= exercises.length)) {
+    workoutExpandedExIdx = null;
+  }
+  container.innerHTML = buildExerciseRowsEditor(exercises, withSets, workoutExpandedExIdx);
+
+  container.querySelectorAll('[data-toggle-exercise]').forEach(header => {
+    header.onclick = () => {
+      const idx = +header.dataset.toggleExercise;
+      workoutExpandedExIdx = workoutExpandedExIdx === idx ? null : idx;
+      refreshExerciseEditor(container, exercises, withSets);
+    };
+  });
   container.querySelectorAll('.workout-ex-name').forEach(inp => {
-    inp.oninput = () => { exercises[+inp.dataset.exIdx].name = inp.value; };
+    inp.oninput = () => {
+      exercises[+inp.dataset.exIdx].name = inp.value;
+      const nameEl = container.querySelector(`.workout-exercise-card[data-ex-idx="${inp.dataset.exIdx}"] .workout-exercise-card-name`);
+      if (nameEl) {
+        const trimmed = inp.value.trim();
+        nameEl.textContent = trimmed || 'New exercise';
+        nameEl.classList.toggle('placeholder', !trimmed);
+      }
+    };
   });
   container.querySelectorAll('.workout-ex-type').forEach(sel => {
     sel.onchange = () => { exercises[+sel.dataset.exIdx].type = sel.value; refreshExerciseEditor(container, exercises, withSets); };
   });
   container.querySelectorAll('[data-remove-exercise]').forEach(btn => {
-    btn.onclick = () => { exercises.splice(+btn.dataset.removeExercise, 1); refreshExerciseEditor(container, exercises, withSets); };
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const idx = +btn.dataset.removeExercise;
+      exercises.splice(idx, 1);
+      if (workoutExpandedExIdx === idx) workoutExpandedExIdx = null;
+      else if (workoutExpandedExIdx !== null && workoutExpandedExIdx > idx) workoutExpandedExIdx--;
+      refreshExerciseEditor(container, exercises, withSets);
+    };
   });
   if (!withSets) return;
   container.querySelectorAll('.workout-set-value').forEach(inp => {
@@ -4623,10 +4734,16 @@ function refreshExerciseEditor(container, exercises, withSets) {
   });
   container.querySelectorAll('[data-remove-set]').forEach(btn => {
     const [exIdx, setIdx] = btn.dataset.removeSet.split(':').map(Number);
-    btn.onclick = () => { exercises[exIdx].sets.splice(setIdx, 1); refreshExerciseEditor(container, exercises, withSets); };
+    btn.onclick = () => {
+      exercises[exIdx].sets.splice(setIdx, 1);
+      refreshExerciseEditor(container, exercises, withSets);
+    };
   });
   container.querySelectorAll('[data-add-set]').forEach(btn => {
-    btn.onclick = () => { exercises[+btn.dataset.addSet].sets.push({ value: 0, resistance: null }); refreshExerciseEditor(container, exercises, withSets); };
+    btn.onclick = () => {
+      exercises[+btn.dataset.addSet].sets.push({ value: 0, resistance: null });
+      refreshExerciseEditor(container, exercises, withSets);
+    };
   });
 }
 
@@ -4634,6 +4751,7 @@ function refreshExerciseEditor(container, exercises, withSets) {
 function openWorkoutSessionModal(existingSession) {
   workoutModalEditingId = existingSession ? existingSession.id : null;
   workoutModalExercises = existingSession ? JSON.parse(JSON.stringify(existingSession.exercises)) : [];
+  workoutExpandedExIdx = null;
 
   document.getElementById('workout-modal-title').textContent = existingSession ? 'Edit Workout' : 'Log Workout';
   document.getElementById('workout-date-input').value = existingSession ? existingSession.date : new Date().toISOString().slice(0, 10);
@@ -4738,6 +4856,7 @@ function renderRoutineModalList() {
 function renderRoutineModalEditor(routine) {
   workoutRoutineEditId = routine ? routine.id : null;
   workoutRoutineEditExercises = routine ? JSON.parse(JSON.stringify(routine.exercises)) : [];
+  workoutExpandedExIdx = null;
 
   document.getElementById('routine-modal-title').textContent = routine ? 'Edit Routine' : 'New Routine';
   const body = document.getElementById('routine-modal-body');
@@ -4761,6 +4880,7 @@ function renderRoutineModalEditor(routine) {
 
   document.getElementById('routine-add-exercise').onclick = () => {
     workoutRoutineEditExercises.push({ name: '', type: 'reps' });
+    workoutExpandedExIdx = workoutRoutineEditExercises.length - 1;
     refreshExerciseEditor(editor, workoutRoutineEditExercises, false);
   };
   document.getElementById('routine-editor-back').onclick = renderRoutineModalList;
@@ -4787,11 +4907,13 @@ document.getElementById('workout-modal-cancel').onclick = closeWorkoutSessionMod
 document.getElementById('workout-modal-save').onclick = saveWorkoutSessionFromModal;
 document.getElementById('workout-add-exercise').onclick = () => {
   workoutModalExercises.push({ name: '', type: 'reps', sets: [{ value: 0, resistance: null }] });
+  workoutExpandedExIdx = workoutModalExercises.length - 1;
   refreshExerciseEditor(document.getElementById('workout-exercise-editor'), workoutModalExercises, true);
 };
 document.getElementById('workout-routine-select').onchange = (e) => {
   const routine = (state.workoutRoutines || []).find(r => r.name === e.target.value);
   workoutModalExercises = routine ? routine.exercises.map(ex => ({ name: ex.name, type: ex.type, sets: [] })) : [];
+  workoutExpandedExIdx = null;
   refreshExerciseEditor(document.getElementById('workout-exercise-editor'), workoutModalExercises, true);
 };
 document.getElementById('routine-modal-close').onclick = closeRoutineManagerModal;
