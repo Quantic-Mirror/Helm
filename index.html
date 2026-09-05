@@ -2520,11 +2520,18 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 
 /* ── JOURNAL PAGE ─────────────────────────────────────────────────────────── */
 #journal-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+.journal-container { max-width: 640px; margin: 0 auto; }
 .journal-topbar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   justify-content: space-between;
   margin-bottom: 20px;
 }
+.journal-topbar .search-input-wrap { flex: 1; min-width: 140px; }
+.journal-select-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.journal-select-count { font-size: 12px; color: var(--text-dim); }
 .journal-empty { color: var(--text-dim); font-size: 12px; padding: 12px 4px; }
 .journal-entry-list { display: flex; flex-direction: column; gap: 6px; }
 .journal-entry-row {
@@ -2536,6 +2543,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 }
 .journal-entry-row:hover { border-color: var(--accent); }
 .journal-entry-row:hover .col-actions { opacity: 1; }
+.journal-entry-checkbox { flex-shrink: 0; width: 14px; height: 14px; cursor: pointer; }
 .journal-entry-date {
   display: flex; flex-direction: column; align-items: center;
   flex-shrink: 0; padding: 4px 10px; line-height: 1.25;
@@ -2546,10 +2554,17 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   color: var(--text-dim);
 }
 .journal-entry-monthday { font-size: 12px; font-weight: 600; color: var(--text); }
+.journal-entry-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .journal-entry-title {
   font-size: 12px; color: var(--text); font-weight: 500;
-  flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.journal-entry-snippet {
+  font-size: 11px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.journal-entry-snippet mark, .journal-entry-title mark {
+  background: var(--accent-dim); color: var(--text); border-radius: 2px;
 }
 .journal-lock-wrap {
   max-width: 360px; margin: 40px auto; display: flex; flex-direction: column; gap: 12px;
@@ -3466,6 +3481,13 @@ let workoutHistoryExpandedIds = new Set(); // session ids currently showing thei
 // to state/localStorage/the backend, so it resets to null (locked) on every page load.
 let JOURNAL_KEY = null;
 let JOURNAL_LOCK_ERROR = null; // error message shown on the unlock/setup form, or null
+// Same early-declaration reasoning as JOURNAL_KEY above — renderJournalEntryList()
+// can be reached on the same early path and closes over all of these.
+const JOURNAL_PAGE_SIZE = 20;
+let JOURNAL_SEARCH = '';                       // current search query, lowercased on use
+let JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE; // reset on search change / lock / unlock
+let JOURNAL_SELECT_MODE = false;               // true while the bulk-select UI is active
+let JOURNAL_SELECTED_IDS = new Set();          // entry ids selected for export
 let servicesData = [];
 let servicesPollTimer = null;
 const SERVICES_POLL_MS = 2 * 60 * 1000;
@@ -5108,6 +5130,7 @@ async function journalUnlock() {
     if (decoded !== JOURNAL_CANARY_PLAINTEXT) throw new Error('canary mismatch');
     JOURNAL_KEY = key;
     JOURNAL_LOCK_ERROR = null;
+    journalResetViewState();
   } catch {
     JOURNAL_LOCK_ERROR = 'Wrong passphrase.';
   }
@@ -5116,49 +5139,161 @@ async function journalUnlock() {
 
 function journalLock() {
   JOURNAL_KEY = null;
+  journalResetViewState();
+  renderJournal();
+}
+
+// Search/pagination/selection are per-session UI state, not journal data —
+// clear them whenever the journal is locked or freshly unlocked so reopening
+// the tab doesn't resume mid-search or mid-selection from a previous visit.
+function journalResetViewState() {
+  JOURNAL_SEARCH = '';
+  JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE;
+  JOURNAL_SELECT_MODE = false;
+  JOURNAL_SELECTED_IDS = new Set();
+}
+
+function journalHighlight(text) {
+  if (!JOURNAL_SEARCH) return escHtml(text);
+  const q = JOURNAL_SEARCH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escHtml(text).replace(new RegExp(`(${q})`, 'gi'), '<mark>$1</mark>');
+}
+
+// Short excerpt of `body` centered on the first match of JOURNAL_SEARCH, used
+// under the title when the search hit is in the entry body rather than the title.
+function journalSnippet(bodyText, query) {
+  const idx = bodyText.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return '';
+  const start = Math.max(0, idx - 30);
+  const end = Math.min(bodyText.length, idx + query.length + 60);
+  return (start > 0 ? '…' : '') + bodyText.slice(start, end) + (end < bodyText.length ? '…' : '');
+}
+
+function journalToggleSelectMode() {
+  JOURNAL_SELECT_MODE = !JOURNAL_SELECT_MODE;
+  JOURNAL_SELECTED_IDS = new Set();
+  renderJournal();
+}
+
+function journalToggleSelect(id) {
+  if (JOURNAL_SELECTED_IDS.has(id)) JOURNAL_SELECTED_IDS.delete(id);
+  else JOURNAL_SELECTED_IDS.add(id);
+  renderJournal();
+}
+
+function journalSelectAllFiltered(filteredIds) {
+  filteredIds.forEach(id => JOURNAL_SELECTED_IDS.add(id));
   renderJournal();
 }
 
 async function renderJournalEntryList(body) {
+  const searchInputEl = document.getElementById('journal-search-input');
+  const searchHadFocus = !!searchInputEl && document.activeElement === searchInputEl;
+  const searchCaret = searchHadFocus ? searchInputEl.selectionStart : null;
+
   const entries = (state.journal.entries || []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const decrypted = await Promise.all(entries.map(async e => {
     try { return { ...e, plain: await journalDecrypt(JOURNAL_KEY, e) }; }
     catch { return { ...e, plain: { title: '(could not decrypt)', body: '' } }; }
   }));
 
-  body.innerHTML = `
-    <div class="journal-topbar">
-      <button class="btn" id="btn-journal-lock">🔒 Lock</button>
-      <button class="btn primary" id="btn-journal-new">+ New Entry</button>
-    </div>
-    ${decrypted.length === 0
-      ? '<div class="journal-empty">No entries yet. Click "+ New Entry" to get started.</div>'
-      : '<div class="journal-entry-list">' + decrypted.map(e => {
-          const d = new Date(e.createdAt);
-          const weekday = d.toLocaleDateString([], { weekday: 'short' });
-          const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-          const title = e.plain.title && e.plain.title.trim() ? e.plain.title : '(untitled)';
-          return `
-            <div class="journal-entry-row" data-journal-id="${e.id}">
-              <div class="journal-entry-date">
-                <span class="journal-entry-weekday">${weekday}</span>
-                <span class="journal-entry-monthday">${monthDay}</span>
-              </div>
-              <span class="journal-entry-title">${escHtml(title)}</span>
-              <div class="col-actions">
-                <button class="icon-btn danger" title="Delete" data-journal-delete="${e.id}">✕</button>
-              </div>
-            </div>`;
-        }).join('') + '</div>'
-    }`;
+  const q = JOURNAL_SEARCH.trim().toLowerCase();
+  const filtered = q
+    ? decrypted.filter(e => (e.plain.title || '').toLowerCase().includes(q) || (e.plain.body || '').toLowerCase().includes(q))
+    : decrypted;
+  const visible = filtered.slice(0, JOURNAL_VISIBLE_COUNT);
+  const hiddenCount = filtered.length - visible.length;
 
-  document.getElementById('btn-journal-lock').onclick = journalLock;
-  document.getElementById('btn-journal-new').onclick = () => openJournalEntryModal(null);
+  let emptyMsg = null;
+  if (decrypted.length === 0) emptyMsg = 'No entries yet. Click "+ New Entry" to get started.';
+  else if (filtered.length === 0) emptyMsg = `No entries match "${escHtml(JOURNAL_SEARCH)}".`;
+
+  const selectedCount = JOURNAL_SELECTED_IDS.size;
+
+  body.innerHTML = `
+    <div class="journal-container">
+      ${JOURNAL_SELECT_MODE ? `
+      <div class="journal-select-bar">
+        <span class="journal-select-count">${selectedCount} selected</span>
+        <button class="btn" id="btn-journal-select-all">Select all</button>
+        <button class="btn primary" id="btn-journal-export-selected" ${selectedCount === 0 ? 'disabled' : ''}>Export Selected (${selectedCount})</button>
+        <button class="btn" id="btn-journal-select-cancel">Cancel</button>
+      </div>` : `
+      <div class="journal-topbar">
+        <button class="btn" id="btn-journal-lock">🔒 Lock</button>
+        <div class="search-input-wrap">
+          <input class="search-input" type="text" id="journal-search-input" placeholder="Search journal…" autocomplete="off" spellcheck="false" value="${escHtml(JOURNAL_SEARCH)}">
+          <button type="button" class="search-input-clear${JOURNAL_SEARCH ? ' show' : ''}" id="journal-search-clear" tabindex="-1" title="Clear">✕</button>
+        </div>
+        <button class="btn" id="btn-journal-select">Select</button>
+        <button class="btn" id="btn-journal-export-all">Export All</button>
+        <button class="btn primary" id="btn-journal-new">+ New Entry</button>
+      </div>`}
+      ${emptyMsg
+        ? `<div class="journal-empty">${emptyMsg}</div>`
+        : '<div class="journal-entry-list">' + visible.map(e => {
+            const d = new Date(e.createdAt);
+            const weekday = d.toLocaleDateString([], { weekday: 'short' });
+            const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            const title = e.plain.title && e.plain.title.trim() ? e.plain.title : '(untitled)';
+            const titleMatched = q && title.toLowerCase().includes(q);
+            const snippet = q && !titleMatched ? journalSnippet(e.plain.body || '', JOURNAL_SEARCH) : '';
+            return `
+              <div class="journal-entry-row" data-journal-id="${e.id}">
+                ${JOURNAL_SELECT_MODE ? `<input type="checkbox" class="journal-entry-checkbox" data-journal-checkbox="${e.id}" ${JOURNAL_SELECTED_IDS.has(e.id) ? 'checked' : ''}>` : ''}
+                <div class="journal-entry-date">
+                  <span class="journal-entry-weekday">${weekday}</span>
+                  <span class="journal-entry-monthday">${monthDay}</span>
+                </div>
+                <div class="journal-entry-main">
+                  <span class="journal-entry-title">${journalHighlight(title)}</span>
+                  ${snippet ? `<span class="journal-entry-snippet">${journalHighlight(snippet)}</span>` : ''}
+                </div>
+                ${JOURNAL_SELECT_MODE ? '' : `
+                <div class="col-actions">
+                  <button class="icon-btn danger" title="Delete" data-journal-delete="${e.id}">✕</button>
+                </div>`}
+              </div>`;
+          }).join('') + '</div>'
+      }
+      ${hiddenCount > 0 ? `<button class="expand-btn" id="btn-journal-show-more">Show ${Math.min(hiddenCount, JOURNAL_PAGE_SIZE)} more ▾</button>` : ''}
+    </div>`;
+
+  if (JOURNAL_SELECT_MODE) {
+    document.getElementById('btn-journal-select-all').onclick = () => journalSelectAllFiltered(filtered.map(e => e.id));
+    document.getElementById('btn-journal-export-selected').onclick = () => journalExportEntries([...JOURNAL_SELECTED_IDS]);
+    document.getElementById('btn-journal-select-cancel').onclick = journalToggleSelectMode;
+    body.querySelectorAll('[data-journal-checkbox]').forEach(cb => {
+      cb.onclick = (e) => { e.stopPropagation(); journalToggleSelect(cb.dataset.journalCheckbox); };
+    });
+  } else {
+    document.getElementById('btn-journal-lock').onclick = journalLock;
+    document.getElementById('btn-journal-new').onclick = () => openJournalEntryModal(null);
+    document.getElementById('btn-journal-select').onclick = journalToggleSelectMode;
+    document.getElementById('btn-journal-export-all').onclick = () => journalExportEntries(state.journal.entries.map(e => e.id));
+    const searchEl = document.getElementById('journal-search-input');
+    searchEl.oninput = (e) => {
+      JOURNAL_SEARCH = e.target.value;
+      JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE;
+      renderJournal();
+    };
+    if (searchHadFocus) { searchEl.focus(); searchEl.setSelectionRange(searchCaret, searchCaret); }
+    document.getElementById('journal-search-clear').onclick = () => {
+      JOURNAL_SEARCH = '';
+      JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE;
+      renderJournal();
+    };
+  }
+  const showMoreBtn = document.getElementById('btn-journal-show-more');
+  if (showMoreBtn) showMoreBtn.onclick = () => { JOURNAL_VISIBLE_COUNT += JOURNAL_PAGE_SIZE; renderJournal(); };
+
   body.querySelectorAll('.journal-entry-row[data-journal-id]').forEach(row => {
     row.onclick = (e) => {
       if (e.target.closest('[data-journal-delete]')) return;
       const entry = decrypted.find(d => d.id === row.dataset.journalId);
-      if (entry) openJournalEntryModal(entry);
+      if (!entry) return;
+      if (JOURNAL_SELECT_MODE) journalToggleSelect(entry.id);
+      else openJournalEntryModal(entry);
     };
   });
   body.querySelectorAll('[data-journal-delete]').forEach(btn => {
@@ -5201,6 +5336,48 @@ function deleteJournalEntry(id) {
   state.journal.entries = state.journal.entries.filter(e => e.id !== id);
   save();
   renderJournal();
+}
+
+// Encrypted export of the given entry ids to a downloadable .helm file.
+// Reuses JOURNAL_KEY (already derived from the journal passphrase) and the
+// existing state.journal.salt rather than prompting for a separate export
+// password — the file layout matches saveConfigEncrypted()'s
+// salt(16) + iv(12) + ciphertext, so the same passphrase (via deriveKey())
+// decrypts it later. No import/decrypt UI is provided — export only.
+async function journalExportEntries(ids) {
+  const idSet = new Set(ids);
+  const entries = (state.journal.entries || []).filter(e => idSet.has(e.id));
+  if (entries.length === 0) { alert('No entries to export.'); return; }
+
+  const decrypted = await Promise.all(entries.map(async e => {
+    const plain = await journalDecrypt(JOURNAL_KEY, e);
+    return { title: plain.title, body: plain.body, createdAt: e.createdAt, updatedAt: e.updatedAt };
+  }));
+  decrypted.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  const count = decrypted.length;
+  if (!confirm(`Export ${count} ${count === 1 ? 'entry' : 'entries'} to an encrypted file?`)) return;
+
+  const salt = b64ToBuf(state.journal.salt);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = new TextEncoder().encode(JSON.stringify({
+    type: 'helm-journal-export', exportedAt: new Date().toISOString(), entries: decrypted,
+  }));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, JOURNAL_KEY, plaintext);
+
+  const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
+  combined.set(salt, 0);
+  combined.set(iv, salt.length);
+  combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
+
+  const blob = new Blob([combined], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `helm-journal-${new Date().toISOString().slice(0,10)}.helm`;
+  a.click();
+  toast(`Exported ${count} ${count === 1 ? 'entry' : 'entries'} — decrypt with your journal passphrase.`);
+
+  if (JOURNAL_SELECT_MODE) journalToggleSelectMode();
 }
 
 document.getElementById('journal-modal-close').onclick = closeJournalEntryModal;
