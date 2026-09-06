@@ -65,8 +65,9 @@ Helm has two fixed profiles. **Per-profile** data is the bookmark board
 (`state.columns` + `state.bookmarks` + `state.collapsedCols`) and the YouTube
 feed list (`state.feeds`). **Shared** across both: News/RSS (`newsSources`),
 dashboard `widgets`, `calendarEvents`, `workouts`/`workoutRoutines`,
-`journal`, and `settings` (theme included). The **Work** profile hides three
-tabs — `backups`, `workout`, `journal`.
+`journal`, and `settings` (theme included). The two profiles differ **only**
+in that per-profile data — every tab is visible in both, and all other content
+is identical.
 
 Design decisions, each load-bearing — don't undo them without a reason:
 
@@ -89,6 +90,11 @@ Design decisions, each load-bearing — don't undo them without a reason:
 - **The active profile is per-device**: `localStorage['helm_active_profile']`
   (`'personal'` | `'work'`), never part of synced `state`. A laptop can be on
   Work while a phone stays on Personal; only the profiles' *contents* sync.
+- **Visual cue**: `applyProfileClass()` toggles `body.profile-work`, which
+  warm-tints `#topbar` (explicit `#d9822b` amber, not `var(--accent)`, so it
+  reads under every theme). Called from `switchProfile()` and once in
+  `load()` — not from `afterStateSwap()`, since a state swap never changes the
+  per-device active profile.
 - **`afterStateSwap()` is mandatory after any wholesale `state` reassignment.**
   It replaces the `render() + renderDashboard() + renderUpcomingEvents()` trio
   (the df4b55d rule) at every site that swaps `state` from the wire or a file
@@ -96,14 +102,13 @@ Design decisions, each load-bearing — don't undo them without a reason:
   `restoreBackup`, `loadConfig`/`loadConfigEncrypted`, `importJSON`. It
   re-runs `ensureProfiles()` + `hydrateActiveProfile()` (the wire blob's live
   keys may hold the *other* profile's data, or a pre-profiles blob may have no
-  sub-objects at all), re-applies tab visibility, re-renders, and re-persists
-  locally. New `state`-swap sites must call it too.
-- **Tab hiding**: `PROFILE_HIDDEN_TABS` (early declaration block) is the
-  single source of truth; the three gated `.tab-btn` anchors carry
-  `data-profile-hide="work"`. `switchTab()` and the startup hash router
-  redirect a gated tab to `dashboard` — the tabs stay "valid" (still in
-  `VALID_TABS`, still in the `show()` ladder), just unreachable, so switching
-  back to Personal needs no re-registration.
+  sub-objects at all), re-renders, and re-persists locally. New `state`-swap
+  sites must call it too.
+- **No tab hiding.** Both profiles show every tab; `switchTab()` and the
+  startup hash router do no profile-based redirect. (An earlier version hid
+  `backups`/`workout`/`journal` under Work via `PROFILE_HIDDEN_TABS` +
+  `data-profile-hide` — removed after testing; don't reintroduce it without
+  being asked.)
 - **Migration** is `ensureProfiles()`, idempotent, run on `load()` and inside
   `afterStateSwap()`: a pre-profiles blob's existing data becomes Personal;
   Work is seeded with **one empty "Work" column** (non-empty on purpose, so
@@ -111,9 +116,8 @@ Design decisions, each load-bearing — don't undo them without a reason:
   freshly-switched Work profile and clobber `state`). Config export/import
   carry `profilePersonal`/`profileWork` through.
 - The profile constants (`ACTIVE_PROFILE`, `PROFILE_STATE_KEYS`,
-  `PROFILE_LIVE_KEYS`, `PROFILE_HIDDEN_TABS`) live in the early declaration
-  block for the usual TDZ reason — `applyProfileTabVisibility()` and
-  `switchTab()` reach them during the startup hash check.
+  `PROFILE_LIVE_KEYS`) live in the early declaration block for the usual TDZ
+  reason — `switchTab()` reaches `ACTIVE_PROFILE` during the startup hash check.
 
 ## Prefer lightweight/stdlib over heavier stacks
 
