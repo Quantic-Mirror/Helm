@@ -59,6 +59,62 @@ session" logic), declare the state in the early block up front rather than
 waiting to hit the TDZ error. If you do hit it, the fix is always "move the
 declaration up," not "wrap it in `var`" or "guard with `typeof` checks."
 
+## Frontend: profiles (Personal / Work)
+
+Helm has two fixed profiles. **Per-profile** data is the bookmark board
+(`state.columns` + `state.bookmarks` + `state.collapsedCols`) and the YouTube
+feed list (`state.feeds`). **Shared** across both: News/RSS (`newsSources`),
+dashboard `widgets`, `calendarEvents`, `workouts`/`workoutRoutines`,
+`journal`, and `settings` (theme included). The **Work** profile hides three
+tabs — `backups`, `workout`, `journal`.
+
+Design decisions, each load-bearing — don't undo them without a reason:
+
+- **Per-profile data is stored in two *top-level* `state` keys**,
+  `state.profilePersonal` and `state.profileWork` (each
+  `{columns, bookmarks, collapsedCols, feeds}`), **not** a nested
+  `state.profiles` map. The multi-device sync merge is per-top-level-key
+  (see the LWW note under *Other conventions*), so two devices editing
+  *different* profiles at once each touch a different key and both edits
+  survive. A single nested map would be one merge unit — the second pusher
+  would clobber the other profile.
+- **The live keys stay the working copy.** `state.columns` / `bookmarks` /
+  `collapsedCols` / `feeds` are what every render/edit site reads and writes,
+  unchanged (~90 call sites). They mirror the active profile's sub-object.
+  `hydrateActiveProfile()` deep-copies sub-object → live keys;
+  `writeBackActiveProfile()` copies live keys → sub-object and runs first
+  thing in `save()`. Do **not** refactor the call sites to accessors
+  (`pf().bookmarks`) — that's the high-risk change this indirection exists to
+  avoid.
+- **The active profile is per-device**: `localStorage['helm_active_profile']`
+  (`'personal'` | `'work'`), never part of synced `state`. A laptop can be on
+  Work while a phone stays on Personal; only the profiles' *contents* sync.
+- **`afterStateSwap()` is mandatory after any wholesale `state` reassignment.**
+  It replaces the `render() + renderDashboard() + renderUpcomingEvents()` trio
+  (the df4b55d rule) at every site that swaps `state` from the wire or a file
+  — `initSync`, `pollForRemoteChanges`, `pushStateToBackend`'s merge branch,
+  `restoreBackup`, `loadConfig`/`loadConfigEncrypted`, `importJSON`. It
+  re-runs `ensureProfiles()` + `hydrateActiveProfile()` (the wire blob's live
+  keys may hold the *other* profile's data, or a pre-profiles blob may have no
+  sub-objects at all), re-applies tab visibility, re-renders, and re-persists
+  locally. New `state`-swap sites must call it too.
+- **Tab hiding**: `PROFILE_HIDDEN_TABS` (early declaration block) is the
+  single source of truth; the three gated `.tab-btn` anchors carry
+  `data-profile-hide="work"`. `switchTab()` and the startup hash router
+  redirect a gated tab to `dashboard` — the tabs stay "valid" (still in
+  `VALID_TABS`, still in the `show()` ladder), just unreachable, so switching
+  back to Personal needs no re-registration.
+- **Migration** is `ensureProfiles()`, idempotent, run on `load()` and inside
+  `afterStateSwap()`: a pre-profiles blob's existing data becomes Personal;
+  Work is seeded with **one empty "Work" column** (non-empty on purpose, so
+  `load()`'s "no columns → `seedDefaults()`" path can't fire against a
+  freshly-switched Work profile and clobber `state`). Config export/import
+  carry `profilePersonal`/`profileWork` through.
+- The profile constants (`ACTIVE_PROFILE`, `PROFILE_STATE_KEYS`,
+  `PROFILE_LIVE_KEYS`, `PROFILE_HIDDEN_TABS`) live in the early declaration
+  block for the usual TDZ reason — `applyProfileTabVisibility()` and
+  `switchTab()` reach them during the startup hash check.
+
 ## Prefer lightweight/stdlib over heavier stacks
 
 This is the dominant engineering bias in the backend and proxy scripts.
