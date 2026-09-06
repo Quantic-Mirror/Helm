@@ -2949,13 +2949,17 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#news" data-tab="news">📰 News</a>
     <a class="tab-btn" href="#calendar" data-tab="calendar">📅 Calendar</a>
     <a class="tab-btn" href="#services" data-tab="services">🖥 Services</a>
-    <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
+    <a class="tab-btn" href="#backups" data-tab="backups" data-profile-hide="work">💾 Backup Pipeline</a>
     <a class="tab-btn" href="#audio" data-tab="audio">🎧 Audio Grabber</a>
-    <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
-    <a class="tab-btn" href="#journal" data-tab="journal">📔 Journal</a>
+    <a class="tab-btn" href="#workout" data-tab="workout" data-profile-hide="work">🏋 Workout</a>
+    <a class="tab-btn" href="#journal" data-tab="journal" data-profile-hide="work">📔 Journal</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
+  <select id="profile-switcher" class="btn" style="cursor:pointer" title="Active profile (this device only) — swaps bookmarks & YouTube feeds">
+    <option value="personal">👤 Personal</option>
+    <option value="work">💼 Work</option>
+  </select>
   <span id="sync-indicator" title="Multi-device sync status"></span>
   <div id="search-wrap">
     <span id="search-icon">🔍</span>
@@ -3534,7 +3538,113 @@ const NEWS_CACHE = {};      // sourceId → { items, title, link, ts }
 const NEWS_EXPANDED = {};   // sourceId → bool
 const NEWS_PAGE_SIZE = 3;
 
+// ── PROFILES (Personal / Work) ──────────────────────────────────────────────
+// Declared up here, not next to switchProfile() further down, for the same
+// TDZ reason as FEEDS_CACHE / currentTab above: applyProfileTabVisibility()
+// runs right after render() at startup, and switchTab() can run early via the
+// startup hash check — both close over these. Per-profile data (the bookmark
+// board + YouTube feed list) lives in state.profilePersonal / state.profileWork
+// as independently-merged top-level keys; state.columns/bookmarks/collapsedCols/
+// feeds stay the live working copy every render/edit site touches, swapped in
+// and out by hydrate/write-back on profile switch and after every sync swap.
+// The *selected* profile is per-device (localStorage 'helm_active_profile'),
+// never synced — a laptop can be on Work while a phone stays on Personal.
+let   ACTIVE_PROFILE      = 'personal';                 // per-device; real value set in load()
+const PROFILE_STATE_KEYS  = { personal: 'profilePersonal', work: 'profileWork' };
+const PROFILE_LIVE_KEYS   = ['columns', 'bookmarks', 'collapsedCols', 'feeds'];
+const PROFILE_HIDDEN_TABS = { personal: [], work: ['backups', 'workout', 'journal'] };
+
+// ── PROFILE HELPERS ─────────────────────────────────────────────────────────
+
+// Idempotent. Creates/normalises the two profile sub-objects. The first call
+// on a pre-profiles install is the migration: whatever's in the live keys
+// today becomes Personal; Work starts with one empty "Work" column (non-empty
+// on purpose so load()'s "no columns → seedDefaults()" path can never fire
+// against a freshly-switched empty Work profile and clobber state).
+function ensureProfiles() {
+  if (!state.profilePersonal) {
+    state.profilePersonal = {};
+    PROFILE_LIVE_KEYS.forEach(k => { state.profilePersonal[k] = state[k] || []; });
+  }
+  if (!state.profileWork) {
+    state.profileWork = {
+      columns: [{ id: uid(), title: 'Work', color: COL_COLORS[0] }],
+      bookmarks: [], collapsedCols: [], feeds: [],
+    };
+  }
+  [state.profilePersonal, state.profileWork].forEach(p => {
+    PROFILE_LIVE_KEYS.forEach(k => { if (!p[k]) p[k] = []; });
+  });
+}
+
+// Copy the active profile's sub-object into the live keys (deep clone — edit
+// sites reassign these arrays, so a shared reference would be severed anyway).
+function hydrateActiveProfile() {
+  const pk = PROFILE_STATE_KEYS[ACTIVE_PROFILE] || 'profilePersonal';
+  if (!state[pk]) ensureProfiles();
+  PROFILE_LIVE_KEYS.forEach(k => {
+    state[k] = JSON.parse(JSON.stringify(state[pk][k] || []));
+  });
+}
+
+// Flush the live keys back into the active profile's sub-object.
+function writeBackActiveProfile() {
+  const pk = PROFILE_STATE_KEYS[ACTIVE_PROFILE] || 'profilePersonal';
+  if (!state[pk]) state[pk] = {};
+  PROFILE_LIVE_KEYS.forEach(k => { state[pk][k] = state[k] || []; });
+}
+
+// Show/hide the tab buttons gated for the current profile.
+function applyProfileTabVisibility() {
+  document.querySelectorAll('#tab-nav .tab-btn[data-profile-hide]').forEach(a => {
+    const hideFor = a.dataset.profileHide.split(',');
+    a.style.display = hideFor.includes(ACTIVE_PROFILE) ? 'none' : '';
+  });
+}
+
+// Shared routine for every site that reassigns `state` wholesale from the wire
+// or a file: re-establish the profile → live-keys link, re-apply tab
+// visibility, then re-render (see df4b55d for why the render trio is
+// mandatory after a state swap). Redirects off a now-hidden tab.
+function afterStateSwap() {
+  ensureProfiles();
+  hydrateActiveProfile();
+  applyProfileTabVisibility();
+  render();
+  renderDashboard();
+  renderUpcomingEvents();
+  if (currentTab === 'feeds') renderFeeds();
+  // Defensive: if somehow parked on a tab this profile hides, bail to Dashboard.
+  if (PROFILE_HIDDEN_TABS[ACTIVE_PROFILE].includes(currentTab)) switchTab('dashboard');
+  // Keep the on-disk copy in step with the profile keys ensureProfiles() may
+  // have just added in memory (the caller persisted the raw server blob, which
+  // predates them). Purely local — no sync push.
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
+}
+
+// User-facing profile switch (from the topbar <select>). No page reload.
+function switchProfile(name) {
+  if (name !== 'personal' && name !== 'work') return;
+  if (name === ACTIVE_PROFILE) return;
+  writeBackActiveProfile();                 // flush the profile we're leaving
+  ACTIVE_PROFILE = name;
+  try { localStorage.setItem('helm_active_profile', name); } catch(e) {}
+  ensureProfiles();
+  hydrateActiveProfile();
+  applyProfileTabVisibility();
+  save();                                   // persist (write-back inside is a no-op now) + sync push
+  render();
+  renderDashboard();
+  renderUpcomingEvents();
+  if (currentTab === 'feeds') renderFeeds();
+  if (PROFILE_HIDDEN_TABS[name].includes(currentTab)) switchTab('dashboard');
+  const sel = document.getElementById('profile-switcher');
+  if (sel) sel.value = name;
+  toast('Switched to ' + (name === 'work' ? 'Work' : 'Personal') + ' profile');
+}
+
 function save() {
+  writeBackActiveProfile();
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
   scheduleSyncPush();
 }
@@ -3590,17 +3700,14 @@ async function initSync() {
       // Reset the last-pulled snapshot so mid-session merge logic has a
       // fresh baseline from this startup, not from a stale previous session.
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
-      render();
-      // `state` was just reassigned wholesale. If the Dashboard tab is the
-      // default landing tab, switchTab('dashboard') already ran renderDashboard()
-      // synchronously at boot, before this fetch resolved — its widgets'
-      // click handlers close over the pre-sync `state.widgets` entries, which
-      // are now orphaned. Re-render so widgets act on the live objects;
-      // otherwise a widget mutation (e.g. picking a SomaFM station) writes to
-      // the orphaned copy while save()/reload logic reads the real one,
-      // silently reverting to the old value.
-      renderDashboard();
-      renderUpcomingEvents();
+      // `state` was just reassigned wholesale. afterStateSwap() re-hydrates the
+      // active profile's live keys, re-applies tab visibility, and re-renders.
+      // The render trio is mandatory here: if Dashboard is the landing tab,
+      // switchTab('dashboard') already ran renderDashboard() synchronously at
+      // boot against the pre-sync `state.widgets`, whose click handlers are now
+      // orphaned — a widget mutation (e.g. picking a SomaFM station) would
+      // write to the orphaned copy while save() reads the real one (df4b55d).
+      afterStateSwap();
     } else {
       // Server is empty — push our local state to seed it
       await pushStateToBackend();
@@ -3659,9 +3766,11 @@ async function pushStateToBackend() {
         }
         state = merged;
         localStorage.setItem(LS_KEY, JSON.stringify(state));
-        render();
-        renderDashboard(); // state was just reassigned — Dashboard widgets rendered against the old object would otherwise keep mutating an orphaned copy (see initSync()'s comment on the same issue)
-        renderUpcomingEvents();
+        // The per-key merge may have pulled the *other* profile's data into the
+        // live keys off the wire; afterStateSwap() → hydrateActiveProfile()
+        // recomputes them from our correctly-merged profile sub-object. Also
+        // covers the orphaned-widgets re-render (see initSync()).
+        afterStateSwap();
       }
       SYNC_VERSION = serverVersion;
     }
@@ -3711,9 +3820,7 @@ async function pollForRemoteChanges() {
       if (!state.workoutRoutines) state.workoutRoutines = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
-      render(); // silent — no toast, no dialog
-      renderDashboard(); // same reassignment issue as initSync() — see its comment
-      renderUpcomingEvents();
+      afterStateSwap(); // silent — no toast, no dialog; re-hydrates active profile + re-renders
     }
   } catch(e) { /* polling is best-effort */ }
 }
@@ -3723,7 +3830,16 @@ function load() {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) state = JSON.parse(raw);
   } catch(e) {}
-  if (!state.columns || state.columns.length === 0) seedDefaults();
+  // Profiles: pick the per-device active profile, migrate a pre-profiles blob
+  // (existing data → Personal, Work seeded empty), and copy the active
+  // profile's bookmark/feed data into the live keys the rest of load() and
+  // every render/edit site works with.
+  ACTIVE_PROFILE = (localStorage.getItem('helm_active_profile') === 'work') ? 'work' : 'personal';
+  ensureProfiles();
+  hydrateActiveProfile();
+  // seedDefaults() does a wholesale `state = {…}` that drops the profile keys,
+  // so rebuild them from the fresh seed afterwards.
+  if (!state.columns || state.columns.length === 0) { seedDefaults(); ensureProfiles(); hydrateActiveProfile(); }
   if (!state.collapsedCols) state.collapsedCols = [];
   if (!state.settings) state.settings = {};
   if (!state.feeds) state.feeds = [];
@@ -3763,6 +3879,13 @@ function load() {
     ];
     save();
   }
+  // Flush any arrays the guards above just added on the live keys back into the
+  // active profile's sub-object, then persist so a first-run profile migration
+  // sticks even if the user makes no edit before the next reload. (No
+  // scheduleSyncPush here — the migrated shape reaches the server via the first
+  // real save() or initSync()'s seed/adopt path.)
+  writeBackActiveProfile();
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
 }
 
 function seedDefaults() {
@@ -6583,13 +6706,18 @@ async function restoreBackup(filename) {
     if (!state.settings) state.settings = {};
     if (!state.feeds) state.feeds = [];
     if (!state.newsSources) state.newsSources = [];
+    // A pre-profiles snapshot has no profile keys — rebuild them before the
+    // push so the restored blob carries them: restored data → Personal, Work
+    // seeded empty.
+    ensureProfiles();
+    hydrateActiveProfile();
     localStorage.setItem('marks_v1', JSON.stringify(state));
 
     // Push to backend as a new save (resets version conflict risk)
     SYNC_VERSION = envelope.version; // align version so the push lands correctly
     await pushStateToBackend();
 
-    render();
+    afterStateSwap();
     document.getElementById('backups-modal').style.display = 'none';
     toast(`Restored from ${date}`);
   } catch(err) {
@@ -6598,6 +6726,7 @@ async function restoreBackup(filename) {
 }
 
 function saveConfig() {
+  writeBackActiveProfile(); // ensure profilePersonal/profileWork in the blob are current
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -6639,6 +6768,7 @@ async function saveConfigEncrypted() {
   const confirm1 = prompt('Confirm the password:');
   if (confirm1 !== password) { alert('Passwords did not match. Try again.'); return; }
 
+  writeBackActiveProfile(); // ensure profilePersonal/profileWork in the blob are current
   try {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv   = crypto.getRandomValues(new Uint8Array(12));
@@ -6708,9 +6838,13 @@ async function loadConfigEncrypted(file) {
       newsSources:   data.newsSources   || [],
       collapsedCols: data.collapsedCols || [],
       settings:      data.settings      || {},
+      profilePersonal: data.profilePersonal,
+      profileWork:     data.profileWork,
     };
+    ensureProfiles();        // legacy file with no profile keys → build from live keys
+    hydrateActiveProfile();
     save();
-    render();
+    afterStateSwap();
     toast(`Encrypted config loaded: ${summary}`);
   } catch(err) {
     alert('Could not load encrypted backup: ' + err.message);
@@ -6741,11 +6875,16 @@ function loadConfig(file) {
         bookmarks:     data.bookmarks     || [],
         widgets:       data.widgets       || [],
         feeds:         data.feeds         || [],
+        newsSources:   data.newsSources   || [],
         collapsedCols: data.collapsedCols || [],
         settings:      data.settings      || {},
+        profilePersonal: data.profilePersonal,
+        profileWork:     data.profileWork,
       };
+      ensureProfiles();        // legacy file with no profile keys → build from live keys
+      hydrateActiveProfile();
       save();
-      render();
+      afterStateSwap();
       toast(`Config loaded: ${summary}`);
     } catch(err) {
       alert('Could not read config file: ' + err.message);
@@ -6756,6 +6895,7 @@ function loadConfig(file) {
 }
 
 function exportData() {
+  writeBackActiveProfile(); // ensure profilePersonal/profileWork in the blob are current
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -6792,7 +6932,10 @@ function importJSON(text) {
     if (data.columns && data.bookmarks) {
       if (!confirm(`Import ${data.bookmarks.length} bookmarks across ${data.columns.length} columns? This will replace your current data.`)) return;
       state = data;
-      save(); render();
+      ensureProfiles();        // legacy file with no profile keys → build from live keys
+      hydrateActiveProfile();
+      save();
+      afterStateSwap();
       toast(`Imported ${data.bookmarks.length} bookmarks`);
     } else {
       alert('Invalid JSON backup — missing columns or bookmarks keys.');
@@ -9113,16 +9256,26 @@ document.getElementById('bm-title-input').oninput = function() {
 load();
 applyTheme();
 render();
+applyProfileTabVisibility();
 updateInvidiousButton();
 
 // If a new tab/window was opened via middle-click (or the page was just
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
+// A hash for a tab the active profile hides also falls back to Dashboard.
 const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'audio', 'logs', 'workout', 'journal'];
-const initialTab = VALID_TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'dashboard';
+const _hashTab = location.hash.slice(1);
+const initialTab = (VALID_TABS.includes(_hashTab) && !PROFILE_HIDDEN_TABS[ACTIVE_PROFILE].includes(_hashTab))
+  ? _hashTab : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
+
+const _profSel = document.getElementById('profile-switcher');
+if (_profSel) {
+  _profSel.value = ACTIVE_PROFILE;                 // reflect the per-device choice set in load()
+  _profSel.onchange = (e) => switchProfile(e.target.value);
+}
 // ── Topbar dropdown menus (Data / Widgets / Tools) ──────────────────────────
 document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
   trigger.onclick = (e) => {
@@ -9274,6 +9427,9 @@ function ensureFeeds() {
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
 function switchTab(tab) {
+  // Tabs gated for the active profile (e.g. Journal/Workout/Backup Pipeline
+  // under Work) stay "valid" but are unreachable — redirect to Dashboard.
+  if (PROFILE_HIDDEN_TABS[ACTIVE_PROFILE].includes(tab)) tab = 'dashboard';
   currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   const logo = document.getElementById('helm-logo');
