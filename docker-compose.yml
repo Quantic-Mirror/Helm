@@ -91,6 +91,13 @@ services:
       # For public/LAN: set to your domain or LAN IP
       SERVER_HOST: "${SERVER_HOST:-localhost}"
       SERVER_PORT: "8443"
+      # API auth: every /api/* route (except /api/health and the token-authed
+      # /api/backup-events) requires `Authorization: Bearer <token>` when
+      # ./data/helm_token.txt exists. Generate with:
+      #   openssl rand -hex 32 > ./data/helm_token.txt
+      # Cross-origin API callers must be listed here (comma-separated); the
+      # dashboard is same-origin and needs nothing. No wildcard CORS.
+      HELM_ALLOWED_ORIGINS: "${HELM_ALLOWED_ORIGINS:-}"
       # vault_server.py (pass + gpg) and audio_grabber_server.py (yt-dlp +
       # cookies) run on the workstation. Copy vault_token.txt / audio_token.txt
       # into ./data so they're readable inside the container.

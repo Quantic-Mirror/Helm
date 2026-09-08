@@ -20,6 +20,7 @@ Default port: 8090
 import sys
 import os
 import json
+import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -51,7 +52,7 @@ class VaultHandler(BaseHTTPRequestHandler):
             self.send_json(503, {"error": "Server not configured: missing vault_token.txt"})
             return False
         supplied = self.headers.get("X-Vault-Token", "")
-        if supplied != VAULT_TOKEN:
+        if not hmac.compare_digest(supplied, VAULT_TOKEN):
             self.send_json(401, {"error": "Invalid or missing vault token"})
             return False
         return True
@@ -81,7 +82,7 @@ class VaultHandler(BaseHTTPRequestHandler):
 
         if parsed.path.startswith("/api/vault/entry/"):
             entry_path = parsed.path[len("/api/vault/entry/"):]
-            if not entry_path or ".." in entry_path:
+            if not entry_path or ".." in entry_path or entry_path.startswith(("-", "/")):
                 self.send_json(400, {"error": "Invalid entry path"})
                 return
             data, err = vault_api.get_entry(entry_path)
@@ -121,7 +122,7 @@ class VaultHandler(BaseHTTPRequestHandler):
 
         if parsed.path.startswith("/api/vault/entry/"):
             entry_path = parsed.path[len("/api/vault/entry/"):]
-            if not entry_path or ".." in entry_path:
+            if not entry_path or ".." in entry_path or entry_path.startswith(("-", "/")):
                 self.send_json(400, {"error": "Invalid entry path"})
                 return
             length = int(self.headers.get("Content-Length", 0))

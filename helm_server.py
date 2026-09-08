@@ -8,12 +8,20 @@ This replaces:
   2. The public CORS proxy chain Helm falls back to in the browser
   3. Manual Save Config / Load Config file shuttling between devices
 
+Auth:
+  If helm_token.txt exists in STATE_DIR, every /api/* route requires
+  `Authorization: Bearer <token>` — except GET /api/health (container
+  healthcheck) and POST /api/backup-events (its own X-Backup-Token). With no
+  such file, auth is disabled (fail-open), matching the vault/audio proxies.
+  Cross-origin callers must be listed in HELM_ALLOWED_ORIGINS; there is no
+  wildcard CORS.
+
 State sync:
   GET  /api/state          -> returns { state, version, updatedAt }
   PUT  /api/state          -> body: { state, version }
-                               saves if version matches what the server has,
-                               otherwise returns 409 with the server's current
-                               state so the client can resolve the conflict.
+                               last-write-wins: always overwrites and bumps the
+                               version counter (never rejects on a stale
+                               version). Clients poll every 5s to converge.
   GET  /api/sysstats       -> returns host CPU/memory/disk/uptime stats, for
                                the System Stats widget. Always reflects the
                                machine running this server, not the device
@@ -49,6 +57,8 @@ import os
 import json
 import time
 import ssl
+import hmac
+import ipaddress
 import threading
 import urllib.request
 import urllib.error
@@ -67,6 +77,37 @@ STATE_DIR = os.environ.get("HELM_STATE_DIR", SCRIPT_DIR)
 os.makedirs(STATE_DIR, exist_ok=True)
 
 STATE_FILE = os.path.join(STATE_DIR, "marks_state.json")
+
+# ── HELM ACCESS AUTH ─────────────────────────────────────────────────────────
+# Every /api/* route (except /api/health, used by the container healthcheck,
+# and POST /api/backup-events, which carries its own X-Backup-Token) requires a
+# shared bearer token when helm_token.txt exists in STATE_DIR. Same lightweight
+# model as vault_token.txt / audio_token.txt. Generate once:
+#     openssl rand -hex 32 > $HELM_STATE_DIR/helm_token.txt
+# then paste it into each device via the dashboard (Data ▸ Access Token).
+# If the file is absent, auth is disabled (fail-open, matching the vault/audio
+# proxies) so existing single-host localhost setups are unchanged.
+HELM_TOKEN_FILE = os.path.join(STATE_DIR, "helm_token.txt")
+
+# Cross-origin: the dashboard is served same-origin from this server, so no CORS
+# header is needed for it. Any other origin that must call /api/* has to be
+# listed explicitly here (comma-separated) — a bare "*" would let any website
+# the user visits read /api/state and the vault proxy. Empty = same-origin only.
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("HELM_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
+# Upper bound on request bodies we buffer whole (PUT /api/state and the small
+# POST endpoints). The synced blob is comfortably under this; anything larger is
+# almost certainly abuse, and reading it would just be an unauthenticated way to
+# exhaust memory.
+MAX_BODY_BYTES = 8 * 1024 * 1024
+
+
+def _helm_token():
+    if os.path.exists(HELM_TOKEN_FILE):
+        with open(HELM_TOKEN_FILE) as f:
+            return f.read().strip()
+    return None
+
 
 # ── VAULT / AUDIO PROXY ──────────────────────────────────────────────────────
 # pass + the GPG agent (vault) and yt-dlp + cookies (audio) live on the
@@ -283,6 +324,45 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
+
+
+def _host_is_public(host):
+    """Resolve `host` and return False if any resolved address is loopback,
+    private, link-local (incl. the 169.254.169.254 cloud-metadata endpoint),
+    multicast, reserved, or unspecified. /api/proxy is unauthenticated and
+    returns the full upstream body, so without this it is a read-SSRF into
+    localhost, the container network, the LAN/tailnet, and instance metadata.
+    """
+    try:
+        infos = _socket.getaddrinfo(host, None)
+    except Exception:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        except ValueError:
+            return False
+        if (ip.is_loopback or ip.is_private or ip.is_link_local
+                or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
+            return False
+    return True
+
+
+class _GuardedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow redirects (many real feeds 301 http->https or through a feed
+    proxy), but re-check every hop so an allowed host can't bounce the proxy
+    to an internal address."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        host = urlparse(newurl).hostname
+        if not host or not _host_is_public(host):
+            raise urllib.error.HTTPError(newurl, code,
+                                         "redirect to disallowed host", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_proxy_opener = urllib.request.build_opener(_GuardedRedirectHandler)
 
 # In-memory cache of state + a lock so concurrent requests from multiple
 # devices don't corrupt the file or race on the version counter.
@@ -956,16 +1036,48 @@ class HelmHandler(SimpleHTTPRequestHandler):
         if "/api/" in path:
             super().log_message(fmt, *args)
 
+    # ── Auth ────────────────────────────────────────────────────────────────
+    def _client_authorized(self):
+        """True if the request carries the shared Helm bearer token, or if no
+        helm_token.txt is configured (auth disabled — same fail-open stance the
+        vault/audio proxies take when their token file is absent)."""
+        expected = _helm_token()
+        if not expected:
+            return True
+        got = self.headers.get("Authorization", "")
+        if got.startswith("Bearer "):
+            got = got[7:]
+        return hmac.compare_digest(got, expected)
+
+    def _require_auth(self):
+        if self._client_authorized():
+            return True
+        self.send_json(401, {"error": "missing or invalid Helm access token"})
+        return False
+
+    def _read_body(self):
+        """Read a request body, refusing anything past MAX_BODY_BYTES rather
+        than buffering an unbounded amount of memory on an unauthenticated
+        (or newly authenticated) request."""
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length > MAX_BODY_BYTES:
+            self.send_json(413, {"error": "request body too large"})
+            return None
+        return self.rfile.read(length) if length else b""
+
     # ── GET ──────────────────────────────────────────────────────────────────
     def do_GET(self):
         parsed = urlparse(self.path)
 
-        if parsed.path == "/api/proxy":
-            self.handle_proxy(parsed)
-            return
-
         if parsed.path == "/api/health":
             self.send_json(200, {"status": "ok", "service": "marks-local-server"})
+            return
+
+        if parsed.path.startswith("/api/") and not self._require_auth():
+            return
+
+        if parsed.path == "/api/proxy":
+            self.handle_proxy(parsed)
             return
 
         if parsed.path == "/api/sysstats":
@@ -1086,9 +1198,14 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(404, {"error": "Not found"})
             return
 
-        length = int(self.headers.get("Content-Length", 0))
+        if not self._require_auth():
+            return
+
+        raw = self._read_body()
+        if raw is None:
+            return  # _read_body already sent 413
         try:
-            body = json.loads(self.rfile.read(length))
+            body = json.loads(raw)
         except Exception:
             self.send_json(400, {"error": "Invalid JSON body"})
             return
@@ -1109,6 +1226,12 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+
+        # /api/backup-events carries its own X-Backup-Token (checked below);
+        # everything else under /api/ needs the shared Helm bearer token.
+        if parsed.path.startswith("/api/") and parsed.path != "/api/backup-events":
+            if not self._require_auth():
+                return
 
         parts  = parsed.path.strip("/").split("/")
         if len(parts) == 3 and parts[0] == "api" and parts[1] == "services":
@@ -1132,7 +1255,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
             if not expected:
                 self.send_json(503, {"error": "backup ingest not configured (no backup_token.txt in STATE_DIR)"})
                 return
-            if self.headers.get("X-Backup-Token", "") != expected:
+            if not hmac.compare_digest(self.headers.get("X-Backup-Token", ""), expected):
                 self.send_json(401, {"error": "bad or missing X-Backup-Token"})
                 return
             length = int(self.headers.get("Content-Length", 0))
@@ -1182,12 +1305,12 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.end_headers()  # end_headers() adds Access-Control-Allow-Origin iff the
+                            # request Origin is in ALLOWED_ORIGINS
 
-    # ── Feed proxy (unchanged from previous version) ────────────────────────
+    # ── Feed proxy ─────────────────────────────────────────────────────────
     def handle_proxy(self, parsed):
         qs = parse_qs(parsed.query)
         target = qs.get("url", [None])[0]
@@ -1196,9 +1319,17 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "Missing or invalid url parameter"})
             return
 
+        # SSRF guard: this endpoint is unauthenticated-by-URL (it still needs
+        # the Helm bearer token to reach) and streams the upstream body back
+        # verbatim, so refuse targets that resolve to internal space.
+        host = urlparse(target).hostname
+        if not host or not _host_is_public(host):
+            self.send_json(403, {"error": "target host not allowed"})
+            return
+
         req = urllib.request.Request(target, headers={"User-Agent": USER_AGENT})
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with _proxy_opener.open(req, timeout=10) as resp:
                 resp_body = resp.read()
                 content_type = resp.headers.get("Content-Type", "text/plain")
         except urllib.error.HTTPError as e:
@@ -1213,7 +1344,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
         self.send_response(200)
         self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(resp_body)
@@ -1227,7 +1357,15 @@ class HelmHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # No wildcard CORS: the dashboard is same-origin and needs no ACAO
+        # header at all. Reflect an Origin only when it's explicitly allow-listed
+        # (HELM_ALLOWED_ORIGINS) — otherwise any site the user visits could read
+        # /api/state and the vault proxy responses.
+        origin = self.headers.get("Origin")
+        if origin and origin in ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Credentials", "true")
         # upgrade-insecure-requests instructs the browser to automatically
         # upgrade any http:// sub-resource requests (favicons, external images,
         # feed URLs before the proxy rewrites them) to https://, preventing
@@ -1276,6 +1414,11 @@ def main():
     print(f"  Rolling backups (up to {BACKUP_KEEP}, hourly) in {BACKUP_DIR}")
     print(f"  Vault proxied to {' / '.join(VAULT_BACKENDS)}")
     print(f"  Audio Grabber proxied to {' / '.join(AUDIO_BACKENDS)}")
+    if _helm_token():
+        print(f"  Auth: ENABLED — /api/* needs the token in {HELM_TOKEN_FILE}")
+    else:
+        print(f"  Auth: DISABLED — no {HELM_TOKEN_FILE}; every /api/* route is open")
+    print(f"  CORS allow-list: {ALLOWED_ORIGINS or '(same-origin only)'}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

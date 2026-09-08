@@ -144,7 +144,9 @@ def create_or_update_entry(path, secret, username="", url="", tags="", expires="
     args = ["insert", "-m"]
     if force:
         args.append("-f")
-    args.append(path)
+    # "--" so an entry name starting with "-" can't be parsed as a pass/getopt
+    # option (get_entry already does this for `pass show`).
+    args += ["--", path]
     _, stderr, rc = _run_pass(args, input_text=body)
     return rc == 0, stderr
 

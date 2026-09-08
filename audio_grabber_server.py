@@ -21,6 +21,7 @@ Default port: 8091
 
 import sys
 import os
+import hmac
 import json
 import mimetypes
 import queue as _queue
@@ -472,7 +473,7 @@ class AudioHandler(BaseHTTPRequestHandler):
             self.send_json(503, {"error": "Server not configured: missing audio_token.txt"})
             return False
         supplied = self.headers.get("X-Audio-Token", "")
-        if supplied != AUDIO_TOKEN:
+        if not hmac.compare_digest(supplied, AUDIO_TOKEN):
             self.send_json(401, {"error": "Invalid or missing audio token"})
             return False
         return True

@@ -2995,6 +2995,8 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
           <button class="dropdown-item" id="btn-load-config-enc">🔓 Load Encrypted</button>
           <div class="dropdown-divider"></div>
           <button class="dropdown-item" id="btn-backups">🗄 Rolling Backups</button>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item" id="btn-access-token">🔑 Access Token</button>
         </div>
       </div>
       <div class="dropdown" id="dd-widgets">
@@ -3457,6 +3459,47 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 <input type="file" id="config-enc-input" accept=".helm" style="display:none">
 
 <script>
+// ── API access token ───────────────────────────────────────────────────────
+// helm_server.py gates every /api/* route (except /api/health) on a shared
+// bearer token when helm_token.txt is present on the server. Rather than
+// touching all ~30 fetch('/api/…') call sites, wrap fetch once, here, before
+// any of them can run, and attach the token to same-origin /api/ requests.
+// The token is per-device (localStorage, never synced). It is entered once via
+// Data ▸ Access Token, or bootstrapped from a one-time ?token=… URL param that
+// this code strips from the address bar immediately.
+let HELM_TOKEN = '';
+try { HELM_TOKEN = localStorage.getItem('helm_token') || ''; } catch (e) {}
+(function bootstrapHelmToken() {
+  try {
+    const u = new URL(location.href);
+    const t = u.searchParams.get('token');
+    if (t) {
+      HELM_TOKEN = t.trim();
+      try { localStorage.setItem('helm_token', HELM_TOKEN); } catch (e) {}
+      u.searchParams.delete('token');
+      history.replaceState(null, '', u.pathname + (u.search ? u.search : '') + u.hash);
+    }
+  } catch (e) {}
+})();
+(function wrapFetchWithToken() {
+  const rawFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    try {
+      if (typeof input === 'string') {
+        const p = input.startsWith(location.origin)
+          ? input.slice(location.origin.length) : input;
+        if (p.startsWith('/api/') && !p.startsWith('/api/health') && HELM_TOKEN) {
+          init = init ? Object.assign({}, init) : {};
+          const h = new Headers(init.headers || {});
+          if (!h.has('Authorization')) h.set('Authorization', 'Bearer ' + HELM_TOKEN);
+          init.headers = h;
+        }
+      }
+    } catch (e) {}
+    return rawFetch(input, init);
+  };
+})();
+
 const TAGS = [
   { id: 'work',   label: 'Work',    bg: 'rgba(88,166,255,0.15)',  color: '#58A6FF' },
   { id: 'dev',    label: 'Dev',     bg: 'rgba(63,185,80,0.15)',   color: '#3FB950' },
@@ -3689,6 +3732,11 @@ async function initSync() {
   if (indicator) { indicator.textContent = '↻ Syncing…'; indicator.className = 'syncing'; }
   try {
     const resp = await fetch('/api/state', { signal: AbortSignal.timeout(8000) });
+    if (resp.status === 401) {
+      if (indicator) { indicator.textContent = '🔒 Token required'; indicator.className = 'offline'; }
+      try { toast('Backend needs an access token — set it via Data ▸ Access Token'); } catch (e) {}
+      return;
+    }
     const data = await resp.json();
     const serverVersion = data.version || 0;
 
@@ -3963,6 +4011,61 @@ function escHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Safe interpolation of an untrusted string into a single-quoted JS string
+// literal that itself sits inside a double-quoted HTML attribute, e.g.
+//   onclick="openReader('${jsStr(item.link)}')"
+// escHtml alone is NOT enough there: it escapes < > & " but leaves backslash
+// and apostrophe untouched, so a feed title like  \'); evil() //  can close
+// the JS string and inject. Escape backslash first, then the quote, then
+// newlines (a literal newline is a syntax error inside a JS string).
+function jsStr(s) {
+  return escHtml(String(s == null ? '' : s))
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r?\n/g, '\\n');
+}
+
+// Allow-list DOM sanitiser for the one place we assign remote HTML to
+// innerHTML: reader mode (openReader → extractReadableContent). Strips every
+// element not on the list, every attribute not on the per-element list, and
+// any href/src that isn't http(s)/mailto — which kills inline event handlers
+// (onerror/onload/…), javascript: URLs, <script>/<svg>/<iframe>, etc. Operates
+// in place on a detached node.
+const SANITIZE_ALLOWED_TAGS = new Set(['P','BR','HR','H1','H2','H3','H4','H5','H6',
+  'UL','OL','LI','BLOCKQUOTE','PRE','CODE','EM','STRONG','B','I','U','S','A','IMG',
+  'FIGURE','FIGCAPTION','SPAN','DIV','TABLE','THEAD','TBODY','TFOOT','TR','TD','TH',
+  'CAPTION','COLGROUP','COL','SUB','SUP','DL','DT','DD','MARK','SMALL','TIME','ABBR']);
+const SANITIZE_DROP_SUBTREE = new Set(['SCRIPT','STYLE','SVG','MATH','IFRAME','OBJECT',
+  'EMBED','LINK','META','TEMPLATE','NOSCRIPT','FORM','INPUT','BUTTON','SELECT','TEXTAREA']);
+const SANITIZE_ALLOWED_ATTRS = {
+  A:   new Set(['href','title']),
+  IMG: new Set(['src','alt','title','loading']),
+};
+
+function sanitizeFragment(root) {
+  const elements = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) elements.push(n);
+  for (const el of elements) {
+    const tag = el.tagName;
+    if (!SANITIZE_ALLOWED_TAGS.has(tag)) {
+      if (SANITIZE_DROP_SUBTREE.has(tag)) el.remove();
+      else if (el.parentNode) el.replaceWith(...el.childNodes); // unwrap, keep text
+      continue;
+    }
+    const allowed = SANITIZE_ALLOWED_ATTRS[tag] || null;
+    for (const attr of [...el.attributes]) {
+      const name = attr.name.toLowerCase();
+      if (!allowed || !allowed.has(name)) { el.removeAttribute(attr.name); continue; }
+      if ((name === 'href' || name === 'src') &&
+          !/^(https?:|mailto:)/i.test(attr.value.trim())) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
+  return root;
+}
+
 function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -4116,7 +4219,7 @@ function render() {
 
     card.innerHTML = `
       <div class="folder-header">
-        <span class="col-dot drag-handle" style="background:${col.color}" title="Drag to reorder"></span>
+        <span class="col-dot drag-handle" style="background:${escHtml(col.color)}" title="Drag to reorder"></span>
         <input class="column-title" value="${escHtml(col.title)}" data-col-id="${col.id}" aria-label="Column title" spellcheck="false" draggable="false">
         <span class="col-count">${bms.length}</span>
         <div class="col-actions">
@@ -5968,18 +6071,19 @@ function renderBmCard(bm, context) {
   const fb = hostLabel(bm.url);
   const pinned = !!bm.pinned;
   const inRecents = context === 'recent';
+  const bmId = escHtml(bm.id);
   const deleteBtn = inRecents
-    ? `<button class="icon-btn" title="Remove from Recently Added (keeps the bookmark in its folder)" data-dismiss-recent-bm="${bm.id}" onclick="event.stopPropagation()">⊘</button>`
-    : `<button class="icon-btn danger" title="Delete" data-del-bm="${bm.id}" onclick="event.stopPropagation()">✕</button>`;
+    ? `<button class="icon-btn" title="Remove from Recently Added (keeps the bookmark in its folder)" data-dismiss-recent-bm="${bmId}" onclick="event.stopPropagation()">⊘</button>`
+    : `<button class="icon-btn danger" title="Delete" data-del-bm="${bmId}" onclick="event.stopPropagation()">✕</button>`;
   return `
-    <div class="bookmark-card${pinned ? ' pinned' : ''}" data-bm-id="${bm.id}" draggable="true" title="${escHtml(bm.url)}"
-         onclick="openBm(event,'${bm.id}')">
-      <img class="bm-favicon" src="${fav}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" loading="lazy">
+    <div class="bookmark-card${pinned ? ' pinned' : ''}" data-bm-id="${bmId}" draggable="true" title="${escHtml(bm.url)}"
+         onclick="openBm(event,'${jsStr(bm.id)}')">
+      <img class="bm-favicon" src="${escHtml(fav)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" loading="lazy">
       <span class="bm-favicon-fallback" style="display:none">${fb}</span>
       <span class="bm-title">${highlight(bm.title || bm.url)}</span>
       <div class="bm-actions">
-        <button class="icon-btn pin-btn${pinned ? ' active' : ''}" title="${pinned ? 'Unpin' : 'Pin to favorites'}" data-pin-bm="${bm.id}" onclick="event.stopPropagation()">${pinned ? '★' : '☆'}</button>
-        <button class="icon-btn" title="Edit" data-edit-bm="${bm.id}" onclick="event.stopPropagation()">✎</button>
+        <button class="icon-btn pin-btn${pinned ? ' active' : ''}" title="${pinned ? 'Unpin' : 'Pin to favorites'}" data-pin-bm="${bmId}" onclick="event.stopPropagation()">${pinned ? '★' : '☆'}</button>
+        <button class="icon-btn" title="Edit" data-edit-bm="${bmId}" onclick="event.stopPropagation()">✎</button>
         ${deleteBtn}
       </div>
     </div>
@@ -9088,7 +9192,7 @@ function openSortModal() {
   list.innerHTML = state.columns.map(col => {
     const count = state.bookmarks.filter(b => b.colId === col.id).length;
     return `<div class="sort-folder-item" data-sort-col="${col.id}">
-      <span style="width:8px;height:8px;border-radius:50%;background:${col.color};flex-shrink:0;display:inline-block"></span>
+      <span style="width:8px;height:8px;border-radius:50%;background:${escHtml(col.color)};flex-shrink:0;display:inline-block"></span>
       <span style="flex:1">${escHtml(col.title)}</span>
       <span style="color:var(--text-dim);font-size:11px">${count}</span>
     </div>`;
@@ -9149,6 +9253,23 @@ document.getElementById('config-input').onchange = (e) => { loadConfig(e.target.
 document.getElementById('btn-save-config-enc').onclick = saveConfigEncrypted;
 document.getElementById('btn-backups').onclick = openBackupsModal;
 document.getElementById('btn-backups-refresh').onclick = loadBackupsList;
+document.getElementById('btn-access-token').onclick = () => {
+  const cur = (() => { try { return localStorage.getItem('helm_token') || ''; } catch (e) { return ''; } })();
+  const next = prompt(
+    'Helm access token for THIS device.\n\n' +
+    'Needed when the server has helm_token.txt configured. Stored locally only ' +
+    '(never synced to other devices). Clear the field and press OK to remove it.',
+    cur
+  );
+  if (next === null) return;
+  const t = next.trim();
+  try {
+    if (t) localStorage.setItem('helm_token', t);
+    else localStorage.removeItem('helm_token');
+  } catch (e) {}
+  HELM_TOKEN = t;
+  location.reload();
+};
 document.getElementById('btn-load-config-enc').onclick = () => document.getElementById('config-enc-input').click();
 document.getElementById('config-enc-input').onchange = (e) => { loadConfigEncrypted(e.target.files[0]); e.target.value = ''; };
 
@@ -10089,7 +10210,7 @@ function renderVideoList(ch, cache) {
         <button class="vc-btn" ${idx === 0 ? 'disabled' : ''} onclick="vcNav('${ch.id}',-1)">‹ Prev</button>
         <span class="vc-counter">${idx + 1} / ${items.length}</span>
         <button class="vc-btn" ${idx === items.length - 1 ? 'disabled' : ''} onclick="vcNav('${ch.id}',1)">Next ›</button>
-        <button class="save-bm-btn vc-save" title="Save as bookmark" onclick="saveAsBookmark('${escHtml(v.link).replace(/'/g,"\\'")}','${escHtml(v.title).replace(/'/g,"\\'")}')">🔖</button>
+        <button class="save-bm-btn vc-save" title="Save as bookmark" onclick="saveAsBookmark('${jsStr(v.link)}','${jsStr(v.title)}')">🔖</button>
       </div>
     </div>
   `;
@@ -10231,6 +10352,11 @@ function extractReadableContent(html, baseUrl) {
     a.target = '_blank';
     a.rel = 'noopener';
   });
+
+  // Final gate before this HTML is assigned to innerHTML in openReader():
+  // drop every element/attribute not on the allow-list (kills inline event
+  // handlers, javascript: URLs, <script>/<svg>/<iframe> that slipped through).
+  sanitizeFragment(clone);
 
   return { title, byline, contentHtml: clone.innerHTML };
 }
@@ -11187,13 +11313,13 @@ function renderNewsItemList(src, cache) {
 
   listEl.innerHTML = items.map(a => `
     <div class="video-item-wrap">
-      <a class="video-item news-item" href="${escHtml(a.link)}" onclick="event.preventDefault();openReader('${escHtml(a.link).replace(/'/g,"\\'")}','${escHtml(a.title).replace(/'/g,"\\'")}')">
+      <a class="video-item news-item" href="${escHtml(a.link)}" onclick="event.preventDefault();openReader('${jsStr(a.link)}','${jsStr(a.title)}')">
         <div class="video-info">
           <div class="video-title">${escHtml(a.title)}</div>
           <div class="video-age">${relativeTime(a.pubDate)}</div>
         </div>
       </a>
-      <button class="save-bm-btn" title="Save as bookmark" onclick="event.stopPropagation();event.preventDefault();saveAsBookmark('${escHtml(a.link).replace(/'/g,"\\'")}','${escHtml(a.title).replace(/'/g,"\\'")}')">🔖</button>
+      <button class="save-bm-btn" title="Save as bookmark" onclick="event.stopPropagation();event.preventDefault();saveAsBookmark('${jsStr(a.link)}','${jsStr(a.title)}')">🔖</button>
     </div>
   `).join('') + (hiddenCount > 0
     ? `<button class="channel-show-more" onclick="expandNewsSource('${src.id}')">Show ${hiddenCount} more ▾</button>`
@@ -11237,12 +11363,12 @@ function renderNewsTimeline() {
 
   el.innerHTML = `<div class="timeline-list">` + allItems.slice(0, 100).map(item => `
     <div class="timeline-item-wrap">
-      <a class="timeline-item" href="${escHtml(item.link)}" onclick="event.preventDefault();openReader('${escHtml(item.link).replace(/'/g,"\\'")}','${escHtml(item.title).replace(/'/g,"\\'")}')">
+      <a class="timeline-item" href="${escHtml(item.link)}" onclick="event.preventDefault();openReader('${jsStr(item.link)}','${jsStr(item.title)}')">
         <div class="timeline-source">${escHtml(item.sourceTitle)}</div>
         <div class="timeline-title">${escHtml(item.title)}</div>
         <div class="timeline-age">${relativeTime(item.pubDate)}</div>
       </a>
-      <button class="save-bm-btn timeline-save-btn" title="Save as bookmark" onclick="event.stopPropagation();event.preventDefault();saveAsBookmark('${escHtml(item.link).replace(/'/g,"\\'")}','${escHtml(item.title).replace(/'/g,"\\'")}')">🔖</button>
+      <button class="save-bm-btn timeline-save-btn" title="Save as bookmark" onclick="event.stopPropagation();event.preventDefault();saveAsBookmark('${jsStr(item.link)}','${jsStr(item.title)}')">🔖</button>
     </div>
   `).join('') + `</div>`;
 }
