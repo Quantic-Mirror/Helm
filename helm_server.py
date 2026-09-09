@@ -11,10 +11,12 @@ This replaces:
 Auth:
   If helm_token.txt exists in STATE_DIR, every /api/* route requires
   `Authorization: Bearer <token>` — except GET /api/health (container
-  healthcheck) and POST /api/backup-events (its own X-Backup-Token). With no
-  such file, auth is disabled (fail-open), matching the vault/audio proxies.
-  Cross-origin callers must be listed in HELM_ALLOWED_ORIGINS; there is no
-  wildcard CORS.
+  healthcheck), POST /api/backup-events (its own X-Backup-Token), and GET
+  /api/backups* (readable with either the bearer token or a valid
+  X-Backup-Token, so the backup pipeline can pull snapshots without also
+  holding the Helm token). With no such file, auth is disabled (fail-open),
+  matching the vault/audio proxies. Cross-origin callers must be listed in
+  HELM_ALLOWED_ORIGINS; there is no wildcard CORS.
 
 State sync:
   GET  /api/state          -> returns { state, version, updatedAt }
@@ -1055,6 +1057,22 @@ class HelmHandler(SimpleHTTPRequestHandler):
         self.send_json(401, {"error": "missing or invalid Helm access token"})
         return False
 
+    def _backup_token_valid(self):
+        """True if the request carries a valid X-Backup-Token. The backup
+        pipeline (separate repo, runs on hyperion/popcorn) already holds this
+        secret for POST /api/backup-events; accepting it on the read-only
+        /api/backups* routes too means those hosts don't also need the Helm
+        bearer token just to pull snapshots for the R2 sync."""
+        expected = _backup_token()
+        return bool(expected) and hmac.compare_digest(
+            self.headers.get("X-Backup-Token", ""), expected)
+
+    def _require_auth_or_backup_token(self):
+        if self._client_authorized() or self._backup_token_valid():
+            return True
+        self.send_json(401, {"error": "missing or invalid Helm access token"})
+        return False
+
     def _read_body(self):
         """Read a request body, refusing anything past MAX_BODY_BYTES rather
         than buffering an unbounded amount of memory on an unauthenticated
@@ -1073,7 +1091,12 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"status": "ok", "service": "marks-local-server"})
             return
 
-        if parsed.path.startswith("/api/") and not self._require_auth():
+        if parsed.path == "/api/backups" or parsed.path.startswith("/api/backups/"):
+            # Readable with either the Helm bearer token or the backup-pipeline
+            # X-Backup-Token (see _backup_token_valid).
+            if not self._require_auth_or_backup_token():
+                return
+        elif parsed.path.startswith("/api/") and not self._require_auth():
             return
 
         if parsed.path == "/api/proxy":
