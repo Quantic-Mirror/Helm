@@ -362,6 +362,10 @@ body.profile-work #profile-switcher {
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .icon-btn.danger:hover { color: var(--red); }
+/* An icon-btn toggled "on" (e.g. the SomaFM widget's artist auto-skip, once
+   configured) — tinted at rest, not just on hover, so its state is visible
+   without having to hover to read the title tooltip. */
+.icon-btn.active { color: var(--accent); }
 
 /* BOOKMARK ROWS — no card border, just rows inside the folder card */
 .bookmarks-list {
@@ -8305,11 +8309,13 @@ function renderSomaFMWidget(w) {
   const stationOptions = Object.entries(SOMAFM_STATIONS).map(([id, s]) =>
     `<option value="${id}"${id === station ? ' selected' : ''}>SomaFM: ${escHtml(s.name)}</option>`
   ).join('');
+  const blockBtnTitle = somaFMBlockButtonTitle(w);
   el.innerHTML = `
     <div class="folder-header widget-header">
       <span class="col-dot" style="background:#FFA657"></span>
       <select class="column-title" style="cursor:pointer" data-somafm-station="${w.id}" title="Switch station">${stationOptions}</select>
       <div class="col-actions" style="opacity:1">
+        <button class="icon-btn${(w.blockedArtists || []).length ? ' active' : ''}" title="${escHtml(blockBtnTitle)}" data-somafm-block="${w.id}">🚫</button>
         <button class="icon-btn" title="Refresh now" data-somafm-refresh="${w.id}">↻</button>
         <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
       </div>
@@ -8328,9 +8334,7 @@ function renderSomaFMWidget(w) {
     el.querySelector('[data-somafm-refresh]').onclick = (e) => {
       e.stopPropagation();
       loadSomaFMWidget(w.id);
-      // Reset the timer so the next auto-poll doesn't fire seconds later.
-      clearInterval(SOMAFM_TIMERS[w.id]);
-      SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
+      resetSomaFMPollTimer(w.id); // so the next auto-poll doesn't fire seconds later
     };
 
     el.querySelector('[data-somafm-station]').onclick = (e) => e.stopPropagation();
@@ -8339,16 +8343,24 @@ function renderSomaFMWidget(w) {
       save();
       loadSomaFMWidget(w.id);
       setSomaFMRadioStation(w.id, w.station);
-      clearInterval(SOMAFM_TIMERS[w.id]);
-      SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
+      resetSomaFMPollTimer(w.id);
+    };
+
+    el.querySelector('[data-somafm-block]').onclick = (e) => {
+      e.stopPropagation();
+      configureSomaFMBlockedArtist(w.id);
     };
 
     loadSomaFMWidget(w.id);
-    clearInterval(SOMAFM_TIMERS[w.id]);
-    SOMAFM_TIMERS[w.id] = setInterval(() => loadSomaFMWidget(w.id), SOMAFM_POLL_MS);
+    resetSomaFMPollTimer(w.id);
   }, 0);
 
   return el;
+}
+
+function resetSomaFMPollTimer(widgetId) {
+  clearInterval(SOMAFM_TIMERS[widgetId]);
+  SOMAFM_TIMERS[widgetId] = setInterval(() => loadSomaFMWidget(widgetId), SOMAFM_POLL_MS);
 }
 
 // Table layout (as of 2026): a header row (td.boldblue cells), separator
@@ -8386,10 +8398,106 @@ async function loadSomaFMWidget(widgetId) {
   const station = w ? getSomaFMWidgetStation(w) : SOMAFM_DEFAULT_STATION;
   try {
     const tracks = await fetchSomaFMTracks(station);
+    // If the currently-playing track is on this widget's skip list, jump
+    // stations instead of rendering it — switchSomaFMAwayFromBlockedArtist()
+    // already re-triggers loadSomaFMWidget() for the new station itself.
+    if (w && switchSomaFMAwayFromBlockedArtist(w, tracks)) return;
     renderSomaFMBody(widgetId, tracks, station);
   } catch (e) {
     body.innerHTML = `<div class="somafm-error">Could not load song history.<br><small>${escHtml(e.message)}</small></div>`;
   }
+}
+
+// Per-widget "never play this artist" list (w.blockedArtists, w.blockedFallbackStation)
+// — configured via the 🚫 header button, see configureSomaFMBlockedArtist().
+// Checked on every poll (loadSomaFMWidget, every SOMAFM_POLL_MS) against
+// whatever songhistory.html currently reports as playing.
+function somaFMBlockButtonTitle(w) {
+  const artists = w.blockedArtists || [];
+  if (!artists.length) return 'Auto-switch away from an artist';
+  const fallback = SOMAFM_STATIONS[w.blockedFallbackStation];
+  return `Auto-skip: ${artists.join(', ')} → ${fallback ? fallback.name : '?'}`;
+}
+
+function configureSomaFMBlockedArtist(widgetId) {
+  const w = (state.widgets || []).find(x => x.id === widgetId);
+  if (!w) return;
+  const input = prompt(
+    'Artist(s) to auto-skip on this widget, comma-separated.\n' +
+    'When one of them is the currently-playing track, the widget switches to a fallback station automatically.\n\n' +
+    'Leave blank to turn this off.',
+    (w.blockedArtists || []).join(', ')
+  );
+  if (input === null) return; // cancelled
+  const names = input.split(',').map(s => s.trim()).filter(Boolean);
+  w.blockedArtists = names;
+  if (!names.length) {
+    delete w.blockedFallbackStation;
+    save();
+    renderSomaFMWidgetChrome(w);
+    toast('Auto-skip turned off');
+    return;
+  }
+
+  const currentStation = getSomaFMWidgetStation(w);
+  const alternatives = Object.keys(SOMAFM_STATIONS).filter(id => id !== currentStation);
+  if (alternatives.length === 1) {
+    w.blockedFallbackStation = alternatives[0];
+  } else {
+    // Only reachable once a 3rd SomaFM station exists — today there are
+    // exactly two, so the "only other station" case above always fires.
+    const options = alternatives.map((id, i) => `${i + 1}. ${SOMAFM_STATIONS[id].name}`).join('\n');
+    const choice = prompt(`Switch to which station when detected?\n\n${options}\n\nEnter a number:`, '1');
+    const idx = parseInt(choice, 10) - 1;
+    w.blockedFallbackStation = alternatives[idx] || alternatives[0];
+  }
+  save();
+  renderSomaFMWidgetChrome(w);
+  toast(`Will switch to ${SOMAFM_STATIONS[w.blockedFallbackStation].name} if ${names.join(', ')} plays`);
+  loadSomaFMWidget(widgetId); // apply immediately in case it's already playing
+}
+
+// Updates just the 🚫 button's look after configureSomaFMBlockedArtist()
+// changes a widget's block list — no need to re-fetch/re-render the whole
+// card for a settings change alone.
+function renderSomaFMWidgetChrome(w) {
+  const btn = document.querySelector(`[data-somafm-block="${w.id}"]`);
+  if (!btn) return;
+  btn.title = somaFMBlockButtonTitle(w);
+  btn.classList.toggle('active', !!(w.blockedArtists || []).length);
+}
+
+// Returns true (and switches w.station) if the track songhistory.html just
+// reported for this widget matches its skip list — false otherwise. Guards
+// against switching to the fallback station and then bouncing straight back:
+// once on the fallback, this is a no-op until the widget is pointed at the
+// trigger station again.
+function switchSomaFMAwayFromBlockedArtist(w, tracks) {
+  if (!w.blockedArtists?.length || !w.blockedFallbackStation) return false;
+  const oldStation = getSomaFMWidgetStation(w);
+  if (oldStation === w.blockedFallbackStation) return false;
+  const now = tracks.find(t => t.isNow) || tracks[0];
+  if (!now) return false;
+  const hit = w.blockedArtists.find(name => now.artist.toLowerCase().includes(name.toLowerCase()));
+  if (!hit) return false;
+
+  w.station = w.blockedFallbackStation;
+  save();
+  const select = document.querySelector(`[data-somafm-station="${w.id}"]`);
+  if (select) select.value = w.station;
+  toast(`"${now.artist}" is on your skip list — switched to ${SOMAFM_STATIONS[w.station].name}`);
+
+  loadSomaFMWidget(w.id);
+  setSomaFMRadioStation(w.id, w.station); // best-effort: follows the host speaker too, same as a manual station change
+  resetSomaFMPollTimer(w.id);
+
+  // Follow the switch in the browser tab too, if this widget's old station
+  // is literally what's playing there right now — otherwise the card would
+  // show the fallback station while the hated band keeps playing in the tab.
+  if (SOMAFM_PLAYING && SOMAFM_PLAYING_STATION === oldStation) {
+    toggleSomaFMPlayback(w.station);
+  }
+  return true;
 }
 
 function renderSomaFMBody(widgetId, tracks, station) {
