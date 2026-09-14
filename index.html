@@ -2286,21 +2286,14 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .bp-event-name { color: var(--accent); flex-shrink: 0; }
 .bp-event-message { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Audio Grabber page */
-#audio-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
-#audio-topbar {
+/* ── MUSIC PAGE (Audio Grabber + musicXplorer merged) ───────────────────────── */
+#music-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+#music-topbar {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 16px;
 }
 #audio-last-updated { font-size: 11px; color: var(--text-dim); }
 
-#audio-form-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 20px;
-}
 .audio-form-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .audio-form-row .field { flex: 1; min-width: 140px; margin-bottom: 0; }
 .audio-form-row .field.audio-field-narrow { flex: 0 0 80px; min-width: 0; }
@@ -2327,13 +2320,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 }
 #audio-batch-input:focus { border-color: var(--accent); }
 
-.audio-section-title {
-  font-family: var(--font-display);
-  font-size: 13px; font-weight: 600; color: var(--text);
-  margin-bottom: 10px;
-}
-#audio-jobs-section { margin-bottom: 24px; }
-
 /* Downloaded-file title doubles as a link to search YouTube for the track
    (no real video id is retained for a completed download — see
    buildAudioFileRowHTML) — style it like a link, not the plain span
@@ -2341,10 +2327,24 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 a.backup-label { text-decoration: none; }
 a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 
-/* ── MUSICXPLORER PAGE ──────────────────────────────────────────────────────── */
-#musicxplorer-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
-#musicx-layout { display: flex; align-items: flex-start; gap: 20px; }
-#musicx-list-panel {
+/* Collapsible sidebar sections — Download / Downloads / Files / Favorites.
+   See updateMusicSectionChrome(): a section auto-collapses to just its
+   header when its list is empty and auto-expands once it has rows, so a
+   handful of files/favorites doesn't turn this into a wall of open lists. */
+.music-section { margin-top: 14px; }
+.music-section-toggle {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; background: none; border: none; padding: 0;
+  font-family: var(--font-display);
+  font-size: 13px; font-weight: 600; color: var(--text);
+  cursor: pointer; text-align: left;
+}
+.music-section-caret { color: var(--text-dim); font-size: 10px; width: 8px; flex-shrink: 0; }
+.music-section-count { color: var(--text-dim); font-weight: 400; }
+.music-section-body { margin-top: 10px; }
+
+#music-layout { display: flex; align-items: flex-start; gap: 20px; }
+#music-sidebar {
   width: 300px; flex-shrink: 0;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -3024,8 +3024,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#calendar" data-tab="calendar">📅 Calendar</a>
     <a class="tab-btn" href="#services" data-tab="services">🖥 Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
-    <a class="tab-btn" href="#audio" data-tab="audio">🎧 Audio Grabber</a>
-    <a class="tab-btn" href="#musicxplorer" data-tab="musicxplorer">🎵 musicXplorer</a>
+    <a class="tab-btn" href="#music" data-tab="music">🎵 Music</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
     <a class="tab-btn" href="#memos" data-tab="memos">📝 Memos</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
@@ -3182,70 +3181,88 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div id="backups-events"></div>
 </div>
 
-<!-- AUDIO GRABBER PAGE -->
-<div id="audio-page" style="display:none">
-  <div id="audio-topbar">
+<!-- MUSIC PAGE (Audio Grabber + musicXplorer merged) — a single sidebar with
+     four collapsible sections (Download / Downloads-in-progress / Files /
+     Favorites) sharing one detail/explorer pane on the right. Each list
+     section auto-collapses to a one-line header when empty and auto-expands
+     once it has rows, so a handful of downloaded files and favorites don't
+     turn the sidebar into a wall of open lists — see MUSIC_SECTIONS_EXPANDED
+     and updateMusicSectionChrome(). A section the user manually
+     toggles stops auto-following its count (MUSIC_SECTIONS_TOUCHED) so an
+     intentional collapse survives the next 5s jobs/files poll. -->
+<div id="music-page" style="display:none">
+  <div id="music-topbar">
     <span id="audio-last-updated"></span>
     <button class="btn" id="btn-refresh-audio">↺ Refresh</button>
   </div>
-
-  <div id="audio-form-card">
-    <div class="audio-form-row">
-      <div class="field">
-        <label for="audio-artist-input">Artist</label>
-        <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="audio-song-input">Song</label>
-        <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
-      </div>
-      <div class="field audio-field-narrow">
-        <label for="audio-format-select">Format</label>
-        <select id="audio-format-select">
-          <option value="mp3">mp3</option>
-          <option value="m4a">m4a</option>
-          <option value="flac">flac</option>
-          <option value="wav">wav</option>
-          <option value="opus">opus</option>
-        </select>
-      </div>
-      <div class="field audio-field-narrow">
-        <label for="audio-quality-input">Quality</label>
-        <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
-      </div>
-      <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
-      <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
-    </div>
-    <div id="audio-search-results"></div>
-    <details id="audio-batch-details">
-      <summary>Batch (multiple tracks)</summary>
-      <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
-      <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
-    </details>
-  </div>
-
-  <div id="audio-jobs-section">
-    <div class="audio-section-title">Downloads</div>
-    <div id="audio-jobs"></div>
-  </div>
-
-  <div id="audio-files-section">
-    <div class="audio-section-title">Files</div>
-    <div id="audio-files"></div>
-  </div>
-</div>
-
-<!-- MUSICXPLORER PAGE -->
-<div id="musicxplorer-page" style="display:none">
-  <div id="musicx-layout">
-    <div id="musicx-list-panel">
+  <div id="music-layout">
+    <div id="music-sidebar">
       <div class="musicx-panel-title">Find Similar Artists</div>
       <form id="musicx-artist-search-form" class="musicx-search-wrap">
         <input type="text" id="musicx-artist-search" placeholder="Artist name…" autocomplete="off" spellcheck="false">
         <button type="button" id="musicx-artist-search-clear" title="Clear search">✕</button>
       </form>
-      <div class="musicx-panel-title" style="margin-top:16px">Favorited Tracks</div>
-      <div id="musicx-list"></div>
+
+      <div class="music-section">
+        <button class="music-section-toggle" data-music-section="download">
+          <span class="music-section-caret">▸</span> + Download a track
+        </button>
+        <div class="music-section-body" id="music-download-body" style="display:none">
+          <div class="audio-form-row">
+            <div class="field">
+              <label for="audio-artist-input">Artist</label>
+              <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="audio-song-input">Song</label>
+              <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
+            </div>
+            <div class="field audio-field-narrow">
+              <label for="audio-format-select">Format</label>
+              <select id="audio-format-select">
+                <option value="mp3">mp3</option>
+                <option value="m4a">m4a</option>
+                <option value="flac">flac</option>
+                <option value="wav">wav</option>
+                <option value="opus">opus</option>
+              </select>
+            </div>
+            <div class="field audio-field-narrow">
+              <label for="audio-quality-input">Quality</label>
+              <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
+            </div>
+            <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
+            <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
+          </div>
+          <div id="audio-search-results"></div>
+          <details id="audio-batch-details">
+            <summary>Batch (multiple tracks)</summary>
+            <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
+            <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
+          </details>
+        </div>
+      </div>
+
+      <div class="music-section">
+        <button class="music-section-toggle" data-music-section="jobs">
+          <span class="music-section-caret">▸</span> Downloads <span class="music-section-count"></span>
+        </button>
+        <div class="music-section-body" id="audio-jobs" style="display:none"></div>
+      </div>
+
+      <div class="music-section">
+        <button class="music-section-toggle" data-music-section="files">
+          <span class="music-section-caret">▸</span> Files <span class="music-section-count"></span>
+        </button>
+        <div class="music-section-body" id="audio-files" style="display:none"></div>
+      </div>
+
+      <div class="music-section">
+        <button class="music-section-toggle" data-music-section="favorites">
+          <span class="music-section-caret">▸</span> Favorites <span class="music-section-count"></span>
+        </button>
+        <div class="music-section-body" id="musicx-list" style="display:none"></div>
+      </div>
     </div>
     <div id="musicx-detail-panel"></div>
   </div>
@@ -3620,6 +3637,14 @@ const MUSICX_BAND_INFO_CACHE = {};  // artist name → {homepage, youtube, wiki}
 const MUSICX_SIMILAR_CACHE = {};    // artist name → [{name, match, url}], from Last.fm via the backend
 let MUSICX_EXPLORE_REQ = 0;         // bumped on every explorer render; guards a slow band-info/similar
                                      // fetch from overwriting a newer selection/drill's DOM
+// Music page's collapsible sidebar sections (Download / Downloads / Files /
+// Favorites) — same TDZ reason as the MUSICX_* state above.
+let MUSIC_SECTIONS_EXPANDED = { download: false, jobs: false, files: false, favorites: false };
+// Sections the user has manually toggled this session — once touched, a
+// section stops auto-following its item count so an intentional
+// collapse/expand survives the next 5s jobs/files poll. 'download' has no
+// item count to auto-follow, so it's pre-seeded here.
+let MUSIC_SECTIONS_TOUCHED = new Set(['download']);
 
 // Moved up from later in the file — applyTheme() now runs immediately after
 // load() at startup, and if the saved theme is already 'terminal' from a
@@ -9128,8 +9153,12 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'audio', 'musicxplorer', 'logs', 'workout', 'memos'];
-const _hashTab = location.hash.slice(1);
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'workout', 'memos'];
+// Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
+// Music tab — redirect anyone with an old bookmarked/shared hash instead of
+// falling through to Dashboard.
+const LEGACY_TAB_HASH = { audio: 'music', musicxplorer: 'music' };
+const _hashTab = LEGACY_TAB_HASH[location.hash.slice(1)] || location.hash.slice(1);
 const initialTab = VALID_TABS.includes(_hashTab) ? _hashTab : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
@@ -9329,8 +9358,7 @@ function switchTab(tab) {
   show('calendar-page',  tab === 'calendar');
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
-  show('audio-page',     tab === 'audio');
-  show('musicxplorer-page', tab === 'musicxplorer');
+  show('music-page',     tab === 'music');
   show('workout-page',   tab === 'workout');
   show('memos-page',     tab === 'memos');
   show('logs-page',      tab === 'logs');
@@ -9339,7 +9367,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', musicxplorer: 'Helm — musicXplorer', logs: 'Helm — Logs', workout: 'Helm — Workout', memos: 'Helm — Memos' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', memos: 'Helm — Memos' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -9351,9 +9379,8 @@ function switchTab(tab) {
   else stopServicesPolling();
   if (tab === 'backups')   { fetchBackupEvents(); startBackupsPolling(); }
   else stopBackupsPolling();
-  if (tab === 'audio')     { fetchAudioData(); startAudioPolling(); }
+  if (tab === 'music')     { fetchAudioData(); startAudioPolling(); renderMusicXplorerPage(); }
   else stopAudioPolling();
-  if (tab === 'musicxplorer') renderMusicXplorerPage();
   if (tab === 'logs')      {
     fetchLogs(); startLogsPolling();
     // Populate the service filter from /api/services if we haven't already
@@ -9425,6 +9452,14 @@ document.getElementById('musicx-artist-search-form').onsubmit = (e) => {
   searchMusicxArtist(document.getElementById('musicx-artist-search').value);
 };
 document.getElementById('musicx-artist-search-clear').onclick = clearMusicxArtistSearch;
+document.querySelectorAll('.music-section-toggle').forEach(btn => {
+  btn.onclick = () => {
+    const key = btn.dataset.musicSection;
+    MUSIC_SECTIONS_TOUCHED.add(key);
+    MUSIC_SECTIONS_EXPANDED[key] = !MUSIC_SECTIONS_EXPANDED[key];
+    updateMusicSectionChrome();
+  };
+});
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
 document.getElementById('logs-search-clear').onclick = () => {
@@ -10743,6 +10778,10 @@ async function fetchAudioData() {
     document.getElementById('audio-jobs').innerHTML =
       '<div class="svc-error">Audio Grabber requires the local backend (helm_server.py). Not reachable.</div>';
     document.getElementById('audio-files').innerHTML = '';
+    // Force the Downloads section open — otherwise updateMusicSectionChrome()
+    // would auto-collapse it (audioJobs is still []) and hide this error.
+    MUSIC_SECTIONS_EXPANDED.jobs = true;
+    updateMusicSectionChrome();
     return;
   }
   try {
@@ -10760,7 +10799,35 @@ async function fetchAudioData() {
   } catch(e) {
     document.getElementById('audio-jobs').innerHTML =
       `<div class="svc-error">Could not fetch audio data: ${escHtml(e.message)}</div>`;
+    MUSIC_SECTIONS_EXPANDED.jobs = true;
+    updateMusicSectionChrome();
   }
+}
+
+// Maps each collapsible sidebar section's key (MUSIC_SECTIONS_EXPANDED) to
+// the id of the div its content lives in — 'download' has no item count of
+// its own (see MUSIC_SECTIONS_TOUCHED), the other three double as the exact
+// innerHTML target renderAudioPage()/renderMusicXplorerPage() already write
+// into, so toggling display:none here never fights their re-renders.
+const MUSIC_SECTION_BODY_IDS = { download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'musicx-list' };
+
+function updateMusicSectionChrome() {
+  const counts = { jobs: audioJobs.length, files: audioFiles.length, favorites: (state.musicXplorer || []).length };
+  Object.keys(MUSIC_SECTION_BODY_IDS).forEach(key => {
+    if (key in counts && !MUSIC_SECTIONS_TOUCHED.has(key)) {
+      MUSIC_SECTIONS_EXPANDED[key] = counts[key] > 0;
+    }
+    const expanded = MUSIC_SECTIONS_EXPANDED[key];
+    const toggle = document.querySelector(`.music-section-toggle[data-music-section="${key}"]`);
+    if (toggle) {
+      const caret = toggle.querySelector('.music-section-caret');
+      if (caret) caret.textContent = expanded ? '▾' : '▸';
+      const countEl = toggle.querySelector('.music-section-count');
+      if (countEl) countEl.textContent = (key in counts && counts[key]) ? `(${counts[key]})` : '';
+    }
+    const body = document.getElementById(MUSIC_SECTION_BODY_IDS[key]);
+    if (body) body.style.display = expanded ? '' : 'none';
+  });
 }
 
 function renderAudioPage() {
@@ -10774,16 +10841,17 @@ function renderAudioPage() {
 
   if (!audioFiles.length) {
     filesEl.innerHTML = '<div class="svc-loading">No downloaded files yet.</div>';
-    return;
-  }
-  filesEl.innerHTML = `<div class="bp-events-list">${audioFiles.map(buildAudioFileRowHTML).join('')}</div>`;
+  } else {
+    filesEl.innerHTML = `<div class="bp-events-list">${audioFiles.map(buildAudioFileRowHTML).join('')}</div>`;
 
-  filesEl.querySelectorAll('.audio-delete-btn').forEach(btn => {
-    btn.onclick = () => deleteAudioFile(btn.dataset.filename);
-  });
-  filesEl.querySelectorAll('.audio-dl-btn').forEach(btn => {
-    btn.onclick = () => downloadAudioFile(btn.dataset.filename);
-  });
+    filesEl.querySelectorAll('.audio-delete-btn').forEach(btn => {
+      btn.onclick = () => deleteAudioFile(btn.dataset.filename);
+    });
+    filesEl.querySelectorAll('.audio-dl-btn').forEach(btn => {
+      btn.onclick = () => downloadAudioFile(btn.dataset.filename);
+    });
+  }
+  updateMusicSectionChrome();
 }
 
 function buildAudioJobRowHTML(job) {
@@ -10982,7 +11050,7 @@ function addToMusicXplorer(artist, song, album) {
   state.musicXplorer.unshift(entry);
   save();
   toast(`Added "${artist} — ${song}" to musicXplorer`);
-  if (currentTab === 'musicxplorer') renderMusicXplorerPage();
+  if (currentTab === 'music') renderMusicXplorerPage();
 }
 
 function removeMusicxEntry(id) {
@@ -11052,6 +11120,8 @@ function renderMusicXplorerPage() {
   listEl.querySelectorAll('[data-musicx-remove]').forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); removeMusicxEntry(btn.dataset.musicxRemove); };
   });
+
+  updateMusicSectionChrome();
 
   if (MUSICX_SEARCH_ARTIST) {
     detailEl.innerHTML = '<div id="musicx-explorer-wrap"></div>';
