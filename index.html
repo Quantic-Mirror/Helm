@@ -6488,7 +6488,7 @@ async function loadBackupsList() {
             <span class="backup-size">${escHtml(kb)}</span>
           </div>
           <div class="backup-actions">
-            <a class="btn backup-dl-btn" href="/api/backups/${encodeURIComponent(b.filename)}" download="${escHtml(b.filename)}" title="Download this snapshot">↓</a>
+            <button class="btn backup-dl-btn" data-filename="${escHtml(b.filename)}" title="Download this snapshot">↓</button>
             <button class="btn backup-restore-btn" data-filename="${escHtml(b.filename)}" title="Restore this snapshot">Restore</button>
           </div>
         </div>
@@ -6498,8 +6498,30 @@ async function loadBackupsList() {
     listEl.querySelectorAll('.backup-restore-btn').forEach(btn => {
       btn.onclick = () => restoreBackup(btn.dataset.filename);
     });
+    listEl.querySelectorAll('.backup-dl-btn').forEach(btn => {
+      btn.onclick = () => downloadBackupFile(btn.dataset.filename);
+    });
   } catch(err) {
     listEl.innerHTML = `<div style="color:var(--red);font-size:12px;text-align:center;padding:20px">Could not load backups:<br>${escHtml(err.message)}</div>`;
+  }
+}
+
+async function downloadBackupFile(filename) {
+  // Same fix as downloadAudioFile(): a bare <a href="/api/backups/…" download>
+  // link can't carry the Authorization header wrapFetchWithToken() attaches
+  // to fetch() calls, so it 401s once helm_token.txt is configured. Fetch
+  // through the authenticated fetch() and hand the browser a blob: URL.
+  try {
+    const resp = await fetch('/api/backups/' + encodeURIComponent(filename));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch(e) {
+    toast('Could not download: ' + e.message);
   }
 }
 
@@ -10759,6 +10781,9 @@ function renderAudioPage() {
   filesEl.querySelectorAll('.audio-delete-btn').forEach(btn => {
     btn.onclick = () => deleteAudioFile(btn.dataset.filename);
   });
+  filesEl.querySelectorAll('.audio-dl-btn').forEach(btn => {
+    btn.onclick = () => downloadAudioFile(btn.dataset.filename);
+  });
 }
 
 function buildAudioJobRowHTML(job) {
@@ -10783,7 +10808,6 @@ function buildAudioFileRowHTML(f) {
   const date = new Date(f.createdAt * 1000);
   const label = date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const size = f.size > 1024 * 1024 ? (f.size / (1024 * 1024)).toFixed(1) + ' MB' : (f.size / 1024).toFixed(1) + ' KB';
-  const encoded = encodeURIComponent(f.filename);
   // yt-dlp only reports the final on-disk path after extraction (see
   // _run_audio_download in audio_grabber_server.py), not the source video id,
   // so there's no real video to link straight to — this links to a YouTube
@@ -10797,7 +10821,7 @@ function buildAudioFileRowHTML(f) {
         <span class="backup-size">${escHtml(label)} · ${escHtml(size)}</span>
       </div>
       <div class="backup-actions">
-        <a class="btn backup-dl-btn" href="/api/audio/files/${encoded}" download="${escHtml(f.filename)}" title="Download">↓</a>
+        <button class="btn audio-dl-btn" data-filename="${escHtml(f.filename)}" title="Download">↓</button>
         <button class="btn audio-delete-btn" data-filename="${escHtml(f.filename)}" title="Delete">✕</button>
       </div>
     </div>`;
@@ -10886,6 +10910,26 @@ async function pickAudioSearchResult(videoId, title) {
     fetchAudioData();
   } catch(e) {
     toast('Could not queue download: ' + e.message);
+  }
+}
+
+async function downloadAudioFile(filename) {
+  // Plain <a href="/api/audio/files/…" download> links can't carry the
+  // Authorization header wrapFetchWithToken() attaches to fetch() calls, so
+  // when helm_token.txt is configured, a bare anchor click 401s. Fetch the
+  // bytes through the authenticated fetch() instead and hand the browser a
+  // blob: URL to save, same pattern saveConfig() uses for local exports.
+  try {
+    const resp = await fetch('/api/audio/files/' + encodeURIComponent(filename));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const blob = await resp.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch(e) {
+    toast('Could not download: ' + e.message);
   }
 }
 
