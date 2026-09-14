@@ -64,10 +64,10 @@ declaration up," not "wrap it in `var`" or "guard with `typeof` checks."
 Helm has two fixed profiles. **Per-profile** data is the bookmark board
 (`state.columns` + `state.bookmarks` + `state.collapsedCols`) and the YouTube
 feed list (`state.feeds`). **Shared** across both: News/RSS (`newsSources`),
-dashboard `widgets`, `calendarEvents`, `workouts`/`workoutRoutines`,
-`journal`, and `settings` (theme included). The two profiles differ **only**
-in that per-profile data — every tab is visible in both, and all other content
-is identical.
+dashboard `widgets`, `calendarEvents`, `workouts`/`workoutRoutines`, and
+`settings` (theme included). The two profiles differ **only** in that
+per-profile data — every tab is visible in both, and all other content is
+identical.
 
 Design decisions, each load-bearing — don't undo them without a reason:
 

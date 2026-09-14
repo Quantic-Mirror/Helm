@@ -2618,60 +2618,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* ── JOURNAL PAGE ─────────────────────────────────────────────────────────── */
-#journal-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
-.journal-container { max-width: 640px; margin: 0 auto; }
-.journal-topbar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-.journal-topbar .search-input-wrap { flex: 1; min-width: 140px; }
-.journal-select-bar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-.journal-select-count { font-size: 12px; color: var(--text-dim); }
-.journal-empty { color: var(--text-dim); font-size: 12px; padding: 12px 4px; }
-.journal-entry-list { display: flex; flex-direction: column; gap: 6px; }
-.journal-entry-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  cursor: pointer;
-  transition: border-color 0.12s;
-}
-.journal-entry-row:hover { border-color: var(--accent); }
-.journal-entry-row:hover .col-actions { opacity: 1; }
-.journal-entry-checkbox { flex-shrink: 0; width: 14px; height: 14px; cursor: pointer; }
-.journal-entry-date {
-  display: flex; flex-direction: column; align-items: center;
-  flex-shrink: 0; padding: 4px 10px; line-height: 1.25;
-  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
-}
-.journal-entry-weekday {
-  font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--text-dim);
-}
-.journal-entry-monthday { font-size: 12px; font-weight: 600; color: var(--text); }
-.journal-entry-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.journal-entry-title {
-  font-size: 12px; color: var(--text); font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.journal-entry-snippet {
-  font-size: 11px; color: var(--text-dim);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.journal-entry-snippet mark, .journal-entry-title mark {
-  background: var(--accent-dim); color: var(--text); border-radius: 2px;
-}
-.journal-lock-wrap {
-  max-width: 360px; margin: 40px auto; display: flex; flex-direction: column; gap: 12px;
-}
-.journal-lock-wrap p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
-.journal-lock-error { font-size: 12px; color: var(--red); }
-
 /* Exercise editor cards, shared by the Log Workout and Routine modals.
    Accordion: only one card's details are expanded at a time (tracked by
    workoutExpandedExIdx) so opening an existing multi-exercise session, or
@@ -3065,7 +3011,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#audio" data-tab="audio">🎧 Audio Grabber</a>
     <a class="tab-btn" href="#musicxplorer" data-tab="musicxplorer">🎵 musicXplorer</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
-    <a class="tab-btn" href="#journal" data-tab="journal">📔 Journal</a>
     <a class="tab-btn" href="#memos" data-tab="memos">📝 Memos</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
   </nav>
@@ -3321,11 +3266,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div id="workout-page-body"></div>
 </div>
 
-<!-- JOURNAL PAGE -->
-<div id="journal-page" style="display:none">
-  <div id="journal-page-body"></div>
-</div>
-
 <!-- MEMOS PAGE -->
 <!-- Memos is embedded via memos-proxy (helm_tls_proxy.py in front of the
      memos container), which strips its X-Frame-Options/CSP frame-ancestors
@@ -3337,30 +3277,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
      what NOT to repeat). -->
 <div id="memos-page" style="display:none">
   <iframe id="memos-frame" src="" allow="clipboard-write"></iframe>
-</div>
-
-<!-- JOURNAL ENTRY MODAL -->
-<div id="journal-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;padding:24px">
-  <div class="modal modal-scrollable" style="max-width:560px">
-    <div class="modal-header">
-      <span class="modal-title" id="journal-modal-title">New Entry</span>
-      <button class="icon-btn" id="journal-modal-close">✕</button>
-    </div>
-    <div class="modal-scroll-body">
-      <div class="field">
-        <label for="journal-title-input">Title</label>
-        <input id="journal-title-input" type="text" placeholder="Optional title" autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="journal-body-input">Entry</label>
-        <textarea id="journal-body-input" rows="10" placeholder="Write something…"></textarea>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" id="journal-modal-cancel">Cancel</button>
-      <button class="btn primary" id="journal-modal-save">Save</button>
-    </div>
-  </div>
 </div>
 
 <!-- WORKOUT SESSION MODAL -->
@@ -3658,21 +3574,6 @@ let newsViewMode = 'cards';
 let workoutViewMode = 'history'; // 'history' | 'progress'
 let WORKOUT_PROGRESS_EXERCISE = null; // currently selected exercise in the progress view
 let workoutHistoryExpandedIds = new Set(); // session ids currently showing their exercise detail, in the History list
-// Declared here (not near renderJournal() itself, further down the file) for the same
-// reason as the workout view-state above: switchTab() can run renderJournal() early via
-// the startup hash check (e.g. a bookmarked #journal URL), and renderJournal() reads this
-// directly on every call to decide whether to show the unlock form or the entry list.
-// Holds the derived AES-GCM CryptoKey once the passphrase is verified — never persisted
-// to state/localStorage/the backend, so it resets to null (locked) on every page load.
-let JOURNAL_KEY = null;
-let JOURNAL_LOCK_ERROR = null; // error message shown on the unlock/setup form, or null
-// Same early-declaration reasoning as JOURNAL_KEY above — renderJournalEntryList()
-// can be reached on the same early path and closes over all of these.
-const JOURNAL_PAGE_SIZE = 20;
-let JOURNAL_SEARCH = '';                       // current search query, lowercased on use
-let JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE; // reset on search change / lock / unlock
-let JOURNAL_SELECT_MODE = false;               // true while the bulk-select UI is active
-let JOURNAL_SELECTED_IDS = new Set();          // entry ids selected for export
 let servicesData = [];
 let servicesPollTimer = null;
 const SERVICES_POLL_MS = 2 * 60 * 1000;
@@ -3688,7 +3589,7 @@ let audioSearchResults = [];
 let audioPollTimer = null;
 const AUDIO_POLL_MS = 5 * 1000;
 // Declared here (not near renderMusicXplorerPage() itself, further down the
-// file) for the same TDZ reason as JOURNAL_KEY/the workout view-state above —
+// file) for the same TDZ reason as the workout view-state above —
 // switchTab() can run renderMusicXplorerPage() early via the startup hash
 // check (e.g. a bookmarked #musicxplorer URL).
 let MUSICX_SELECTED_ID = null;    // id of the favorited track shown in the detail pane; null = newest
@@ -5399,362 +5300,6 @@ document.getElementById('workout-routine-select').onchange = (e) => {
   refreshExerciseEditor(document.getElementById('workout-exercise-editor'), workoutModalExercises, true);
 };
 document.getElementById('routine-modal-close').onclick = closeRoutineManagerModal;
-
-// ── JOURNAL ──────────────────────────────────────────────────────────────────
-// state.journal: { salt, canary: {iv, ct}, entries: [{id, createdAt, updatedAt, iv, ct}] }
-// Encrypted client-side with the browser's Web Crypto API (PBKDF2 → AES-GCM-256),
-// reusing deriveKey()/PBKDF2_ITERATIONS from the encrypted config export above —
-// same primitives, but ciphertext lives in the normal synced `state` object instead
-// of a one-shot exported file, so entries travel through the existing /api/state
-// last-write-wins sync like any other widget. The derived key (JOURNAL_KEY, declared
-// in the early block) is never written to state/localStorage/the backend — only held
-// in memory for this page session, so every reload requires the passphrase again.
-// Entry dates/ids are plaintext (needed to render the list before unlocking); only
-// each entry's title+body are encrypted.
-
-const JOURNAL_CANARY_PLAINTEXT = 'helm-journal-ok';
-
-function bufToB64(buf) {
-  let bin = '';
-  new Uint8Array(buf).forEach(b => bin += String.fromCharCode(b));
-  return btoa(bin);
-}
-function b64ToBuf(b64) {
-  const bin = atob(b64);
-  const buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  return buf;
-}
-
-async function journalEncrypt(key, plaintextObj) {
-  const iv = crypto.getRandomValues(new Uint8Array(12)); // fresh IV every call — never reuse an IV with the same key
-  const data = new TextEncoder().encode(JSON.stringify(plaintextObj));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
-  return { iv: bufToB64(iv), ct: bufToB64(ct) };
-}
-async function journalDecrypt(key, { iv, ct }) {
-  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBuf(iv) }, key, b64ToBuf(ct));
-  return JSON.parse(new TextDecoder().decode(plaintext));
-}
-
-let journalModalEditingId = null; // id of the entry being edited, or null for a new one
-
-function renderJournal() {
-  const body = document.getElementById('journal-page-body');
-  if (!body) return;
-  if (!state.journal) { renderJournalSetupForm(body); return; }
-  if (!JOURNAL_KEY) { renderJournalUnlockForm(body); return; }
-  renderJournalEntryList(body);
-}
-
-function renderJournalSetupForm(body) {
-  body.innerHTML = `
-    <div class="journal-lock-wrap">
-      <p>Set a passphrase to encrypt your journal. It's never sent to the server or
-      stored anywhere — only used in your browser to derive the encryption key.
-      <strong>If you forget it, existing entries can't be recovered.</strong></p>
-      <div class="field"><label for="journal-setup-pass">Passphrase</label><input id="journal-setup-pass" type="password" autocomplete="new-password"></div>
-      <div class="field"><label for="journal-setup-pass2">Confirm passphrase</label><input id="journal-setup-pass2" type="password" autocomplete="new-password"></div>
-      ${JOURNAL_LOCK_ERROR ? `<div class="journal-lock-error">${escHtml(JOURNAL_LOCK_ERROR)}</div>` : ''}
-      <button class="btn primary" id="journal-setup-btn">Create Journal</button>
-    </div>`;
-  document.getElementById('journal-setup-btn').onclick = journalSetup;
-}
-
-function renderJournalUnlockForm(body) {
-  body.innerHTML = `
-    <div class="journal-lock-wrap">
-      <p>Enter your journal passphrase to unlock.</p>
-      <div class="field"><label for="journal-unlock-pass">Passphrase</label><input id="journal-unlock-pass" type="password" autocomplete="current-password"></div>
-      ${JOURNAL_LOCK_ERROR ? `<div class="journal-lock-error">${escHtml(JOURNAL_LOCK_ERROR)}</div>` : ''}
-      <button class="btn primary" id="journal-unlock-btn">Unlock</button>
-    </div>`;
-  const pass = document.getElementById('journal-unlock-pass');
-  document.getElementById('journal-unlock-btn').onclick = journalUnlock;
-  pass.onkeydown = (e) => { if (e.key === 'Enter') journalUnlock(); };
-  pass.focus();
-}
-
-async function journalSetup() {
-  const pass = document.getElementById('journal-setup-pass').value;
-  const pass2 = document.getElementById('journal-setup-pass2').value;
-  if (!pass) { JOURNAL_LOCK_ERROR = 'Enter a passphrase.'; renderJournal(); return; }
-  if (pass !== pass2) { JOURNAL_LOCK_ERROR = 'Passphrases did not match.'; renderJournal(); return; }
-
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await deriveKey(pass, salt);
-  const canary = await journalEncrypt(key, JOURNAL_CANARY_PLAINTEXT);
-
-  state.journal = { salt: bufToB64(salt), canary, entries: [] };
-  JOURNAL_KEY = key;
-  JOURNAL_LOCK_ERROR = null;
-  save();
-  renderJournal();
-}
-
-async function journalUnlock() {
-  const pass = document.getElementById('journal-unlock-pass').value;
-  if (!pass) return;
-  try {
-    const salt = b64ToBuf(state.journal.salt);
-    const key = await deriveKey(pass, salt);
-    const decoded = await journalDecrypt(key, state.journal.canary);
-    if (decoded !== JOURNAL_CANARY_PLAINTEXT) throw new Error('canary mismatch');
-    JOURNAL_KEY = key;
-    JOURNAL_LOCK_ERROR = null;
-    journalResetViewState();
-  } catch {
-    JOURNAL_LOCK_ERROR = 'Wrong passphrase.';
-  }
-  renderJournal();
-}
-
-function journalLock() {
-  JOURNAL_KEY = null;
-  journalResetViewState();
-  renderJournal();
-}
-
-// Search/pagination/selection are per-session UI state, not journal data —
-// clear them whenever the journal is locked or freshly unlocked so reopening
-// the tab doesn't resume mid-search or mid-selection from a previous visit.
-function journalResetViewState() {
-  JOURNAL_SEARCH = '';
-  JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE;
-  JOURNAL_SELECT_MODE = false;
-  JOURNAL_SELECTED_IDS = new Set();
-}
-
-function journalHighlight(text) {
-  if (!JOURNAL_SEARCH) return escHtml(text);
-  const q = JOURNAL_SEARCH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return escHtml(text).replace(new RegExp(`(${q})`, 'gi'), '<mark>$1</mark>');
-}
-
-// Short excerpt of `body` centered on the first match of JOURNAL_SEARCH, used
-// under the title when the search hit is in the entry body rather than the title.
-function journalSnippet(bodyText, query) {
-  const idx = bodyText.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return '';
-  const start = Math.max(0, idx - 30);
-  const end = Math.min(bodyText.length, idx + query.length + 60);
-  return (start > 0 ? '…' : '') + bodyText.slice(start, end) + (end < bodyText.length ? '…' : '');
-}
-
-function journalToggleSelectMode() {
-  JOURNAL_SELECT_MODE = !JOURNAL_SELECT_MODE;
-  JOURNAL_SELECTED_IDS = new Set();
-  renderJournal();
-}
-
-function journalToggleSelect(id) {
-  if (JOURNAL_SELECTED_IDS.has(id)) JOURNAL_SELECTED_IDS.delete(id);
-  else JOURNAL_SELECTED_IDS.add(id);
-  renderJournal();
-}
-
-function journalSelectAllFiltered(filteredIds) {
-  filteredIds.forEach(id => JOURNAL_SELECTED_IDS.add(id));
-  renderJournal();
-}
-
-async function renderJournalEntryList(body) {
-  const searchInputEl = document.getElementById('journal-search-input');
-  const searchHadFocus = !!searchInputEl && document.activeElement === searchInputEl;
-  const searchCaret = searchHadFocus ? searchInputEl.selectionStart : null;
-
-  const entries = (state.journal.entries || []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const decrypted = await Promise.all(entries.map(async e => {
-    try { return { ...e, plain: await journalDecrypt(JOURNAL_KEY, e) }; }
-    catch { return { ...e, plain: { title: '(could not decrypt)', body: '' } }; }
-  }));
-
-  const q = JOURNAL_SEARCH.trim().toLowerCase();
-  const filtered = q
-    ? decrypted.filter(e => (e.plain.title || '').toLowerCase().includes(q) || (e.plain.body || '').toLowerCase().includes(q))
-    : decrypted;
-  const visible = filtered.slice(0, JOURNAL_VISIBLE_COUNT);
-  const hiddenCount = filtered.length - visible.length;
-
-  let emptyMsg = null;
-  if (decrypted.length === 0) emptyMsg = 'No entries yet. Click "+ New Entry" to get started.';
-  else if (filtered.length === 0) emptyMsg = `No entries match "${escHtml(JOURNAL_SEARCH)}".`;
-
-  const selectedCount = JOURNAL_SELECTED_IDS.size;
-
-  body.innerHTML = `
-    <div class="journal-container">
-      ${JOURNAL_SELECT_MODE ? `
-      <div class="journal-select-bar">
-        <span class="journal-select-count">${selectedCount} selected</span>
-        <button class="btn" id="btn-journal-select-all">Select all</button>
-        <button class="btn primary" id="btn-journal-export-selected" ${selectedCount === 0 ? 'disabled' : ''}>Export Selected (${selectedCount})</button>
-        <button class="btn" id="btn-journal-select-cancel">Cancel</button>
-      </div>` : `
-      <div class="journal-topbar">
-        <button class="btn" id="btn-journal-lock">🔒 Lock</button>
-        <div class="search-input-wrap">
-          <input class="search-input" type="text" id="journal-search-input" placeholder="Search journal…" autocomplete="off" spellcheck="false" value="${escHtml(JOURNAL_SEARCH)}">
-          <button type="button" class="search-input-clear${JOURNAL_SEARCH ? ' show' : ''}" id="journal-search-clear" tabindex="-1" title="Clear">✕</button>
-        </div>
-        <button class="btn" id="btn-journal-select">Select</button>
-        <button class="btn" id="btn-journal-export-all">Export All</button>
-        <button class="btn primary" id="btn-journal-new">+ New Entry</button>
-      </div>`}
-      ${emptyMsg
-        ? `<div class="journal-empty">${emptyMsg}</div>`
-        : '<div class="journal-entry-list">' + visible.map(e => {
-            const d = new Date(e.createdAt);
-            const weekday = d.toLocaleDateString([], { weekday: 'short' });
-            const monthDay = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-            const title = e.plain.title && e.plain.title.trim() ? e.plain.title : '(untitled)';
-            const titleMatched = q && title.toLowerCase().includes(q);
-            const snippet = q && !titleMatched ? journalSnippet(e.plain.body || '', JOURNAL_SEARCH) : '';
-            return `
-              <div class="journal-entry-row" data-journal-id="${e.id}">
-                ${JOURNAL_SELECT_MODE ? `<input type="checkbox" class="journal-entry-checkbox" data-journal-checkbox="${e.id}" ${JOURNAL_SELECTED_IDS.has(e.id) ? 'checked' : ''}>` : ''}
-                <div class="journal-entry-date">
-                  <span class="journal-entry-weekday">${weekday}</span>
-                  <span class="journal-entry-monthday">${monthDay}</span>
-                </div>
-                <div class="journal-entry-main">
-                  <span class="journal-entry-title">${journalHighlight(title)}</span>
-                  ${snippet ? `<span class="journal-entry-snippet">${journalHighlight(snippet)}</span>` : ''}
-                </div>
-                ${JOURNAL_SELECT_MODE ? '' : `
-                <div class="col-actions">
-                  <button class="icon-btn danger" title="Delete" data-journal-delete="${e.id}">✕</button>
-                </div>`}
-              </div>`;
-          }).join('') + '</div>'
-      }
-      ${hiddenCount > 0 ? `<button class="expand-btn" id="btn-journal-show-more">Show ${Math.min(hiddenCount, JOURNAL_PAGE_SIZE)} more ▾</button>` : ''}
-    </div>`;
-
-  if (JOURNAL_SELECT_MODE) {
-    document.getElementById('btn-journal-select-all').onclick = () => journalSelectAllFiltered(filtered.map(e => e.id));
-    document.getElementById('btn-journal-export-selected').onclick = () => journalExportEntries([...JOURNAL_SELECTED_IDS]);
-    document.getElementById('btn-journal-select-cancel').onclick = journalToggleSelectMode;
-    body.querySelectorAll('[data-journal-checkbox]').forEach(cb => {
-      cb.onclick = (e) => { e.stopPropagation(); journalToggleSelect(cb.dataset.journalCheckbox); };
-    });
-  } else {
-    document.getElementById('btn-journal-lock').onclick = journalLock;
-    document.getElementById('btn-journal-new').onclick = () => openJournalEntryModal(null);
-    document.getElementById('btn-journal-select').onclick = journalToggleSelectMode;
-    document.getElementById('btn-journal-export-all').onclick = () => journalExportEntries(state.journal.entries.map(e => e.id));
-    const searchEl = document.getElementById('journal-search-input');
-    searchEl.oninput = (e) => {
-      JOURNAL_SEARCH = e.target.value;
-      JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE;
-      renderJournal();
-    };
-    if (searchHadFocus) { searchEl.focus(); searchEl.setSelectionRange(searchCaret, searchCaret); }
-    document.getElementById('journal-search-clear').onclick = () => {
-      JOURNAL_SEARCH = '';
-      JOURNAL_VISIBLE_COUNT = JOURNAL_PAGE_SIZE;
-      renderJournal();
-    };
-  }
-  const showMoreBtn = document.getElementById('btn-journal-show-more');
-  if (showMoreBtn) showMoreBtn.onclick = () => { JOURNAL_VISIBLE_COUNT += JOURNAL_PAGE_SIZE; renderJournal(); };
-
-  body.querySelectorAll('.journal-entry-row[data-journal-id]').forEach(row => {
-    row.onclick = (e) => {
-      if (e.target.closest('[data-journal-delete]')) return;
-      const entry = decrypted.find(d => d.id === row.dataset.journalId);
-      if (!entry) return;
-      if (JOURNAL_SELECT_MODE) journalToggleSelect(entry.id);
-      else openJournalEntryModal(entry);
-    };
-  });
-  body.querySelectorAll('[data-journal-delete]').forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); deleteJournalEntry(btn.dataset.journalDelete); };
-  });
-}
-
-function openJournalEntryModal(existingEntry) {
-  journalModalEditingId = existingEntry ? existingEntry.id : null;
-  document.getElementById('journal-modal-title').textContent = existingEntry ? 'Edit Entry' : 'New Entry';
-  document.getElementById('journal-title-input').value = existingEntry ? existingEntry.plain.title : '';
-  document.getElementById('journal-body-input').value = existingEntry ? existingEntry.plain.body : '';
-  document.getElementById('journal-modal-overlay').style.display = 'flex';
-}
-
-function closeJournalEntryModal() {
-  document.getElementById('journal-modal-overlay').style.display = 'none';
-}
-
-async function saveJournalEntryFromModal() {
-  const title = document.getElementById('journal-title-input').value.trim();
-  const bodyText = document.getElementById('journal-body-input').value.trim();
-  if (!title && !bodyText) { alert('Write something first.'); return; }
-
-  const { iv, ct } = await journalEncrypt(JOURNAL_KEY, { title, body: bodyText });
-  const now = new Date().toISOString();
-  if (journalModalEditingId) {
-    const idx = state.journal.entries.findIndex(e => e.id === journalModalEditingId);
-    if (idx !== -1) state.journal.entries[idx] = { ...state.journal.entries[idx], iv, ct, updatedAt: now };
-  } else {
-    state.journal.entries.push({ id: uid(), createdAt: now, updatedAt: now, iv, ct });
-  }
-  save();
-  closeJournalEntryModal();
-  renderJournal();
-}
-
-function deleteJournalEntry(id) {
-  if (!confirm('Delete this journal entry? This cannot be undone.')) return;
-  state.journal.entries = state.journal.entries.filter(e => e.id !== id);
-  save();
-  renderJournal();
-}
-
-// Encrypted export of the given entry ids to a downloadable .helm file.
-// Reuses JOURNAL_KEY (already derived from the journal passphrase) and the
-// existing state.journal.salt rather than prompting for a separate export
-// password — the file layout matches saveConfigEncrypted()'s
-// salt(16) + iv(12) + ciphertext, so the same passphrase (via deriveKey())
-// decrypts it later. No import/decrypt UI is provided — export only.
-async function journalExportEntries(ids) {
-  const idSet = new Set(ids);
-  const entries = (state.journal.entries || []).filter(e => idSet.has(e.id));
-  if (entries.length === 0) { alert('No entries to export.'); return; }
-
-  const decrypted = await Promise.all(entries.map(async e => {
-    const plain = await journalDecrypt(JOURNAL_KEY, e);
-    return { title: plain.title, body: plain.body, createdAt: e.createdAt, updatedAt: e.updatedAt };
-  }));
-  decrypted.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-
-  const count = decrypted.length;
-  if (!confirm(`Export ${count} ${count === 1 ? 'entry' : 'entries'} to an encrypted file?`)) return;
-
-  const salt = b64ToBuf(state.journal.salt);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(JSON.stringify({
-    type: 'helm-journal-export', exportedAt: new Date().toISOString(), entries: decrypted,
-  }));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, JOURNAL_KEY, plaintext);
-
-  const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
-  combined.set(salt, 0);
-  combined.set(iv, salt.length);
-  combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
-
-  const blob = new Blob([combined], { type: 'application/octet-stream' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `helm-journal-${new Date().toISOString().slice(0,10)}.helm`;
-  a.click();
-  toast(`Exported ${count} ${count === 1 ? 'entry' : 'entries'} — decrypt with your journal passphrase.`);
-
-  if (JOURNAL_SELECT_MODE) journalToggleSelectMode();
-}
-
-document.getElementById('journal-modal-close').onclick = closeJournalEntryModal;
-document.getElementById('journal-modal-cancel').onclick = closeJournalEntryModal;
-document.getElementById('journal-modal-save').onclick = saveJournalEntryFromModal;
 
 // ── UPCOMING EVENTS ALERT STRIP ───────────────────────────────────────────────
 // Shown on the bookmarks page. Each event is checked against its own
@@ -9506,7 +9051,7 @@ document.getElementById('search-clear').onclick = () => {
 };
 
 document.onkeydown = (e) => {
-  if (e.key === 'Escape') { closeModal(); closeReader(); ['sort-modal','bml-modal'].forEach(id => document.getElementById(id).classList.remove('open')); ['bg-modal','ext-modal','backups-modal','workout-modal-overlay','routine-modal-overlay','journal-modal-overlay'].forEach(id => document.getElementById(id).style.display='none'); }
+  if (e.key === 'Escape') { closeModal(); closeReader(); ['sort-modal','bml-modal'].forEach(id => document.getElementById(id).classList.remove('open')); ['bg-modal','ext-modal','backups-modal','workout-modal-overlay','routine-modal-overlay'].forEach(id => document.getElementById(id).style.display='none'); }
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault();
     document.getElementById('search').focus();
@@ -9539,7 +9084,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'audio', 'musicxplorer', 'logs', 'workout', 'journal', 'memos'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'audio', 'musicxplorer', 'logs', 'workout', 'memos'];
 const _hashTab = location.hash.slice(1);
 const initialTab = VALID_TABS.includes(_hashTab) ? _hashTab : 'dashboard';
 switchTab(initialTab);
@@ -9743,7 +9288,6 @@ function switchTab(tab) {
   show('audio-page',     tab === 'audio');
   show('musicxplorer-page', tab === 'musicxplorer');
   show('workout-page',   tab === 'workout');
-  show('journal-page',   tab === 'journal');
   show('memos-page',     tab === 'memos');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
@@ -9751,14 +9295,13 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', musicxplorer: 'Helm — musicXplorer', logs: 'Helm — Logs', workout: 'Helm — Workout', journal: 'Helm — Journal', memos: 'Helm — Memos' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', musicxplorer: 'Helm — musicXplorer', logs: 'Helm — Logs', workout: 'Helm — Workout', memos: 'Helm — Memos' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
   if (tab === 'news')      renderNews();
   if (tab === 'calendar')  renderCalendarPage();
   if (tab === 'workout')   renderWorkoutPage();
-  if (tab === 'journal')   renderJournal();
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'services')  { renderServicesPage(); startServicesPolling(); }
   else stopServicesPolling();
@@ -11349,7 +10892,7 @@ function stopAudioPolling() {
 
 // ── MUSICXPLORER PAGE ────────────────────────────────────────────────────────
 // A browser for tracks favorited off the SomaFM widget's now-playing card
-// (state.musicXplorer, shared across profiles like News/Journal/Workouts —
+// (state.musicXplorer, shared across profiles like News/Workouts —
 // see the CLAUDE.md profiles section). Selecting one embeds a YouTube video
 // (found via the same yt-dlp-backed /api/audio/search the Audio Grabber's own
 // search-to-pick flow uses — no separate video API needed) and shows an
