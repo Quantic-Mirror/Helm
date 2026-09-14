@@ -15,5 +15,6 @@ Dockerfile*
 docker-compose*
 searxng-settings/
 searxng-data/
+memos-data/
 *.bak
 *.tar.gz

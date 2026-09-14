@@ -1240,6 +1240,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "server_host": SERVER_HOST,
                 "server_port": SERVER_PORT,
                 "searxng_url": os.environ.get("SEARXNG_URL", f"http://{SERVER_HOST}:{SERVER_PORT}"),
+                "memos_url": os.environ.get("MEMOS_URL", f"https://{SERVER_HOST}:9002"),
                 "vault_url": VAULT_BACKEND,
                 "audio_url": AUDIO_BACKEND,
             })

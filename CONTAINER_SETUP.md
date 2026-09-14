@@ -10,17 +10,19 @@ natively on a separate host:
 |---|---|---|
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
+| Memos (`memos` + `memos-proxy`) | **Container (any host)** | Notes app for the Memos tab; iframed cross-origin through `memos-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
-| **Music / Wiki / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes are no longer iframed. |
+| **Music / Wiki / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes were removed and haven't been re-added. |
 
 > **Note:** The old MPD-backed Music tab (playback via ncmpcpp/ttyd), Wiki.js,
-> and Hermes tabs have been removed from Helm. Helm no longer iframes any
-> external app, so there is no `helm_tls_proxy.py` service in the compose
-> stack. For music playback, use a dedicated MPD client (e.g. `rmpc` or
-> `ncmpcpp` on Linux, `Stylophone` on Windows) against the MPD daemon on
-> whichever host it runs on. See [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md)
-> for the vault dual-boot setup.
+> and Hermes tabs have been removed from Helm — for music playback, use a
+> dedicated MPD client (e.g. `rmpc` or `ncmpcpp` on Linux, `Stylophone` on
+> Windows) against the MPD daemon on whichever host it runs on. The Memos tab
+> (added later) does now iframe an external app again, so there is a
+> `helm_tls_proxy.py` service (`memos-proxy`) back in the compose stack —
+> Wiki.js/Hermes just haven't been. See
+> [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
 >
 > This is unrelated to the newer **musicXplorer** tab, which isn't a player at
 > all — it's a browser for tracks favorited off the SomaFM widget (YouTube
