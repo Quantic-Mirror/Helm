@@ -11548,7 +11548,7 @@ function renderMusicxExplorer(favoriteArtist) {
     if (info.error) {
       // Not cached (see fetchMusicxBandInfo), so re-selecting this track/artist
       // later tries again instead of being stuck on this forever.
-      linksEl.innerHTML = '<span class="svc-error">Could not look up links right now (MusicBrainz may be rate-limiting) — select this track again in a moment to retry.</span>';
+      linksEl.innerHTML = `<span class="svc-error">Could not look up links right now (${escHtml(info.errorMessage || 'unknown error')}) — select this track again in a moment to retry.</span>`;
       return;
     }
     const links = [];
@@ -11674,7 +11674,11 @@ async function fetchMusicxBandInfo(artist) {
     MUSICX_BAND_INFO_CACHE[artist] = info;
     return info;
   } catch (e) {
-    return { ...info, error: true };
+    // Surfaced in the UI (see renderMusicxExplorer) rather than swallowed,
+    // so a real failure reason (HTTP status, CORS/network block, timeout)
+    // is visible without needing devtools open.
+    console.error('musicXplorer band-info lookup failed for', artist, e);
+    return { ...info, error: true, errorMessage: e.message };
   }
 }
 
