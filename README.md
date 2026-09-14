@@ -21,6 +21,7 @@ A self-hosted personal dashboard. Bookmarks, YouTube feeds, calendar, news feeds
 - **Calendar** - event scheduler with configurable reminders
 - **Workout tracker** - log sessions and exercises
 - **Audio Grabber** - download audio from a URL via yt-dlp (runs on a separate host, proxied through `/api/audio/*`)
+- **musicXplorer** - favorite a SomaFM now-playing track and get a YouTube embed, official site/YouTube channel/Wikipedia links (via MusicBrainz + Wikidata), and Last.fm-powered related-artist discovery
 - **Backup Pipeline** - observability for external backup jobs; scripts POST status events to `/api/backup-events`, shown as per-stage status lights and a live event feed
 - **Services page** - status of the sibling Docker containers (`helm`, `searxng-core`), with start/stop/restart for the controllable ones
 - **Log viewer** - realtime `docker logs` for the monitored services, filterable per service, error/warning/info levels
@@ -78,7 +79,8 @@ helm/
     ├── helm-backups/       #   rolling snapshots
     ├── backup_events.json  #   backup-pipeline event feed
     ├── cert.pem / key.pem  #   TLS (generate locally; enables HTTPS)
-    └── *_token.txt         #   shared secrets for the vault / audio / backup endpoints
+    ├── *_token.txt         #   shared secrets for the vault / audio / backup endpoints
+    └── lastfm_api_key.txt  #   Last.fm API key for musicXplorer's related-artist lookup (optional)
 ```
 
 > The state dir is `data/` under the container bind-mount, or the directory
@@ -217,6 +219,7 @@ The backend exposes several endpoints alongside serving the static files:
 | `/api/backup-events` | POST | Ingest one event — requires `X-Backup-Token` (see `emit_event.py`) |
 | `/api/vault/*` | GET / POST | Proxied to `vault_server.py` on the vault host (shared-token auth) |
 | `/api/audio/*` | GET / POST | Proxied to `audio_grabber_server.py` on the audio host (shared-token auth) |
+| `/api/musicxplorer/similar?artist=` | GET | Related artists via Last.fm's `artist.getsimilar` (needs `lastfm_api_key.txt`; 503 without one) |
 
 ---
 
