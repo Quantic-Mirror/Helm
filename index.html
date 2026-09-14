@@ -11545,6 +11545,12 @@ function renderMusicxExplorer(favoriteArtist) {
     if (reqId !== MUSICX_EXPLORE_REQ) return; // a newer selection/drill superseded this
     const linksEl = document.getElementById('musicx-links');
     if (!linksEl) return;
+    if (info.error) {
+      // Not cached (see fetchMusicxBandInfo), so re-selecting this track/artist
+      // later tries again instead of being stuck on this forever.
+      linksEl.innerHTML = '<span class="svc-error">Could not look up links right now (MusicBrainz may be rate-limiting) — select this track again in a moment to retry.</span>';
+      return;
+    }
     const links = [];
     if (info.homepage) links.push(`<a class="btn" href="${escHtml(info.homepage)}" target="_blank" rel="noopener">🌐 Official site</a>`);
     if (info.youtube) links.push(`<a class="btn" href="${escHtml(info.youtube)}" target="_blank" rel="noopener">▶ YouTube channel</a>`);
@@ -11625,6 +11631,7 @@ async function fetchMusicxBandInfo(artist) {
       `https://musicbrainz.org/ws/2/artist/?query=${encodeURIComponent(artist)}&fmt=json&limit=1`,
       { signal: AbortSignal.timeout(10000) }
     );
+    if (!searchResp.ok) throw new Error('MusicBrainz search HTTP ' + searchResp.status);
     const searchData = await searchResp.json();
     const mbid = searchData.artists && searchData.artists[0] && searchData.artists[0].id;
     if (mbid) {
@@ -11632,6 +11639,7 @@ async function fetchMusicxBandInfo(artist) {
         `https://musicbrainz.org/ws/2/artist/${mbid}?inc=url-rels&fmt=json`,
         { signal: AbortSignal.timeout(10000) }
       );
+      if (!relResp.ok) throw new Error('MusicBrainz lookup HTTP ' + relResp.status);
       const relData = await relResp.json();
       let wikidataQid = null;
       (relData.relations || []).forEach(rel => {
@@ -11650,12 +11658,24 @@ async function fetchMusicxBandInfo(artist) {
           const wdData = await wdResp.json();
           const title = wdData.entities?.[wikidataQid]?.sitelinks?.enwiki?.title;
           if (title) info.wiki = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_'));
-        } catch (e) { /* wiki link is best-effort */ }
+        } catch (e) { /* wiki link is best-effort — a Wikidata hiccup shouldn't drop the homepage/YouTube links already found */ }
       }
     }
-  } catch (e) { /* homepage/YouTube-channel links are best-effort */ }
-  MUSICX_BAND_INFO_CACHE[artist] = info;
-  return info;
+    // Only cache a lookup that actually completed (found links, or genuinely
+    // has none) -- NOT a network/HTTP failure. MusicBrainz enforces ~1
+    // request/second per IP and this makes 2 sequential calls per artist
+    // with no backoff, so clicking through favorited tracks a few seconds
+    // apart throttles the 2nd+ lookup (mirrors the already-correct
+    // fetchMusicxSimilar just below, which only caches on resp.ok). Caching
+    // a throttled failure as "no links" would strand that artist on a false
+    // negative for the rest of the page session — the only way out used to
+    // be a full reload, which re-selects track[0] and re-triggers the same
+    // problem for every other track.
+    MUSICX_BAND_INFO_CACHE[artist] = info;
+    return info;
+  } catch (e) {
+    return { ...info, error: true };
+  }
 }
 
 function getSortedNewsSources() {
