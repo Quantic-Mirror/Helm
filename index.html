@@ -3645,6 +3645,21 @@ let MUSIC_SECTIONS_EXPANDED = { download: false, jobs: false, files: false, favo
 // collapse/expand survives the next 5s jobs/files poll. 'download' has no
 // item count to auto-follow, so it's pre-seeded here.
 let MUSIC_SECTIONS_TOUCHED = new Set(['download']);
+// Maps each collapsible sidebar section's key to the id of the div its
+// content lives in — 'download' has no item count of its own (see
+// MUSIC_SECTIONS_TOUCHED), the other three double as the exact innerHTML
+// target renderAudioPage()/renderMusicXplorerPage() already write into, so
+// toggling display:none here never fights their re-renders.
+// Moved up from next to updateMusicSectionChrome() further down the file
+// (TDZ — switchTab() can run renderMusicXplorerPage() → this early via the
+// startup hash check when #music is the current URL, and referencing a
+// later const there threw "Cannot access before initialization", which
+// aborted the rest of this top-level script — silently breaking every
+// .onclick wiring after that point, page-wide, not just on the Music tab).
+const MUSIC_SECTION_BODY_IDS = { download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'musicx-list' };
+// Moved up from next to fetchMusicBrainz() further down the file, same TDZ
+// reason — see the comment left at that call site.
+let MUSICX_MB_LAST_CALL = 0;
 
 // Moved up from later in the file — applyTheme() now runs immediately after
 // load() at startup, and if the saved theme is already 'terminal' from a
@@ -10804,12 +10819,10 @@ async function fetchAudioData() {
   }
 }
 
-// Maps each collapsible sidebar section's key (MUSIC_SECTIONS_EXPANDED) to
-// the id of the div its content lives in — 'download' has no item count of
-// its own (see MUSIC_SECTIONS_TOUCHED), the other three double as the exact
-// innerHTML target renderAudioPage()/renderMusicXplorerPage() already write
-// into, so toggling display:none here never fights their re-renders.
-const MUSIC_SECTION_BODY_IDS = { download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'musicx-list' };
+// MUSIC_SECTION_BODY_IDS moved up to the early declarations block (TDZ —
+// switchTab() can reach updateMusicSectionChrome() this early via the
+// startup hash check when #music is the current URL, same as the MUSICX_*
+// state above).
 
 function updateMusicSectionChrome() {
   const counts = { jobs: audioJobs.length, files: audioFiles.length, favorites: (state.musicXplorer || []).length };
@@ -11336,7 +11349,11 @@ async function fetchMusicxSimilar(artist) {
 // from this page through one gate that enforces that minimum spacing, and
 // retries once (honoring Retry-After if sent) instead of surfacing the 503
 // straight to the user.
-let MUSICX_MB_LAST_CALL = 0;
+// MUSICX_MB_LAST_CALL moved up to the early declarations block (TDZ —
+// switchTab() can reach this synchronously via the startup hash check: tab
+// 'music' with an existing favorited track selected renders straight into
+// renderMusicxExplorer() → fetchMusicxBandInfo() → this function, all
+// before any await, so this must already be initialized by then).
 async function fetchMusicBrainz(url, attempt = 0) {
   const minGapMs = 1100;
   const wait = MUSICX_MB_LAST_CALL + minGapMs - Date.now();
