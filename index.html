@@ -2356,6 +2356,22 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   font-size: 13px; font-weight: 600; color: var(--text);
   margin-bottom: 10px;
 }
+.musicx-search-wrap { position: relative; display: flex; align-items: center; }
+#musicx-artist-search {
+  width: 100%;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  font-family: var(--font-body); font-size: 12px;
+  padding: 6px 26px 6px 10px; outline: none;
+  transition: border-color 0.15s;
+}
+#musicx-artist-search:focus { border-color: var(--accent); }
+#musicx-artist-search-clear {
+  position: absolute; right: 6px;
+  background: none; border: none; color: var(--text-dim);
+  cursor: pointer; font-size: 11px; padding: 2px 4px; border-radius: 3px;
+}
+#musicx-artist-search-clear:hover { color: var(--text); background: var(--surface-2); }
 .musicx-list-row {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 6px; border-radius: 8px; cursor: pointer;
@@ -3223,7 +3239,12 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 <div id="musicxplorer-page" style="display:none">
   <div id="musicx-layout">
     <div id="musicx-list-panel">
-      <div class="musicx-panel-title">Favorited Tracks</div>
+      <div class="musicx-panel-title">Find Similar Artists</div>
+      <form id="musicx-artist-search-form" class="musicx-search-wrap">
+        <input type="text" id="musicx-artist-search" placeholder="Artist name…" autocomplete="off" spellcheck="false">
+        <button type="button" id="musicx-artist-search-clear" title="Clear search">✕</button>
+      </form>
+      <div class="musicx-panel-title" style="margin-top:16px">Favorited Tracks</div>
       <div id="musicx-list"></div>
     </div>
     <div id="musicx-detail-panel"></div>
@@ -3594,6 +3615,7 @@ const AUDIO_POLL_MS = 5 * 1000;
 // check (e.g. a bookmarked #musicxplorer URL).
 let MUSICX_SELECTED_ID = null;    // id of the favorited track shown in the detail pane; null = newest
 let MUSICX_EXPLORE_ARTIST = null; // non-null while drilled into a related artist's own explorer panel
+let MUSICX_SEARCH_ARTIST = null;  // non-null while showing the free-text artist search's explorer instead of a favorited track
 const MUSICX_BAND_INFO_CACHE = {};  // artist name → {homepage, youtube, wiki} (each a url or null)
 const MUSICX_SIMILAR_CACHE = {};    // artist name → [{name, match, url}], from Last.fm via the backend
 let MUSICX_EXPLORE_REQ = 0;         // bumped on every explorer render; guards a slow band-info/similar
@@ -9376,6 +9398,11 @@ document.getElementById('btn-audio-batch-download').onclick = () => {
   submitAudioDownload('', '', batchEl.value);
   batchEl.value = '';
 };
+document.getElementById('musicx-artist-search-form').onsubmit = (e) => {
+  e.preventDefault();
+  searchMusicxArtist(document.getElementById('musicx-artist-search').value);
+};
+document.getElementById('musicx-artist-search-clear').onclick = clearMusicxArtistSearch;
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
 document.getElementById('logs-search-clear').onclick = () => {
@@ -10929,6 +10956,26 @@ function getMusicxSelectedEntry() {
 function selectMusicxEntry(id) {
   MUSICX_SELECTED_ID = id;
   MUSICX_EXPLORE_ARTIST = null; // selecting a different track resets any drill-down
+  MUSICX_SEARCH_ARTIST = null;  // ...and any free-text artist search in progress
+  renderMusicXplorerPage();
+}
+
+// Triggered by the "Find Similar Artists" search box — independent of any
+// favorited track. Shows the same explorer panel (links + related artists)
+// as drilling into a related artist, just anchored on the typed name instead
+// of a favorited track's artist, and with no video section since there's no
+// associated track.
+function searchMusicxArtist(artist) {
+  artist = artist.trim();
+  if (!artist) return;
+  MUSICX_SEARCH_ARTIST = artist;
+  MUSICX_EXPLORE_ARTIST = null;
+  renderMusicXplorerPage();
+}
+
+function clearMusicxArtistSearch() {
+  MUSICX_SEARCH_ARTIST = null;
+  MUSICX_EXPLORE_ARTIST = null;
   renderMusicXplorerPage();
 }
 
@@ -10937,7 +10984,10 @@ function renderMusicXplorerPage() {
   const detailEl = document.getElementById('musicx-detail-panel');
   if (!listEl || !detailEl) return;
   const tracks = state.musicXplorer || [];
-  const selected = getMusicxSelectedEntry();
+  const selected = MUSICX_SEARCH_ARTIST ? null : getMusicxSelectedEntry();
+
+  const searchInput = document.getElementById('musicx-artist-search');
+  if (searchInput && document.activeElement !== searchInput) searchInput.value = MUSICX_SEARCH_ARTIST || '';
 
   listEl.innerHTML = tracks.length ? tracks.map(t => `
     <div class="musicx-list-row${selected && t.id === selected.id ? ' active' : ''}" data-musicx-select="${t.id}">
@@ -10959,8 +11009,14 @@ function renderMusicXplorerPage() {
     btn.onclick = (e) => { e.stopPropagation(); removeMusicxEntry(btn.dataset.musicxRemove); };
   });
 
+  if (MUSICX_SEARCH_ARTIST) {
+    detailEl.innerHTML = '<div id="musicx-explorer-wrap"></div>';
+    renderMusicxExplorer(MUSICX_SEARCH_ARTIST);
+    return;
+  }
+
   if (!selected) {
-    detailEl.innerHTML = '<div class="svc-loading">Select a favorited track to explore it.</div>';
+    detailEl.innerHTML = '<div class="svc-loading">Select a favorited track, or search an artist above, to explore it.</div>';
     return;
   }
 
