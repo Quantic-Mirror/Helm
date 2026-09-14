@@ -66,7 +66,7 @@ import urllib.request
 import urllib.error
 from collections import defaultdict
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse, parse_qs, quote, urlencode
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -242,6 +242,68 @@ def proxy_to_audio(method, path_and_query, body_bytes=None):
     msg = json.dumps({"error": f"Could not reach any audio backend "
                                f"({', '.join(AUDIO_BACKENDS)}): {last_reason}"})
     return 502, msg.encode("utf-8"), {"Content-Type": "application/json"}
+
+
+# ── MUSIC EXPLORER (Last.fm similar-artist proxy) ───────────────────────────
+# musicXplorer's "related artists" needs Last.fm's artist.getsimilar, which is
+# the only piece of this feature that needs an API key -- the YouTube embed
+# search reuses the existing /api/audio/* -> audio_grabber_server.py yt-dlp
+# proxy, and the official-site/YouTube-channel/wiki links are resolved
+# straight from the browser against MusicBrainz + Wikidata, both public
+# CORS-enabled JSON APIs (same pattern as the iTunes artwork lookup and the
+# Random Wikipedia widget already do). The Last.fm key can't follow that
+# direct-fetch pattern since it's a secret, so it stays server-side here and
+# is attached to the request -- same shared-secret-file model as
+# vault_token.txt/audio_token.txt, just consumed by this process instead of
+# forwarded to another one.
+LASTFM_API_KEY_FILE = os.path.join(STATE_DIR, "lastfm_api_key.txt")
+LASTFM_API_URL = "http://ws.audioscrobbler.com/2.0/"
+
+
+def _lastfm_api_key():
+    if os.path.exists(LASTFM_API_KEY_FILE):
+        with open(LASTFM_API_KEY_FILE) as f:
+            return f.read().strip()
+    return None
+
+
+def get_lastfm_similar(artist):
+    """Returns (status_code, json_bytes) for GET /api/musicxplorer/similar."""
+    api_key = _lastfm_api_key()
+    if not api_key:
+        return 503, json.dumps({
+            "error": "musicXplorer related-artists not configured (no lastfm_api_key.txt in STATE_DIR)"
+        }).encode("utf-8")
+    params = urlencode({
+        "method": "artist.getsimilar",
+        "artist": artist,
+        "api_key": api_key,
+        "format": "json",
+        "limit": 12,
+        "autocorrect": 1,
+    })
+    try:
+        req = urllib.request.Request(LASTFM_API_URL + "?" + params, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+    except urllib.error.URLError as e:
+        return 502, json.dumps({"error": f"Could not reach Last.fm: {e.reason}"}).encode("utf-8")
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return 502, json.dumps({"error": "Last.fm returned invalid JSON"}).encode("utf-8")
+    if "error" in data:
+        # Last.fm's own error payload, e.g. artist not found -- pass its
+        # message through rather than a generic failure.
+        return 502, json.dumps({"error": data.get("message", "Last.fm error")}).encode("utf-8")
+    artists = (data.get("similarartists") or {}).get("artist") or []
+    similar = [
+        {"name": a.get("name", ""), "match": float(a.get("match", 0) or 0), "url": a.get("url", "")}
+        for a in artists if a.get("name")
+    ]
+    return 200, json.dumps({"similar": similar}).encode("utf-8")
 
 
 # ── SERVER HOST (for generating correct URLs in /api/config) ────────────────────
@@ -1146,6 +1208,20 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_response(status)
             for k, v in headers.items():
                 self.send_header(k, v)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if parsed.path == "/api/musicxplorer/similar":
+            qs = parse_qs(parsed.query)
+            artist = (qs.get("artist", [""])[0] or "").strip()
+            if not artist:
+                self.send_json(400, {"error": "Missing artist parameter"})
+                return
+            status, data = get_lastfm_similar(artist)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)

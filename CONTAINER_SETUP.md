@@ -12,14 +12,20 @@ natively on a separate host:
 | SearXNG | **Container (any host)** | Powers the Search widget |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
-| **Music / Wiki / Hermes tabs** | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes are no longer iframed. |
+| **Music / Wiki / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes are no longer iframed. |
 
-> **Note:** The Music, Wiki, and Hermes tabs have been removed from Helm.
-> Helm no longer iframes any external app, so there is no `helm_tls_proxy.py`
-> service in the compose stack. For music playback, use a dedicated MPD client
-> (e.g. `rmpc` or `ncmpcpp` on Linux, `Stylophone` on Windows) against the MPD
-> daemon on whichever host it runs on. See
-> [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
+> **Note:** The old MPD-backed Music tab (playback via ncmpcpp/ttyd), Wiki.js,
+> and Hermes tabs have been removed from Helm. Helm no longer iframes any
+> external app, so there is no `helm_tls_proxy.py` service in the compose
+> stack. For music playback, use a dedicated MPD client (e.g. `rmpc` or
+> `ncmpcpp` on Linux, `Stylophone` on Windows) against the MPD daemon on
+> whichever host it runs on. See [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md)
+> for the vault dual-boot setup.
+>
+> This is unrelated to the newer **musicXplorer** tab, which isn't a player at
+> all — it's a browser for tracks favorited off the SomaFM widget (YouTube
+> embed + official site/Wikipedia links + Last.fm related artists). See the
+> `lastfm_api_key.txt` step below to enable its related-artist lookup.
 
 ## Tailscale-only deployment pattern
 
@@ -106,6 +112,15 @@ variables — no hardcoding. Adapt this setup to any host.
    # Shared secrets for the vault / audio hosts (only if those are deployed):
    cp /path/to/vault_token.txt data/
    cp /path/to/audio_token.txt data/
+
+   # Last.fm API key for musicXplorer's related-artist lookup (optional —
+   # without it, that one panel shows a "not configured" message and
+   # everything else on the tab still works). Get a free key at
+   # https://www.last.fm/api/account/create — the "shared secret" it also
+   # gives you is only for signed/session calls (scrobbling, user auth);
+   # this feature only calls the public artist.getsimilar method, so just
+   # the API key is needed, not the secret:
+   echo "YOUR_LASTFM_API_KEY" > data/lastfm_api_key.txt
 
    # Self-signed TLS cert for HTTPS on :8443 (optional):
    openssl req -x509 -newkey rsa:2048 -nodes \

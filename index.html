@@ -1371,6 +1371,7 @@ body.profile-work #profile-switcher {
 .somafm-now-artist { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .somafm-now-album { font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .somafm-grab-btn { flex-shrink: 0; padding: 4px 9px; font-size: 12px; }
+.somafm-musicx-btn { flex-shrink: 0; padding: 4px 9px; font-size: 12px; }
 .somafm-history { border-top: 1px solid var(--border); padding-top: 8px; }
 .somafm-history-row {
   display: flex; align-items: center; gap: 8px; padding: 3px 0;
@@ -2333,6 +2334,85 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 }
 #audio-jobs-section { margin-bottom: 24px; }
 
+/* Downloaded-file title doubles as a link to search YouTube for the track
+   (no real video id is retained for a completed download — see
+   buildAudioFileRowHTML) — style it like a link, not the plain span
+   .backup-label otherwise is on the Backup Pipeline page. */
+a.backup-label { text-decoration: none; }
+a.backup-label:hover { color: var(--accent); text-decoration: underline; }
+
+/* ── MUSICXPLORER PAGE ──────────────────────────────────────────────────────── */
+#musicxplorer-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+#musicx-layout { display: flex; align-items: flex-start; gap: 20px; }
+#musicx-list-panel {
+  width: 300px; flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+.musicx-panel-title {
+  font-family: var(--font-display);
+  font-size: 13px; font-weight: 600; color: var(--text);
+  margin-bottom: 10px;
+}
+.musicx-list-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 6px; border-radius: 8px; cursor: pointer;
+}
+.musicx-list-row:hover { background: var(--surface-2); }
+.musicx-list-row.active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+.musicx-list-row-info { flex: 1; min-width: 0; }
+.musicx-list-song {
+  font-size: 12px; color: var(--text); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.musicx-list-artist {
+  font-size: 11px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#musicx-detail-panel { flex: 1; min-width: 0; }
+.musicx-detail-header { margin-bottom: 14px; }
+.musicx-detail-song { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--text); }
+.musicx-detail-artist { font-size: 13px; color: var(--text-muted); }
+.musicx-video-wrap {
+  width: 100%; aspect-ratio: 16 / 9;
+  background: var(--surface-2);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 10px;
+}
+.musicx-video-wrap iframe { width: 100%; height: 100%; border: 0; }
+.musicx-video-actions { margin-bottom: 14px; }
+#musicx-video-picker:not(:empty) { margin-bottom: 14px; }
+.musicx-explorer {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.musicx-explore-back {
+  display: inline-block; font-size: 11px; color: var(--text-dim);
+  text-decoration: none; margin-bottom: 8px;
+}
+.musicx-explore-back:hover { color: var(--accent); }
+.musicx-explorer-artist {
+  font-family: var(--font-display); font-size: 15px; font-weight: 600;
+  color: var(--text); margin-bottom: 10px;
+}
+.musicx-links-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.musicx-similar-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.musicx-similar-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11px; color: var(--text-muted);
+  cursor: pointer;
+}
+.musicx-similar-chip:hover { color: var(--accent); border-color: var(--accent); }
+
 /* Network info card */
 .net-card {
   background: var(--surface);
@@ -2965,6 +3045,7 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
     <a class="tab-btn" href="#services" data-tab="services">🖥 Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
     <a class="tab-btn" href="#audio" data-tab="audio">🎧 Audio Grabber</a>
+    <a class="tab-btn" href="#musicxplorer" data-tab="musicxplorer">🎵 musicXplorer</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
     <a class="tab-btn" href="#journal" data-tab="journal">📔 Journal</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
@@ -3171,6 +3252,17 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   <div id="audio-files-section">
     <div class="audio-section-title">Files</div>
     <div id="audio-files"></div>
+  </div>
+</div>
+
+<!-- MUSICXPLORER PAGE -->
+<div id="musicxplorer-page" style="display:none">
+  <div id="musicx-layout">
+    <div id="musicx-list-panel">
+      <div class="musicx-panel-title">Favorited Tracks</div>
+      <div id="musicx-list"></div>
+    </div>
+    <div id="musicx-detail-panel"></div>
   </div>
 </div>
 
@@ -3563,6 +3655,16 @@ let audioFiles = [];
 let audioSearchResults = [];
 let audioPollTimer = null;
 const AUDIO_POLL_MS = 5 * 1000;
+// Declared here (not near renderMusicXplorerPage() itself, further down the
+// file) for the same TDZ reason as JOURNAL_KEY/the workout view-state above —
+// switchTab() can run renderMusicXplorerPage() early via the startup hash
+// check (e.g. a bookmarked #musicxplorer URL).
+let MUSICX_SELECTED_ID = null;    // id of the favorited track shown in the detail pane; null = newest
+let MUSICX_EXPLORE_ARTIST = null; // non-null while drilled into a related artist's own explorer panel
+const MUSICX_BAND_INFO_CACHE = {};  // artist name → {homepage, youtube, wiki} (each a url or null)
+const MUSICX_SIMILAR_CACHE = {};    // artist name → [{name, match, url}], from Last.fm via the backend
+let MUSICX_EXPLORE_REQ = 0;         // bumped on every explorer render; guards a slow band-info/similar
+                                     // fetch from overwriting a newer selection/drill's DOM
 
 // Moved up from later in the file — applyTheme() now runs immediately after
 // load() at startup, and if the saved theme is already 'terminal' from a
@@ -3752,6 +3854,7 @@ async function initSync() {
       if (!state.newsSources) state.newsSources = [];
       if (!state.workouts) state.workouts = [];
       if (!state.workoutRoutines) state.workoutRoutines = [];
+      if (!state.musicXplorer) state.musicXplorer = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       // Reset the last-pulled snapshot so mid-session merge logic has a
       // fresh baseline from this startup, not from a stale previous session.
@@ -3874,6 +3977,7 @@ async function pollForRemoteChanges() {
       if (!state.newsSources) state.newsSources = [];
       if (!state.workouts) state.workouts = [];
       if (!state.workoutRoutines) state.workoutRoutines = [];
+      if (!state.musicXplorer) state.musicXplorer = [];
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       afterStateSwap(); // silent — no toast, no dialog; re-hydrates active profile + re-renders
@@ -3926,6 +4030,7 @@ function load() {
   }
   if (!state.workouts) state.workouts = [];
   if (!state.workoutRoutines) state.workoutRoutines = [];
+  if (!state.musicXplorer) state.musicXplorer = [];
   if (!state.settings.reminderDays && state.settings.reminderDays !== 0) state.settings.reminderDays = 7;
   // Terminal widget was removed as a feature — drop any leftover instances
   if (state.widgets) state.widgets = state.widgets.filter(w => w.type !== 'terminal');
@@ -8637,6 +8742,12 @@ function renderSomaFMBody(widgetId, tracks, station) {
     <button class="${cls}" data-somafm-grab title="Send &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to Audio Grabber"
       data-artist="${escHtml(t.artist)}" data-song="${escHtml(t.song)}">⬇</button>`;
 
+  // Only offered on the currently-playing track (not history rows) — see
+  // addToMusicXplorer() in the MUSICXPLORER PAGE section.
+  const musicxBtn = (t) => `
+    <button class="btn somafm-musicx-btn" data-somafm-musicx title="Add &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to musicXplorer"
+      data-artist="${escHtml(t.artist)}" data-song="${escHtml(t.song)}" data-album="${escHtml(t.album || '')}">⭐</button>`;
+
   // SOMAFM_AUDIO is a single shared <audio> element (only one stream can
   // play in a browser tab at once), so "is playing" is only true for the
   // one widget/station SOMAFM_PLAYING_STATION currently points at — every
@@ -8659,6 +8770,7 @@ function renderSomaFMBody(widgetId, tracks, station) {
         ${now.album ? `<div class="somafm-now-album">${escHtml(now.album)}</div>` : ''}
       </div>
       ${grabBtn(now, 'btn somafm-grab-btn')}
+      ${musicxBtn(now)}
     </div>
     ${history.length ? `
       <div class="somafm-history">
@@ -8679,6 +8791,9 @@ function renderSomaFMBody(widgetId, tracks, station) {
 
   body.querySelectorAll('[data-somafm-grab]').forEach(btn => {
     btn.onclick = () => submitAudioDownload(btn.dataset.artist, btn.dataset.song, '');
+  });
+  body.querySelectorAll('[data-somafm-musicx]').forEach(btn => {
+    btn.onclick = () => addToMusicXplorer(btn.dataset.artist, btn.dataset.song, btn.dataset.album);
   });
   body.querySelector('[data-somafm-playtoggle]').onclick = (e) => toggleSomaFMPlayback(e.currentTarget.dataset.somafmPlaytoggle);
   loadSomaFMRadioStatus(widgetId);
@@ -9392,7 +9507,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'audio', 'logs', 'workout', 'journal'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'audio', 'musicxplorer', 'logs', 'workout', 'journal'];
 const _hashTab = location.hash.slice(1);
 const initialTab = VALID_TABS.includes(_hashTab) ? _hashTab : 'dashboard';
 switchTab(initialTab);
@@ -9592,6 +9707,7 @@ function switchTab(tab) {
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
   show('audio-page',     tab === 'audio');
+  show('musicxplorer-page', tab === 'musicxplorer');
   show('workout-page',   tab === 'workout');
   show('journal-page',   tab === 'journal');
   show('logs-page',      tab === 'logs');
@@ -9600,7 +9716,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', logs: 'Helm — Logs', workout: 'Helm — Workout', journal: 'Helm — Journal' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', audio: 'Helm — Audio Grabber', musicxplorer: 'Helm — musicXplorer', logs: 'Helm — Logs', workout: 'Helm — Workout', journal: 'Helm — Journal' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -9615,6 +9731,7 @@ function switchTab(tab) {
   else stopBackupsPolling();
   if (tab === 'audio')     { fetchAudioData(); startAudioPolling(); }
   else stopAudioPolling();
+  if (tab === 'musicxplorer') renderMusicXplorerPage();
   if (tab === 'logs')      {
     fetchLogs(); startLogsPolling();
     // Populate the service filter from /api/services if we haven't already
@@ -11062,10 +11179,16 @@ function buildAudioFileRowHTML(f) {
   const label = date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const size = f.size > 1024 * 1024 ? (f.size / (1024 * 1024)).toFixed(1) + ' MB' : (f.size / 1024).toFixed(1) + ' KB';
   const encoded = encodeURIComponent(f.filename);
+  // yt-dlp only reports the final on-disk path after extraction (see
+  // _run_audio_download in audio_grabber_server.py), not the source video id,
+  // so there's no real video to link straight to — this links to a YouTube
+  // search for the title instead. Best-effort, but needs no backend change.
+  const ytSearchUrl = 'https://www.youtube.com/results?search_query=' +
+    encodeURIComponent(f.filename.replace(/\.[^.]+$/, ''));
   return `
     <div class="backup-row">
       <div class="backup-info">
-        <span class="backup-label">${escHtml(f.filename)}</span>
+        <a class="backup-label" href="${ytSearchUrl}" target="_blank" rel="noopener" title="Search YouTube for this track">${escHtml(f.filename)}</a>
         <span class="backup-size">${escHtml(label)} · ${escHtml(size)}</span>
       </div>
       <div class="backup-actions">
@@ -11187,6 +11310,309 @@ function startAudioPolling() {
 function stopAudioPolling() {
   clearInterval(audioPollTimer);
   audioPollTimer = null;
+}
+
+// ── MUSICXPLORER PAGE ────────────────────────────────────────────────────────
+// A browser for tracks favorited off the SomaFM widget's now-playing card
+// (state.musicXplorer, shared across profiles like News/Journal/Workouts —
+// see the CLAUDE.md profiles section). Selecting one embeds a YouTube video
+// (found via the same yt-dlp-backed /api/audio/search the Audio Grabber's own
+// search-to-pick flow uses — no separate video API needed) and shows an
+// "explorer" panel for that track's artist: official site / YouTube channel /
+// Wikipedia page resolved from MusicBrainz + Wikidata (public, CORS-enabled,
+// no key needed — same direct-fetch pattern as the iTunes artwork and Random
+// Wikipedia widgets), plus Last.fm-powered related artists proxied through
+// helm_server.py (GET /api/musicxplorer/similar) so the Last.fm API key never
+// reaches the browser. Clicking a related artist drills the explorer into
+// that artist's own links/related-artists without disturbing the favorited
+// track's own video — MUSICX_EXPLORE_ARTIST tracks that drill state.
+
+function addToMusicXplorer(artist, song, album) {
+  if (!state.musicXplorer) state.musicXplorer = [];
+  const entry = { id: uid(), artist, song, album: album || '', videoId: null, addedAt: Date.now() };
+  state.musicXplorer.unshift(entry);
+  save();
+  toast(`Added "${artist} — ${song}" to musicXplorer`);
+  if (currentTab === 'musicxplorer') renderMusicXplorerPage();
+}
+
+function removeMusicxEntry(id) {
+  state.musicXplorer = (state.musicXplorer || []).filter(e => e.id !== id);
+  if (MUSICX_SELECTED_ID === id) MUSICX_SELECTED_ID = null;
+  save();
+  renderMusicXplorerPage();
+}
+
+function getMusicxSelectedEntry() {
+  const list = state.musicXplorer || [];
+  return list.find(e => e.id === MUSICX_SELECTED_ID) || list[0] || null;
+}
+
+function selectMusicxEntry(id) {
+  MUSICX_SELECTED_ID = id;
+  MUSICX_EXPLORE_ARTIST = null; // selecting a different track resets any drill-down
+  renderMusicXplorerPage();
+}
+
+function renderMusicXplorerPage() {
+  const listEl = document.getElementById('musicx-list');
+  const detailEl = document.getElementById('musicx-detail-panel');
+  if (!listEl || !detailEl) return;
+  const tracks = state.musicXplorer || [];
+  const selected = getMusicxSelectedEntry();
+
+  listEl.innerHTML = tracks.length ? tracks.map(t => `
+    <div class="musicx-list-row${selected && t.id === selected.id ? ' active' : ''}" data-musicx-select="${t.id}">
+      <div class="musicx-list-row-info">
+        <div class="musicx-list-song">${escHtml(t.song)}</div>
+        <div class="musicx-list-artist">${escHtml(t.artist)}</div>
+      </div>
+      <button class="icon-btn danger" data-musicx-remove="${t.id}" title="Remove">✕</button>
+    </div>
+  `).join('') : '<div class="svc-loading">No favorited tracks yet — use the ⭐ button on the SomaFM widget\'s now-playing track.</div>';
+
+  listEl.querySelectorAll('[data-musicx-select]').forEach(row => {
+    row.onclick = (e) => {
+      if (e.target.closest('[data-musicx-remove]')) return;
+      selectMusicxEntry(row.dataset.musicxSelect);
+    };
+  });
+  listEl.querySelectorAll('[data-musicx-remove]').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); removeMusicxEntry(btn.dataset.musicxRemove); };
+  });
+
+  if (!selected) {
+    detailEl.innerHTML = '<div class="svc-loading">Select a favorited track to explore it.</div>';
+    return;
+  }
+
+  detailEl.innerHTML = `
+    <div class="musicx-detail-header">
+      <div class="musicx-detail-song">${escHtml(selected.song)}</div>
+      <div class="musicx-detail-artist">${escHtml(selected.artist)}</div>
+    </div>
+    <div class="musicx-video-wrap" id="musicx-video-${selected.id}"></div>
+    <div class="musicx-video-actions">
+      <button class="btn" id="musicx-repick-btn">🔍 Pick a different video</button>
+    </div>
+    <div id="musicx-video-picker"></div>
+    <div id="musicx-explorer-wrap"></div>
+  `;
+  document.getElementById('musicx-repick-btn').onclick = () => openMusicxVideoPicker(selected);
+
+  renderMusicxVideo(selected);
+  renderMusicxExplorer(selected.artist);
+}
+
+function renderMusicxVideo(entry) {
+  const wrap = document.getElementById('musicx-video-' + entry.id);
+  if (!wrap) return;
+  if (entry.videoId) {
+    wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(entry.videoId)}" title="${escHtml(entry.song)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    return;
+  }
+  wrap.innerHTML = '<div class="svc-loading">Finding a video…</div>';
+  searchMusicxVideo(`${entry.artist} ${entry.song}`).then(results => {
+    if (!document.getElementById('musicx-video-' + entry.id)) return; // re-rendered/removed since
+    const top = results[0];
+    if (!top) { wrap.innerHTML = '<div class="svc-error">No video found — try picking one manually.</div>'; return; }
+    entry.videoId = top.id;
+    save();
+    renderMusicxVideo(entry);
+  }).catch(e => {
+    wrap.innerHTML = `<div class="svc-error">Could not search for a video: ${escHtml(e.message)}</div>`;
+  });
+}
+
+// Shared by the video embed search, the "pick a different video" flow, and
+// "add a track by this artist" in the explorer — all three just need a
+// yt-dlp search result list, same as searchAudioMatches() on the Audio
+// Grabber page, but without touching that page's own audioSearchResults state.
+async function searchMusicxVideo(query) {
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) throw new Error('Local backend not reachable');
+  const resp = await fetch('/api/audio/search?q=' + encodeURIComponent(query), { signal: AbortSignal.timeout(30000) });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+  return data.results || [];
+}
+
+function openMusicxVideoPicker(entry) {
+  const el = document.getElementById('musicx-video-picker');
+  if (!el) return;
+  el.innerHTML = '<div class="svc-loading">Searching…</div>';
+  searchMusicxVideo(`${entry.artist} ${entry.song}`).then(results => {
+    if (!document.getElementById('musicx-video-picker')) return;
+    el.innerHTML = results.length
+      ? `<div class="bp-events-list">${results.map(r => `
+          <div class="bp-event-row">
+            <span class="bp-event-name">${escHtml(r.title)}</span>
+            <span class="bp-event-message">${escHtml(r.uploader || '')}${r.duration ? ' · ' + escHtml(formatAudioDuration(r.duration)) : ''}</span>
+            <button class="btn" data-musicx-pick="${escHtml(r.id)}">Use this</button>
+          </div>`).join('')}</div>`
+      : '<div class="svc-loading">No results.</div>';
+    el.querySelectorAll('[data-musicx-pick]').forEach(btn => {
+      btn.onclick = () => {
+        entry.videoId = btn.dataset.musicxPick;
+        save();
+        el.innerHTML = '';
+        if (getMusicxSelectedEntry()?.id === entry.id) renderMusicxVideo(entry);
+      };
+    });
+  }).catch(e => { el.innerHTML = `<div class="svc-error">Search failed: ${escHtml(e.message)}</div>`; });
+}
+
+function renderMusicxExplorer(favoriteArtist) {
+  const wrap = document.getElementById('musicx-explorer-wrap');
+  if (!wrap) return;
+  const artist = MUSICX_EXPLORE_ARTIST || favoriteArtist;
+  const reqId = ++MUSICX_EXPLORE_REQ;
+  const drilledIn = !!MUSICX_EXPLORE_ARTIST;
+
+  wrap.innerHTML = `
+    <div class="musicx-explorer">
+      ${drilledIn ? `<a href="#" id="musicx-explore-back" class="musicx-explore-back">← Back to ${escHtml(favoriteArtist)}</a>` : ''}
+      <div class="musicx-explorer-artist">${escHtml(artist)}</div>
+      <div class="musicx-links-row" id="musicx-links">
+        <span class="svc-loading">Looking up official links…</span>
+      </div>
+      ${drilledIn ? `
+        <div style="margin-top:12px">
+          <button class="btn" id="musicx-add-explored">+ Add a track by ${escHtml(artist)}</button>
+          <div id="musicx-explore-add-picker"></div>
+        </div>
+      ` : ''}
+      <div class="musicx-panel-title" style="margin-top:16px">Related Artists</div>
+      <div class="musicx-similar-list" id="musicx-similar">
+        <span class="svc-loading">Loading…</span>
+      </div>
+    </div>
+  `;
+
+  if (drilledIn) {
+    document.getElementById('musicx-explore-back').onclick = (e) => {
+      e.preventDefault();
+      MUSICX_EXPLORE_ARTIST = null;
+      renderMusicxExplorer(favoriteArtist);
+    };
+    document.getElementById('musicx-add-explored').onclick = () => openMusicxAddByArtist(artist);
+  }
+
+  fetchMusicxBandInfo(artist).then(info => {
+    if (reqId !== MUSICX_EXPLORE_REQ) return; // a newer selection/drill superseded this
+    const linksEl = document.getElementById('musicx-links');
+    if (!linksEl) return;
+    const links = [];
+    if (info.homepage) links.push(`<a class="btn" href="${escHtml(info.homepage)}" target="_blank" rel="noopener">🌐 Official site</a>`);
+    if (info.youtube) links.push(`<a class="btn" href="${escHtml(info.youtube)}" target="_blank" rel="noopener">▶ YouTube channel</a>`);
+    if (info.wiki) links.push(`<a class="btn" href="${escHtml(info.wiki)}" target="_blank" rel="noopener">📖 Wikipedia</a>`);
+    linksEl.innerHTML = links.length ? links.join('') : '<span class="svc-loading">No official links found.</span>';
+  });
+
+  fetchMusicxSimilar(artist).then(list => {
+    if (reqId !== MUSICX_EXPLORE_REQ) return;
+    const simEl = document.getElementById('musicx-similar');
+    if (!simEl) return;
+    simEl.innerHTML = list.length
+      ? list.map(a => `<span class="musicx-similar-chip" data-musicx-drill="${escHtml(a.name)}">${escHtml(a.name)}</span>`).join('')
+      : '<span class="svc-loading">No related artists found.</span>';
+    simEl.querySelectorAll('[data-musicx-drill]').forEach(chip => {
+      chip.onclick = () => { MUSICX_EXPLORE_ARTIST = chip.dataset.musicxDrill; renderMusicxExplorer(favoriteArtist); };
+    });
+  }).catch(e => {
+    if (reqId !== MUSICX_EXPLORE_REQ) return;
+    const simEl = document.getElementById('musicx-similar');
+    if (simEl) simEl.innerHTML = `<span class="svc-error">${escHtml(e.message)}</span>`;
+  });
+}
+
+function openMusicxAddByArtist(artist) {
+  const el = document.getElementById('musicx-explore-add-picker');
+  if (!el) return;
+  el.innerHTML = '<div class="svc-loading">Searching…</div>';
+  searchMusicxVideo(artist).then(results => {
+    if (!document.getElementById('musicx-explore-add-picker')) return;
+    el.innerHTML = results.length
+      ? `<div class="bp-events-list">${results.map(r => `
+          <div class="bp-event-row">
+            <span class="bp-event-name">${escHtml(r.title)}</span>
+            <span class="bp-event-message">${escHtml(r.uploader || '')}${r.duration ? ' · ' + escHtml(formatAudioDuration(r.duration)) : ''}</span>
+            <button class="btn" data-musicx-add-pick="${escHtml(r.id)}" data-title="${escHtml(r.title)}">Add</button>
+          </div>`).join('')}</div>`
+      : '<div class="svc-loading">No results.</div>';
+    el.querySelectorAll('[data-musicx-add-pick]').forEach(btn => {
+      btn.onclick = () => {
+        state.musicXplorer.unshift({
+          id: uid(), artist, song: btn.dataset.title, album: '',
+          videoId: btn.dataset.musicxAddPick, addedAt: Date.now(),
+        });
+        save();
+        toast(`Added "${artist} — ${btn.dataset.title}" to musicXplorer`);
+        el.innerHTML = '';
+        renderMusicXplorerPage(); // refresh the favorites list in the left panel
+      };
+    });
+  }).catch(e => { el.innerHTML = `<div class="svc-error">${escHtml(e.message)}</div>`; });
+}
+
+async function fetchMusicxSimilar(artist) {
+  if (artist in MUSICX_SIMILAR_CACHE) return MUSICX_SIMILAR_CACHE[artist];
+  const hasBackend = await checkLocalBackend();
+  if (!hasBackend) throw new Error('Local backend not reachable');
+  const resp = await fetch('/api/musicxplorer/similar?artist=' + encodeURIComponent(artist), { signal: AbortSignal.timeout(15000) });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+  MUSICX_SIMILAR_CACHE[artist] = data.similar || [];
+  return MUSICX_SIMILAR_CACHE[artist];
+}
+
+// MusicBrainz + Wikidata are public, CORS-enabled JSON APIs — called directly
+// from the browser with no backend involved, same as the iTunes artwork
+// lookup and Random Wikipedia widget elsewhere in this file. MusicBrainz's
+// usage etiquette asks for a descriptive User-Agent, which a browser fetch
+// can't set (the browser owns that header) — no workaround short of proxying
+// through the backend, and this is low-volume, on-demand, user-triggered
+// traffic rather than a crawler. Always resolves (never rejects) — a failed
+// lookup just means the links row comes back empty, not an error state.
+async function fetchMusicxBandInfo(artist) {
+  if (artist in MUSICX_BAND_INFO_CACHE) return MUSICX_BAND_INFO_CACHE[artist];
+  const info = { homepage: null, youtube: null, wiki: null };
+  try {
+    const searchResp = await fetch(
+      `https://musicbrainz.org/ws/2/artist/?query=${encodeURIComponent(artist)}&fmt=json&limit=1`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    const searchData = await searchResp.json();
+    const mbid = searchData.artists && searchData.artists[0] && searchData.artists[0].id;
+    if (mbid) {
+      const relResp = await fetch(
+        `https://musicbrainz.org/ws/2/artist/${mbid}?inc=url-rels&fmt=json`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      const relData = await relResp.json();
+      let wikidataQid = null;
+      (relData.relations || []).forEach(rel => {
+        const url = rel.url && rel.url.resource;
+        if (!url) return;
+        if (rel.type === 'official homepage' && !info.homepage) info.homepage = url;
+        else if (rel.type === 'youtube' && !info.youtube) info.youtube = url;
+        else if (rel.type === 'wikidata' && !wikidataQid) wikidataQid = url.split('/').pop();
+      });
+      if (wikidataQid) {
+        try {
+          const wdResp = await fetch(
+            `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${wikidataQid}&props=sitelinks&sitefilter=enwiki&format=json&origin=*`,
+            { signal: AbortSignal.timeout(10000) }
+          );
+          const wdData = await wdResp.json();
+          const title = wdData.entities?.[wikidataQid]?.sitelinks?.enwiki?.title;
+          if (title) info.wiki = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_'));
+        } catch (e) { /* wiki link is best-effort */ }
+      }
+    }
+  } catch (e) { /* homepage/YouTube-channel links are best-effort */ }
+  MUSICX_BAND_INFO_CACHE[artist] = info;
+  return info;
 }
 
 function getSortedNewsSources() {
