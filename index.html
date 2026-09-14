@@ -11414,7 +11414,15 @@ function renderMusicxVideo(entry) {
   const wrap = document.getElementById('musicx-video-' + entry.id);
   if (!wrap) return;
   if (entry.videoId) {
-    wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(entry.videoId)}" title="${escHtml(entry.song)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    // referrerpolicy is required, not cosmetic: YouTube's embedded player
+    // validates the embedding page's identity via the HTTP Referer header
+    // (see https://developers.google.com/youtube/iframe_api_reference) and
+    // fails with "error 153 / embedder.identity.missing.referrer" without
+    // it. Firefox/Gecko's cross-site referrer-trimming strips the referrer
+    // to nothing on a third-party iframe that doesn't explicitly opt in via
+    // this attribute — Chrome's laxer defaults mask the same gap, which is
+    // why this only shows up on stricter/privacy-hardened browsers.
+    wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(entry.videoId)}" title="${escHtml(entry.song)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
     return;
   }
   wrap.innerHTML = '<div class="svc-loading">Finding a video…</div>';
