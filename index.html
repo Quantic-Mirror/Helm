@@ -1834,7 +1834,11 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   outline: none;
 }
 
-/* Rolling backups modal */
+/* Rolling backups modal (also reused by the Music page's Files list, see
+   buildAudioFileRowHTML) — .backup-info needs flex:1 + min-width:0, not just
+   flex-shrink:0 on .backup-actions, or a long filename/track title grows
+   .backup-info past the row's width and shoves the download/delete buttons
+   out past the container instead of the label truncating. */
 .backup-row {
   display: flex;
   align-items: center;
@@ -1844,8 +1848,8 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   border-bottom: 1px solid var(--border);
 }
 .backup-row:last-child { border-bottom: none; }
-.backup-info { display: flex; flex-direction: column; gap: 2px; }
-.backup-label { font-size: 12px; color: var(--text); font-weight: 500; }
+.backup-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.backup-label { font-size: 12px; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .backup-size { font-size: 10px; color: var(--text-dim); }
 .backup-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .backup-dl-btn {
@@ -2331,25 +2335,37 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 a.backup-label { text-decoration: none; }
 a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 
-/* Collapsible sidebar sections — Download / Downloads / Files / Favorites.
-   See updateMusicSectionChrome(): a section auto-collapses to just its
-   header when its list is empty and auto-expands once it has rows, so a
-   handful of files/favorites doesn't turn this into a wall of open lists. */
-.music-section { margin-top: 14px; }
-.music-section-toggle {
-  display: flex; align-items: center; gap: 6px;
-  width: 100%; background: none; border: none; padding: 0;
-  font-family: var(--font-display);
-  font-size: 13px; font-weight: 600; color: var(--text);
-  cursor: pointer; text-align: left;
+/* Sidebar tabs — Download / Downloads / Files / Favorites. Only one panel is
+   visible at a time (see updateMusicSectionChrome()), so each gets the full
+   sidebar width instead of being squeezed into a stack of collapsed
+   accordion sections — a long track title in Files no longer has to share
+   its row's width with three other sections' headers above and below it.
+   Visual style mirrors #news-view-toggle/.news-view-btn elsewhere in this
+   file: a pill strip with an active segment. */
+.music-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 3px;
+  margin: 14px 0 12px;
 }
-.music-section-caret { color: var(--text-dim); font-size: 10px; width: 8px; flex-shrink: 0; }
-.music-section-count { color: var(--text-dim); font-weight: 400; }
-.music-section-body { margin-top: 10px; }
+.music-tab-btn {
+  display: flex; align-items: baseline; justify-content: center; gap: 3px;
+  padding: 6px 4px;
+  border-radius: 6px; border: none; background: none;
+  font-family: var(--font-body); font-size: 11px; font-weight: 500;
+  color: var(--text-muted); cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.music-tab-btn:hover { color: var(--text); }
+.music-tab-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.music-tab-count { color: var(--text-dim); font-weight: 400; font-size: 10px; }
+.music-tab-panel { display: none; }
+.music-tab-panel.active { display: block; }
 
 #music-layout { display: flex; align-items: flex-start; gap: 20px; }
 #music-sidebar {
-  width: 300px; flex-shrink: 0;
+  width: 340px; flex-shrink: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -2396,7 +2412,11 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 .musicx-detail-song { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--text); }
 .musicx-detail-artist { font-size: 13px; color: var(--text-muted); }
 .musicx-video-wrap {
-  width: 100%; aspect-ratio: 16 / 9;
+  /* Half the detail panel's width instead of filling it — the embedded
+     player doesn't need to run at full/native size to be watchable, and a
+     smaller player leaves more room for the explorer content below it. */
+  width: 50%; min-width: 280px; max-width: 480px;
+  aspect-ratio: 16 / 9;
   background: var(--surface-2);
   border-radius: 12px;
   overflow: hidden;
@@ -3186,14 +3206,15 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 </div>
 
 <!-- MUSIC PAGE (Audio Grabber + musicXplorer merged) — a single sidebar with
-     four collapsible sections (Download / Downloads-in-progress / Files /
-     Favorites) sharing one detail/explorer pane on the right. Each list
-     section auto-collapses to a one-line header when empty and auto-expands
-     once it has rows, so a handful of downloaded files and favorites don't
-     turn the sidebar into a wall of open lists — see MUSIC_SECTIONS_EXPANDED
-     and updateMusicSectionChrome(). A section the user manually
-     toggles stops auto-following its count (MUSIC_SECTIONS_TOUCHED) so an
-     intentional collapse survives the next 5s jobs/files poll. -->
+     four tabbed panels (Download / Downloads-in-progress / Files /
+     Favorites) sharing one detail/explorer pane on the right. Only one
+     panel shows at a time, so each gets the sidebar's full width rather
+     than being squeezed into a stack of collapsed accordion headers — see
+     MUSIC_ACTIVE_TAB and updateMusicSectionChrome(). The Downloads tab
+     auto-activates the first time there's something to show there (a
+     queued job, a fetch error), but only until the user manually picks a
+     tab (MUSIC_TAB_TOUCHED) — after that, an in-progress download no
+     longer yanks them away from whatever tab they're looking at. -->
 <div id="music-page" style="display:none">
   <div id="music-topbar">
     <span id="audio-last-updated"></span>
@@ -3207,66 +3228,51 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
         <button type="button" id="musicx-artist-search-clear" title="Clear search">✕</button>
       </form>
 
-      <div class="music-section">
-        <button class="music-section-toggle" data-music-section="download">
-          <span class="music-section-caret">▸</span> + Download a track
-        </button>
-        <div class="music-section-body" id="music-download-body" style="display:none">
-          <div class="audio-form-row">
-            <div class="field">
-              <label for="audio-artist-input">Artist</label>
-              <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
-            </div>
-            <div class="field">
-              <label for="audio-song-input">Song</label>
-              <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
-            </div>
-            <div class="field audio-field-narrow">
-              <label for="audio-format-select">Format</label>
-              <select id="audio-format-select">
-                <option value="mp3">mp3</option>
-                <option value="m4a">m4a</option>
-                <option value="flac">flac</option>
-                <option value="wav">wav</option>
-                <option value="opus">opus</option>
-              </select>
-            </div>
-            <div class="field audio-field-narrow">
-              <label for="audio-quality-input">Quality</label>
-              <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
-            </div>
-            <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
-            <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
+      <div class="music-tabs">
+        <button class="music-tab-btn" data-music-section="download">Download</button>
+        <button class="music-tab-btn" data-music-section="jobs">Downloads<span class="music-tab-count"></span></button>
+        <button class="music-tab-btn" data-music-section="files">Files<span class="music-tab-count"></span></button>
+        <button class="music-tab-btn" data-music-section="favorites">Favorites<span class="music-tab-count"></span></button>
+      </div>
+
+      <div class="music-tab-panel" id="music-download-body">
+        <div class="audio-form-row">
+          <div class="field">
+            <label for="audio-artist-input">Artist</label>
+            <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
           </div>
-          <div id="audio-search-results"></div>
-          <details id="audio-batch-details">
-            <summary>Batch (multiple tracks)</summary>
-            <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
-            <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
-          </details>
+          <div class="field">
+            <label for="audio-song-input">Song</label>
+            <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
+          </div>
+          <div class="field audio-field-narrow">
+            <label for="audio-format-select">Format</label>
+            <select id="audio-format-select">
+              <option value="mp3">mp3</option>
+              <option value="m4a">m4a</option>
+              <option value="flac">flac</option>
+              <option value="wav">wav</option>
+              <option value="opus">opus</option>
+            </select>
+          </div>
+          <div class="field audio-field-narrow">
+            <label for="audio-quality-input">Quality</label>
+            <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
+          </div>
+          <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
+          <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
         </div>
+        <div id="audio-search-results"></div>
+        <details id="audio-batch-details">
+          <summary>Batch (multiple tracks)</summary>
+          <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
+          <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
+        </details>
       </div>
 
-      <div class="music-section">
-        <button class="music-section-toggle" data-music-section="jobs">
-          <span class="music-section-caret">▸</span> Downloads <span class="music-section-count"></span>
-        </button>
-        <div class="music-section-body" id="audio-jobs" style="display:none"></div>
-      </div>
-
-      <div class="music-section">
-        <button class="music-section-toggle" data-music-section="files">
-          <span class="music-section-caret">▸</span> Files <span class="music-section-count"></span>
-        </button>
-        <div class="music-section-body" id="audio-files" style="display:none"></div>
-      </div>
-
-      <div class="music-section">
-        <button class="music-section-toggle" data-music-section="favorites">
-          <span class="music-section-caret">▸</span> Favorites <span class="music-section-count"></span>
-        </button>
-        <div class="music-section-body" id="musicx-list" style="display:none"></div>
-      </div>
+      <div class="music-tab-panel" id="audio-jobs"></div>
+      <div class="music-tab-panel" id="audio-files"></div>
+      <div class="music-tab-panel" id="musicx-list"></div>
     </div>
     <div id="musicx-detail-panel"></div>
   </div>
@@ -3641,19 +3647,17 @@ const MUSICX_BAND_INFO_CACHE = {};  // artist name → {homepage, youtube, wiki}
 const MUSICX_SIMILAR_CACHE = {};    // artist name → [{name, match, url}], from Last.fm via the backend
 let MUSICX_EXPLORE_REQ = 0;         // bumped on every explorer render; guards a slow band-info/similar
                                      // fetch from overwriting a newer selection/drill's DOM
-// Music page's collapsible sidebar sections (Download / Downloads / Files /
-// Favorites) — same TDZ reason as the MUSICX_* state above.
-let MUSIC_SECTIONS_EXPANDED = { download: false, jobs: false, files: false, favorites: false };
-// Sections the user has manually toggled this session — once touched, a
-// section stops auto-following its item count so an intentional
-// collapse/expand survives the next 5s jobs/files poll. 'download' has no
-// item count to auto-follow, so it's pre-seeded here.
-let MUSIC_SECTIONS_TOUCHED = new Set(['download']);
-// Maps each collapsible sidebar section's key to the id of the div its
-// content lives in — 'download' has no item count of its own (see
-// MUSIC_SECTIONS_TOUCHED), the other three double as the exact innerHTML
-// target renderAudioPage()/renderMusicXplorerPage() already write into, so
-// toggling display:none here never fights their re-renders.
+// Music page's sidebar tabs (Download / Downloads / Files / Favorites) —
+// same TDZ reason as the MUSICX_* state above.
+let MUSIC_ACTIVE_TAB = 'favorites'; // which sidebar tab is currently shown
+// Set once the user manually clicks a tab — after that, an in-progress
+// download no longer auto-switches them to the Downloads tab (see
+// updateMusicSectionChrome()).
+let MUSIC_TAB_TOUCHED = false;
+// Maps each sidebar tab's key to the id of the div its content lives in —
+// these ids double as the exact innerHTML target renderAudioPage()/
+// renderMusicXplorerPage() already write into, so toggling the 'active'
+// class here never fights their re-renders.
 // Moved up from next to updateMusicSectionChrome() further down the file
 // (TDZ — switchTab() can run renderMusicXplorerPage() → this early via the
 // startup hash check when #music is the current URL, and referencing a
@@ -9575,11 +9579,10 @@ document.getElementById('musicx-artist-search-form').onsubmit = (e) => {
   searchMusicxArtist(document.getElementById('musicx-artist-search').value);
 };
 document.getElementById('musicx-artist-search-clear').onclick = clearMusicxArtistSearch;
-document.querySelectorAll('.music-section-toggle').forEach(btn => {
+document.querySelectorAll('.music-tab-btn').forEach(btn => {
   btn.onclick = () => {
-    const key = btn.dataset.musicSection;
-    MUSIC_SECTIONS_TOUCHED.add(key);
-    MUSIC_SECTIONS_EXPANDED[key] = !MUSIC_SECTIONS_EXPANDED[key];
+    MUSIC_TAB_TOUCHED = true;
+    MUSIC_ACTIVE_TAB = btn.dataset.musicSection;
     updateMusicSectionChrome();
   };
 });
@@ -10901,9 +10904,9 @@ async function fetchAudioData() {
     document.getElementById('audio-jobs').innerHTML =
       '<div class="svc-error">Audio Grabber requires the local backend (helm_server.py). Not reachable.</div>';
     document.getElementById('audio-files').innerHTML = '';
-    // Force the Downloads section open — otherwise updateMusicSectionChrome()
-    // would auto-collapse it (audioJobs is still []) and hide this error.
-    MUSIC_SECTIONS_EXPANDED.jobs = true;
+    // Force the Downloads tab active (even if the user already touched
+    // tabs) — otherwise this error could land on a hidden, non-active panel.
+    MUSIC_ACTIVE_TAB = 'jobs';
     updateMusicSectionChrome();
     return;
   }
@@ -10922,7 +10925,7 @@ async function fetchAudioData() {
   } catch(e) {
     document.getElementById('audio-jobs').innerHTML =
       `<div class="svc-error">Could not fetch audio data: ${escHtml(e.message)}</div>`;
-    MUSIC_SECTIONS_EXPANDED.jobs = true;
+    MUSIC_ACTIVE_TAB = 'jobs';
     updateMusicSectionChrome();
   }
 }
@@ -10934,20 +10937,20 @@ async function fetchAudioData() {
 
 function updateMusicSectionChrome() {
   const counts = { jobs: audioJobs.length, files: audioFiles.length, favorites: (state.musicXplorer || []).length };
+  // Jump to the Downloads tab the first time there's a job to show —
+  // mirrors the old accordion's auto-expand-on-count, but only until the
+  // user manually picks a tab (MUSIC_TAB_TOUCHED).
+  if (!MUSIC_TAB_TOUCHED && counts.jobs > 0) MUSIC_ACTIVE_TAB = 'jobs';
   Object.keys(MUSIC_SECTION_BODY_IDS).forEach(key => {
-    if (key in counts && !MUSIC_SECTIONS_TOUCHED.has(key)) {
-      MUSIC_SECTIONS_EXPANDED[key] = counts[key] > 0;
-    }
-    const expanded = MUSIC_SECTIONS_EXPANDED[key];
-    const toggle = document.querySelector(`.music-section-toggle[data-music-section="${key}"]`);
-    if (toggle) {
-      const caret = toggle.querySelector('.music-section-caret');
-      if (caret) caret.textContent = expanded ? '▾' : '▸';
-      const countEl = toggle.querySelector('.music-section-count');
-      if (countEl) countEl.textContent = (key in counts && counts[key]) ? `(${counts[key]})` : '';
+    const active = key === MUSIC_ACTIVE_TAB;
+    const btn = document.querySelector(`.music-tab-btn[data-music-section="${key}"]`);
+    if (btn) {
+      btn.classList.toggle('active', active);
+      const countEl = btn.querySelector('.music-tab-count');
+      if (countEl) countEl.textContent = (key in counts && counts[key]) ? ` (${counts[key]})` : '';
     }
     const body = document.getElementById(MUSIC_SECTION_BODY_IDS[key]);
-    if (body) body.style.display = expanded ? '' : 'none';
+    if (body) body.classList.toggle('active', active);
   });
 }
 
