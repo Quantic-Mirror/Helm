@@ -2452,12 +2452,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   cursor: pointer;
 }
 .musicx-similar-chip:hover { color: var(--accent); border-color: var(--accent); }
-/* .bp-event-name is normally a plain <span>; here it's a real <a> to the
-   video (we have the actual yt-dlp result id, unlike the Audio Grabber file
-   list's title-only search-link fallback) — drop the link underline except
-   on hover so it still reads like the rest of the row. */
-.musicx-add-yt-link { text-decoration: none; }
-.musicx-add-yt-link:hover { text-decoration: underline; }
 
 /* Network info card */
 .net-card {
@@ -11369,8 +11363,9 @@ function openMusicxAddByArtist(artist) {
     el.innerHTML = results.length
       ? `<div class="bp-events-list">${results.map(r => `
           <div class="bp-event-row">
-            <a class="bp-event-name musicx-add-yt-link" href="https://www.youtube.com/watch?v=${encodeURIComponent(r.id)}" target="_blank" rel="noopener" title="Open on YouTube">${escHtml(r.title)}</a>
+            <span class="bp-event-name">${escHtml(r.title)}</span>
             <span class="bp-event-message">${escHtml(r.uploader || '')}${r.duration ? ' · ' + escHtml(formatAudioDuration(r.duration)) : ''}</span>
+            <a class="btn" href="https://www.youtube.com/watch?v=${encodeURIComponent(r.id)}" target="_blank" rel="noopener" title="Open on YouTube to preview before adding">▶ Preview</a>
             <button class="btn" data-musicx-add-pick="${escHtml(r.id)}" data-title="${escHtml(r.title)}">Add</button>
           </div>`).join('')}</div>`
       : '<div class="svc-loading">No results.</div>';
