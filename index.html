@@ -8614,6 +8614,14 @@ function toggleSomaFMPlayback(station) {
     });
   } else {
     SOMAFM_AUDIO.pause();
+    // This is a live stream, not an on-demand file: pausing leaves whatever
+    // was already buffered sitting in the element, so a later play() would
+    // resume that stale buffered audio instead of rejoining live — which is
+    // exactly what makes the track title (driven by polling songhistory.html)
+    // drift out of sync with what's actually playing. Tear the element down
+    // so the next play click (see `if (!SOMAFM_AUDIO)` above) builds a fresh
+    // one and reconnects at the live edge.
+    SOMAFM_AUDIO = null;
   }
 }
 
