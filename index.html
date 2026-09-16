@@ -2335,37 +2335,40 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 a.backup-label { text-decoration: none; }
 a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 
-/* Sidebar tabs — Download / Downloads / Files / Favorites. Only one panel is
-   visible at a time (see updateMusicSectionChrome()), so each gets the full
-   sidebar width instead of being squeezed into a stack of collapsed
-   accordion sections — a long track title in Files no longer has to share
-   its row's width with three other sections' headers above and below it.
-   Visual style mirrors #news-view-toggle/.news-view-btn elsewhere in this
-   file: a pill strip with an active segment. */
+/* Page-level tabs — Download / Downloads / Files / Favorites — a full-width
+   bar above the page content, not squeezed into a sidebar column. Only one
+   panel is visible at a time (see updateMusicSectionChrome()); Download,
+   Downloads and Files each get the entire page width, so a long track
+   title in Files no longer has to share its row's width with a persistent
+   detail pane it has nothing to do with. Visual style mirrors
+   #news-view-toggle/.news-view-btn elsewhere in this file: a pill strip
+   with an active segment, just sized to its content instead of stretched. */
 .music-tabs {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  display: flex; gap: 4px; width: fit-content;
   background: var(--surface-2);
   border-radius: 8px;
   padding: 3px;
-  margin: 14px 0 12px;
+  margin: 14px 0 16px;
 }
 .music-tab-btn {
   display: flex; align-items: baseline; justify-content: center; gap: 3px;
-  padding: 6px 4px;
+  padding: 7px 16px;
   border-radius: 6px; border: none; background: none;
-  font-family: var(--font-body); font-size: 11px; font-weight: 500;
+  font-family: var(--font-body); font-size: 12px; font-weight: 500;
   color: var(--text-muted); cursor: pointer; white-space: nowrap;
   transition: background 0.15s, color 0.15s;
 }
 .music-tab-btn:hover { color: var(--text); }
 .music-tab-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-.music-tab-count { color: var(--text-dim); font-weight: 400; font-size: 10px; }
+.music-tab-count { color: var(--text-dim); font-weight: 400; font-size: 11px; }
 .music-tab-panel { display: none; }
 .music-tab-panel.active { display: block; }
 
+/* Favorites tab only — list+detail split, now free to be wider since it no
+   longer shares the old 340px sidebar with the other three tabs' UI. */
 #music-layout { display: flex; align-items: flex-start; gap: 20px; }
 #music-sidebar {
-  width: 340px; flex-shrink: 0;
+  width: 380px; flex-shrink: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -3199,76 +3202,84 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div id="backups-events"></div>
 </div>
 
-<!-- MUSIC PAGE (Audio Grabber + musicXplorer merged) — a single sidebar with
-     four tabbed panels (Download / Downloads-in-progress / Files /
-     Favorites) sharing one detail/explorer pane on the right. Only one
-     panel shows at a time, so each gets the sidebar's full width rather
-     than being squeezed into a stack of collapsed accordion headers — see
-     MUSIC_ACTIVE_TAB and updateMusicSectionChrome(). The Downloads tab
-     auto-activates the first time there's something to show there (a
-     queued job, a fetch error), but only until the user manually picks a
-     tab (MUSIC_TAB_TOUCHED) — after that, an in-progress download no
-     longer yanks them away from whatever tab they're looking at. -->
+<!-- MUSIC PAGE (Audio Grabber + musicXplorer merged) — a full-width tab bar
+     (Download / Downloads-in-progress / Files / Favorites) at the top of
+     the page; one panel visible at a time — see MUSIC_ACTIVE_TAB and
+     updateMusicSectionChrome(). Download/Downloads/Files each get the
+     entire page width to themselves. Favorites is the only tab that
+     inherently needs a list+detail split (favorited-track list next to its
+     video/explorer pane), so that split lives inside its own tab panel
+     (#music-favorites-panel) instead of being forced on the other three
+     tabs, which under the old single-sidebar layout always rendered a
+     mostly-empty detail pane next to them regardless of which tab was
+     active. The Downloads tab auto-activates the first time there's
+     something to show there (a queued job, a fetch error), but only until
+     the user manually picks a tab (MUSIC_TAB_TOUCHED) — after that, an
+     in-progress download no longer yanks them away from whatever tab
+     they're looking at. -->
 <div id="music-page" style="display:none">
   <div id="music-topbar">
     <span id="audio-last-updated"></span>
     <button class="btn" id="btn-refresh-audio">↺ Refresh</button>
   </div>
-  <div id="music-layout">
-    <div id="music-sidebar">
-      <div class="musicx-panel-title">Find Similar Artists</div>
-      <form id="musicx-artist-search-form" class="musicx-search-wrap">
-        <input type="text" id="musicx-artist-search" placeholder="Artist name…" autocomplete="off" spellcheck="false">
-        <button type="button" id="musicx-artist-search-clear" title="Clear search">✕</button>
-      </form>
 
-      <div class="music-tabs">
-        <button class="music-tab-btn" data-music-section="download">Download</button>
-        <button class="music-tab-btn" data-music-section="jobs">Downloads<span class="music-tab-count"></span></button>
-        <button class="music-tab-btn" data-music-section="files">Files<span class="music-tab-count"></span></button>
-        <button class="music-tab-btn" data-music-section="favorites">Favorites<span class="music-tab-count"></span></button>
+  <div class="music-tabs">
+    <button class="music-tab-btn" data-music-section="download">Download</button>
+    <button class="music-tab-btn" data-music-section="jobs">Downloads<span class="music-tab-count"></span></button>
+    <button class="music-tab-btn" data-music-section="files">Files<span class="music-tab-count"></span></button>
+    <button class="music-tab-btn" data-music-section="favorites">Favorites<span class="music-tab-count"></span></button>
+  </div>
+
+  <div class="music-tab-panel" id="music-download-body">
+    <div class="audio-form-row">
+      <div class="field">
+        <label for="audio-artist-input">Artist</label>
+        <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
       </div>
-
-      <div class="music-tab-panel" id="music-download-body">
-        <div class="audio-form-row">
-          <div class="field">
-            <label for="audio-artist-input">Artist</label>
-            <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
-          </div>
-          <div class="field">
-            <label for="audio-song-input">Song</label>
-            <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
-          </div>
-          <div class="field audio-field-narrow">
-            <label for="audio-format-select">Format</label>
-            <select id="audio-format-select">
-              <option value="mp3">mp3</option>
-              <option value="m4a">m4a</option>
-              <option value="flac">flac</option>
-              <option value="wav">wav</option>
-              <option value="opus">opus</option>
-            </select>
-          </div>
-          <div class="field audio-field-narrow">
-            <label for="audio-quality-input">Quality</label>
-            <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
-          </div>
-          <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
-          <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
-        </div>
-        <div id="audio-search-results"></div>
-        <details id="audio-batch-details">
-          <summary>Batch (multiple tracks)</summary>
-          <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
-          <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
-        </details>
+      <div class="field">
+        <label for="audio-song-input">Song</label>
+        <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
       </div>
-
-      <div class="music-tab-panel" id="audio-jobs"></div>
-      <div class="music-tab-panel" id="audio-files"></div>
-      <div class="music-tab-panel" id="musicx-list"></div>
+      <div class="field audio-field-narrow">
+        <label for="audio-format-select">Format</label>
+        <select id="audio-format-select">
+          <option value="mp3">mp3</option>
+          <option value="m4a">m4a</option>
+          <option value="flac">flac</option>
+          <option value="wav">wav</option>
+          <option value="opus">opus</option>
+        </select>
+      </div>
+      <div class="field audio-field-narrow">
+        <label for="audio-quality-input">Quality</label>
+        <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
+      </div>
+      <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
+      <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
     </div>
-    <div id="musicx-detail-panel"></div>
+    <div id="audio-search-results"></div>
+    <details id="audio-batch-details">
+      <summary>Batch (multiple tracks)</summary>
+      <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
+      <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
+    </details>
+  </div>
+
+  <div class="music-tab-panel" id="audio-jobs"></div>
+  <div class="music-tab-panel" id="audio-files"></div>
+
+  <div class="music-tab-panel" id="music-favorites-panel">
+    <div id="music-layout">
+      <div id="music-sidebar">
+        <div class="musicx-panel-title">Find Similar Artists</div>
+        <form id="musicx-artist-search-form" class="musicx-search-wrap">
+          <input type="text" id="musicx-artist-search" placeholder="Artist name…" autocomplete="off" spellcheck="false">
+          <button type="button" id="musicx-artist-search-clear" title="Clear search">✕</button>
+        </form>
+        <div id="musicx-list"></div>
+      </div>
+      <div id="musicx-detail-panel"></div>
+    </div>
   </div>
 </div>
 
@@ -3643,22 +3654,26 @@ let MUSICX_EXPLORE_REQ = 0;         // bumped on every explorer render; guards a
                                      // fetch from overwriting a newer selection/drill's DOM
 // Music page's sidebar tabs (Download / Downloads / Files / Favorites) —
 // same TDZ reason as the MUSICX_* state above.
-let MUSIC_ACTIVE_TAB = 'favorites'; // which sidebar tab is currently shown
+let MUSIC_ACTIVE_TAB = 'favorites'; // which page-level tab is currently shown
 // Set once the user manually clicks a tab — after that, an in-progress
 // download no longer auto-switches them to the Downloads tab (see
 // updateMusicSectionChrome()).
 let MUSIC_TAB_TOUCHED = false;
-// Maps each sidebar tab's key to the id of the div its content lives in —
-// these ids double as the exact innerHTML target renderAudioPage()/
-// renderMusicXplorerPage() already write into, so toggling the 'active'
-// class here never fights their re-renders.
+// Maps each page-level tab's key to the id of the div its content lives in.
+// For download/jobs/files these ids double as the exact innerHTML target
+// renderAudioPage() already writes into, so toggling the 'active' class
+// here never fights its re-renders. favorites points at the wrapping
+// #music-favorites-panel (the list+detail split), not at #musicx-list
+// directly — that wrapper is never itself overwritten by innerHTML (only
+// its #musicx-list/#musicx-detail-panel children are, by
+// renderMusicXplorerPage()), so toggling visibility on it is equally safe.
 // Moved up from next to updateMusicSectionChrome() further down the file
 // (TDZ — switchTab() can run renderMusicXplorerPage() → this early via the
 // startup hash check when #music is the current URL, and referencing a
 // later const there threw "Cannot access before initialization", which
 // aborted the rest of this top-level script — silently breaking every
 // .onclick wiring after that point, page-wide, not just on the Music tab).
-const MUSIC_SECTION_BODY_IDS = { download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'musicx-list' };
+const MUSIC_SECTION_BODY_IDS = { download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'music-favorites-panel' };
 // Moved up from next to fetchMusicBrainz() further down the file, same TDZ
 // reason — see the comment left at that call site.
 let MUSICX_MB_LAST_CALL = 0;
