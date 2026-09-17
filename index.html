@@ -2348,7 +2348,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   background: var(--surface-2);
   border-radius: 8px;
   padding: 3px;
-  margin: 14px 0 16px;
+  margin: 14px auto 16px;
 }
 .music-tab-btn {
   display: flex; align-items: baseline; justify-content: center; gap: 3px;
@@ -2414,11 +2414,18 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 .musicx-detail-header { margin-bottom: 14px; }
 .musicx-detail-song { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--text); }
 .musicx-detail-artist { font-size: 13px; color: var(--text-muted); }
+/* Video + explorer side by side instead of stacked — with the video capped
+   at 480px wide, stacking it above the explorer left a wide dead strip to
+   its right on anything but a narrow window. musicx-video-col carries the
+   480px cap that musicx-video-wrap itself used to have; musicx-explorer-wrap
+   fills the rest of the row alongside it. When there's no video (the
+   search-artist path renders #musicx-explorer-wrap on its own, outside this
+   row), the flex properties below are simply inert. */
+.musicx-video-row { display: flex; gap: 20px; align-items: flex-start; }
+.musicx-video-col { flex: 0 1 480px; min-width: 280px; }
+#musicx-explorer-wrap { flex: 1; min-width: 0; }
 .musicx-video-wrap {
-  /* Half the detail panel's width instead of filling it — the embedded
-     player doesn't need to run at full/native size to be watchable, and a
-     smaller player leaves more room for the explorer content below it. */
-  width: 50%; min-width: 280px; max-width: 480px;
+  width: 100%;
   aspect-ratio: 16 / 9;
   background: var(--surface-2);
   border-radius: 12px;
@@ -11220,12 +11227,16 @@ function renderMusicXplorerPage() {
       <div class="musicx-detail-song">${escHtml(selected.song)}</div>
       <div class="musicx-detail-artist">${escHtml(selected.artist)}</div>
     </div>
-    <div class="musicx-video-wrap" id="musicx-video-${selected.id}"></div>
-    <div class="musicx-video-actions">
-      <button class="btn" id="musicx-repick-btn">🔍 Pick a different video</button>
+    <div class="musicx-video-row">
+      <div class="musicx-video-col">
+        <div class="musicx-video-wrap" id="musicx-video-${selected.id}"></div>
+        <div class="musicx-video-actions">
+          <button class="btn" id="musicx-repick-btn">🔍 Pick a different video</button>
+        </div>
+        <div id="musicx-video-picker"></div>
+      </div>
+      <div id="musicx-explorer-wrap"></div>
     </div>
-    <div id="musicx-video-picker"></div>
-    <div id="musicx-explorer-wrap"></div>
   `;
   document.getElementById('musicx-repick-btn').onclick = () => openMusicxVideoPicker(selected);
 
