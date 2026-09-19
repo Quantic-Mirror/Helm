@@ -8345,7 +8345,7 @@ function renderSomaFMWidget(w) {
       <span class="col-dot" style="background:#FFA657"></span>
       <select class="column-title" style="cursor:pointer" data-somafm-station="${w.id}" title="Switch station">${stationOptions}</select>
       <div class="col-actions" style="opacity:1">
-        <button class="icon-btn${w.notify ? ' active' : ''}" title="${w.notify ? 'Desktop notifications on track change: on' : 'Desktop notifications on track change: off'}" data-somafm-notify="${w.id}">🔔</button>
+        <button class="icon-btn${w.notify ? ' active' : ''}" title="${w.notify ? 'Desktop notifications on track change: on' : 'Desktop notifications on track change: off'}" data-somafm-notify="${w.id}">${w.notify ? '🔔' : '🔕'}</button>
         <button class="icon-btn" title="Refresh now" data-somafm-refresh="${w.id}">↻</button>
         <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
       </div>
@@ -8408,6 +8408,8 @@ function toggleSomaFMNotify(w, btn) {
     save();
     btn.classList.remove('active');
     btn.title = 'Desktop notifications on track change: off';
+    btn.textContent = '🔕'; // the state cue that actually reads — most browsers render
+                            // full-color emoji ignoring CSS `color`, so .active alone is invisible
     return;
   }
   if (Notification.permission === 'denied') {
@@ -8419,6 +8421,7 @@ function toggleSomaFMNotify(w, btn) {
     save();
     btn.classList.add('active');
     btn.title = 'Desktop notifications on track change: on';
+    btn.textContent = '🔔';
     // Suppress a notification for whatever's already showing as "Now
     // Playing" — only future track changes should fire one. Reads the same
     // cache renderSomaFMBody() does rather than scraping the rendered DOM.
