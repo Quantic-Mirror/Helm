@@ -2932,12 +2932,12 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 #sync-indicator.syncing { color: var(--accent); }
 #sync-indicator.offline { color: var(--text-dim); }
 
-/* ── TRILIUM PAGE ─────────────────────────────────────────────────────────── */
-#trilium-page {
+/* ── SILVERBULLET PAGE ────────────────────────────────────────────────────── */
+#silverbullet-page {
   height: calc(100vh - 56px);
   overflow: hidden;
 }
-#trilium-frame {
+#silverbullet-frame {
   width: 100%;
   height: 100%;
   border: none;
@@ -3054,7 +3054,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
     <a class="tab-btn" href="#music" data-tab="music">🎵 Music</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
-    <a class="tab-btn" href="#trilium" data-tab="trilium">📓 Wiki</a>
+    <a class="tab-btn" href="#silverbullet" data-tab="silverbullet">📓 Wiki</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
@@ -3326,17 +3326,17 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div id="workout-page-body"></div>
 </div>
 
-<!-- TRILIUM PAGE -->
-<!-- TriliumNext is embedded via trilium-proxy (helm_tls_proxy.py in front of
-     the trilium container), which strips its X-Frame-Options/CSP frame-
-     ancestors and rewrites its session cookie to SameSite=None; Secure so it
-     survives being iframed cross-origin from Helm's own origin — see
-     CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern". src is left empty
-     here and set from /api/config's trilium_url in initConfig() so the proxy
-     host isn't hardcoded (see the removed Wiki.js tab's hardcoded
-     "popcorn:9002" for what NOT to repeat). -->
-<div id="trilium-page" style="display:none">
-  <iframe id="trilium-frame" src="" allow="clipboard-write"></iframe>
+<!-- SILVERBULLET PAGE -->
+<!-- SilverBullet is embedded via silverbullet-proxy (helm_tls_proxy.py in
+     front of the silverbullet container), which strips its X-Frame-Options/
+     CSP frame-ancestors and rewrites its session cookie to SameSite=None;
+     Secure so it survives being iframed cross-origin from Helm's own origin
+     — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern". src is
+     left empty here and set from /api/config's silverbullet_url in
+     initConfig() so the proxy host isn't hardcoded (see the removed Wiki.js
+     tab's hardcoded "popcorn:9002" for what NOT to repeat). -->
+<div id="silverbullet-page" style="display:none">
+  <iframe id="silverbullet-frame" src="" allow="clipboard-write"></iframe>
 </div>
 
 <!-- WORKOUT SESSION MODAL -->
@@ -9246,7 +9246,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'workout', 'trilium'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'workout', 'silverbullet'];
 // Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
 // Music tab — redirect anyone with an old bookmarked/shared hash instead of
 // falling through to Dashboard.
@@ -9340,13 +9340,13 @@ async function initConfig() {
     if (resp.ok) {
       const cfg = await resp.json();
       if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
-      if (cfg.trilium_url) document.getElementById('trilium-frame').src = cfg.trilium_url;
+      if (cfg.silverbullet_url) document.getElementById('silverbullet-frame').src = cfg.silverbullet_url;
     }
   } catch (e) {
     // Config endpoint not available (e.g. running via python3 directly).
-    // Fall back to localhost for SearxNG and Trilium.
+    // Fall back to localhost for SearxNG and SilverBullet.
     ENGINES.searx.url = 'http://localhost:8080/search?q=';
-    document.getElementById('trilium-frame').src = 'https://localhost:9002';
+    document.getElementById('silverbullet-frame').src = 'https://localhost:9003';
   }
 }
 
@@ -9453,14 +9453,14 @@ function switchTab(tab) {
   show('backups-page',   tab === 'backups');
   show('music-page',     tab === 'music');
   show('workout-page',   tab === 'workout');
-  show('trilium-page',   tab === 'trilium');
+  show('silverbullet-page', tab === 'silverbullet');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', trilium: 'Helm — Wiki' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', silverbullet: 'Helm — Wiki' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();

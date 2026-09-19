@@ -10,7 +10,7 @@ natively on a separate host:
 |---|---|---|
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
-| TriliumNext (`trilium` + `trilium-proxy`) | **Container (any host)** | Knowledgebase/wiki app for the Wiki tab; iframed cross-origin through `trilium-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
+| SilverBullet (`silverbullet` + `silverbullet-proxy`) | **Container (any host)** | Markdown notes app for the Wiki tab; iframed cross-origin through `silverbullet-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
 | **Music / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Hermes was removed and hasn't been re-added. |
@@ -21,10 +21,13 @@ natively on a separate host:
 > Windows) against the MPD daemon on whichever host it runs on. There was
 > also an earlier Wiki.js-backed Wiki tab (hardcoded to `popcorn:9002`) that
 > was removed; the current **Wiki tab is unrelated** — it iframes
-> TriliumNext through the same `helm_tls_proxy.py` cookie-rewriting pattern,
+> SilverBullet through the same `helm_tls_proxy.py` cookie-rewriting pattern,
 > configured properly via `/api/config` this time instead of a hardcoded
-> host. TriliumNext replaced an earlier Memos-backed Notes tab, reusing the
-> same `trilium`/`trilium-proxy` compose slot Memos used to occupy. See
+> host. The Wiki tab has cycled through Memos → TriliumNext → SilverBullet;
+> each swap reuses the same proxy slot the previous one occupied (`:9002` for
+> Memos/TriliumNext, moved to `:9003` for SilverBullet specifically so no
+> stale browser-side cookies/cache from the TriliumNext debugging session
+> could carry over to a fresh origin). See
 > [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
 >
 > This is unrelated to the newer **musicXplorer** tab, which isn't a player at

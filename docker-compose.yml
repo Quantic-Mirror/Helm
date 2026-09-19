@@ -113,43 +113,50 @@ services:
       AUDIO_BACKEND_URL: "http://${AUDIO_HOST:-hyperion}:8091"
       # SearXNG URL — the frontend fetches this to populate the search engine URL.
       SEARXNG_URL: "http://${SEARXNG_HOST:-localhost}:8081"
-      # Trilium URL — the frontend fetches this to point the Wiki tab's iframe
-      # at the proxy in front of it (see trilium-proxy below), same pattern as
-      # SEARXNG_URL above. Must be an address the BROWSER can reach, so use
-      # SERVER_HOST, not the container-internal "trilium" hostname.
-      TRILIUM_URL: "https://${SERVER_HOST:-localhost}:${TRILIUM_PROXY_LISTEN_PORT:-9002}"
+      # SilverBullet URL — the frontend fetches this to point the Wiki tab's
+      # iframe at the proxy in front of it (see silverbullet-proxy below),
+      # same pattern as SEARXNG_URL above. Must be an address the BROWSER can
+      # reach, so use SERVER_HOST, not the container-internal "silverbullet"
+      # hostname. Deliberately a different port (9003) than the old
+      # memos/trilium slot (9002) — a clean origin means no leftover
+      # browser-side cookies/cache/service-worker state from those earlier
+      # attempts can confuse debugging.
+      SILVERBULLET_URL: "https://${SERVER_HOST:-localhost}:${SILVERBULLET_PROXY_LISTEN_PORT:-9003}"
     command: ["python3", "helm_server.py", "8443"]
 
-  # ── TriliumNext (self-hosted knowledgebase, iframed into the Wiki tab) ──────
-  # TriliumNext ships its own clickjacking protection that blocks cross-origin
-  # framing, so it's never reached directly by the browser — only
-  # trilium-proxy (below) is. No host port is published here; trilium-proxy
-  # reaches it over the compose network by service name.
-  trilium:
-    image: triliumnext/notes:latest
-    container_name: trilium
+  # ── SilverBullet (self-hosted markdown notes, iframed into the Wiki tab) ────
+  # SilverBullet only speaks plain HTTP itself (see silverbullet-proxy below
+  # for the TLS termination Helm's HTTPS origin requires to avoid mixed-
+  # content blocking). SB_USER sets the login credential as "user:password" —
+  # set SILVERBULLET_USER in .env; leaving it unset runs with no auth, fine
+  # only if HELM_BIND keeps this tailnet/loopback-only.
+  silverbullet:
+    image: ghcr.io/silverbulletmd/silverbullet:latest
+    container_name: silverbullet
     restart: unless-stopped
+    environment:
+      SB_USER: "${SILVERBULLET_USER:-}"
     volumes:
-      - ./trilium-data:/home/node/trilium-data
+      - ./silverbullet-data:/data
 
-  # helm_tls_proxy.py in front of trilium: strips X-Frame-Options / rewrites
-  # CSP frame-ancestors and Set-Cookie SameSite/Secure so the TriliumNext web
-  # UI can be iframed cross-origin from Helm's origin and keep its session
-  # cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern".
-  # Reuses the helm image (COPY . . already bakes in helm_tls_proxy.py;
-  # stdlib-only, no extra deps) rather than a separate Dockerfile, and reuses
-  # Helm's own cert.pem/key.pem from ./data rather than managing a second
-  # cert.
-  trilium-proxy:
+  # helm_tls_proxy.py in front of silverbullet: strips X-Frame-Options /
+  # rewrites CSP frame-ancestors and Set-Cookie SameSite/Secure so the
+  # SilverBullet web UI can be iframed cross-origin from Helm's origin and
+  # keep its session cookie — see CLAUDE.md "helm_tls_proxy.py
+  # cookie-rewriting pattern". Reuses the helm image (COPY . . already bakes
+  # in helm_tls_proxy.py; stdlib-only, no extra deps) rather than a separate
+  # Dockerfile, and reuses Helm's own cert.pem/key.pem from ./data rather
+  # than managing a second cert.
+  silverbullet-proxy:
     build:
       context: .
       dockerfile: Dockerfile.helm
-    container_name: trilium-proxy
+    container_name: silverbullet-proxy
     restart: unless-stopped
     depends_on:
-      - trilium
+      - silverbullet
     ports:
-      - "${TRILIUM_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9002:9002}"
+      - "${SILVERBULLET_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9003:9003}"
     volumes:
       - ./data:/app/state
     environment:
@@ -159,8 +166,8 @@ services:
       # the browser used to load Helm itself — see helm_tls_proxy.py's own
       # note on this. Defaults to the same SERVER_HOST as the helm service,
       # on helm's published port (8443).
-      HELM_FRAME_ORIGINS: "${TRILIUM_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
-    command: ["python3", "helm_tls_proxy.py", "9002", "8080", "trilium"]
+      HELM_FRAME_ORIGINS: "${SILVERBULLET_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9003", "3000", "silverbullet"]
 
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,

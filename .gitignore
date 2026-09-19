@@ -23,7 +23,7 @@ backup_token.txt
 data/
 searxng-settings/
 searxng-data/
-memos-data/
+silverbullet-data/
 *.tar.gz
 helm-and-backup-runbook.md
 BACKUP-PIPELINE-GUIDE.md
