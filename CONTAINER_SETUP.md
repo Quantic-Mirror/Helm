@@ -10,18 +10,21 @@ natively on a separate host:
 |---|---|---|
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
-| Memos (`memos` + `memos-proxy`) | **Container (any host)** | Notes app for the Memos tab; iframed cross-origin through `memos-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
+| TriliumNext (`trilium` + `trilium-proxy`) | **Container (any host)** | Knowledgebase/wiki app for the Wiki tab; iframed cross-origin through `trilium-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
-| **Music / Wiki / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes were removed and haven't been re-added. |
+| **Music / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Hermes was removed and hasn't been re-added. |
 
-> **Note:** The old MPD-backed Music tab (playback via ncmpcpp/ttyd), Wiki.js,
-> and Hermes tabs have been removed from Helm — for music playback, use a
+> **Note:** The old MPD-backed Music tab (playback via ncmpcpp/ttyd) and the
+> Hermes tab have been removed from Helm — for music playback, use a
 > dedicated MPD client (e.g. `rmpc` or `ncmpcpp` on Linux, `Stylophone` on
-> Windows) against the MPD daemon on whichever host it runs on. The Memos tab
-> (added later) does now iframe an external app again, so there is a
-> `helm_tls_proxy.py` service (`memos-proxy`) back in the compose stack —
-> Wiki.js/Hermes just haven't been. See
+> Windows) against the MPD daemon on whichever host it runs on. There was
+> also an earlier Wiki.js-backed Wiki tab (hardcoded to `popcorn:9002`) that
+> was removed; the current **Wiki tab is unrelated** — it iframes
+> TriliumNext through the same `helm_tls_proxy.py` cookie-rewriting pattern,
+> configured properly via `/api/config` this time instead of a hardcoded
+> host. TriliumNext replaced an earlier Memos-backed Notes tab, reusing the
+> same `trilium`/`trilium-proxy` compose slot Memos used to occupy. See
 > [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
 >
 > This is unrelated to the newer **musicXplorer** tab, which isn't a player at

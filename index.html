@@ -2932,12 +2932,12 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 #sync-indicator.syncing { color: var(--accent); }
 #sync-indicator.offline { color: var(--text-dim); }
 
-/* ── MEMOS PAGE ───────────────────────────────────────────────────────────── */
-#memos-page {
+/* ── TRILIUM PAGE ─────────────────────────────────────────────────────────── */
+#trilium-page {
   height: calc(100vh - 56px);
   overflow: hidden;
 }
-#memos-frame {
+#trilium-frame {
   width: 100%;
   height: 100%;
   border: none;
@@ -3054,7 +3054,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
     <a class="tab-btn" href="#music" data-tab="music">🎵 Music</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
-    <a class="tab-btn" href="#memos" data-tab="memos">📝 Memos</a>
+    <a class="tab-btn" href="#trilium" data-tab="trilium">📓 Wiki</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
@@ -3326,17 +3326,17 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div id="workout-page-body"></div>
 </div>
 
-<!-- MEMOS PAGE -->
-<!-- Memos is embedded via memos-proxy (helm_tls_proxy.py in front of the
-     memos container), which strips its X-Frame-Options/CSP frame-ancestors
-     and rewrites its session cookie to SameSite=None; Secure so it survives
-     being iframed cross-origin from Helm's own origin — see CLAUDE.md
-     "helm_tls_proxy.py cookie-rewriting pattern". src is left empty here and
-     set from /api/config's memos_url in initConfig() so the proxy host isn't
-     hardcoded (see the removed Wiki.js tab's hardcoded "popcorn:9002" for
-     what NOT to repeat). -->
-<div id="memos-page" style="display:none">
-  <iframe id="memos-frame" src="" allow="clipboard-write"></iframe>
+<!-- TRILIUM PAGE -->
+<!-- TriliumNext is embedded via trilium-proxy (helm_tls_proxy.py in front of
+     the trilium container), which strips its X-Frame-Options/CSP frame-
+     ancestors and rewrites its session cookie to SameSite=None; Secure so it
+     survives being iframed cross-origin from Helm's own origin — see
+     CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern". src is left empty
+     here and set from /api/config's trilium_url in initConfig() so the proxy
+     host isn't hardcoded (see the removed Wiki.js tab's hardcoded
+     "popcorn:9002" for what NOT to repeat). -->
+<div id="trilium-page" style="display:none">
+  <iframe id="trilium-frame" src="" allow="clipboard-write"></iframe>
 </div>
 
 <!-- WORKOUT SESSION MODAL -->
@@ -9246,7 +9246,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'workout', 'memos'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'workout', 'trilium'];
 // Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
 // Music tab — redirect anyone with an old bookmarked/shared hash instead of
 // falling through to Dashboard.
@@ -9340,13 +9340,13 @@ async function initConfig() {
     if (resp.ok) {
       const cfg = await resp.json();
       if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
-      if (cfg.memos_url) document.getElementById('memos-frame').src = cfg.memos_url;
+      if (cfg.trilium_url) document.getElementById('trilium-frame').src = cfg.trilium_url;
     }
   } catch (e) {
     // Config endpoint not available (e.g. running via python3 directly).
-    // Fall back to localhost for SearxNG and Memos.
+    // Fall back to localhost for SearxNG and Trilium.
     ENGINES.searx.url = 'http://localhost:8080/search?q=';
-    document.getElementById('memos-frame').src = 'https://localhost:9002';
+    document.getElementById('trilium-frame').src = 'https://localhost:9002';
   }
 }
 
@@ -9453,14 +9453,14 @@ function switchTab(tab) {
   show('backups-page',   tab === 'backups');
   show('music-page',     tab === 'music');
   show('workout-page',   tab === 'workout');
-  show('memos-page',     tab === 'memos');
+  show('trilium-page',   tab === 'trilium');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', memos: 'Helm — Memos' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', trilium: 'Helm — Wiki' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();

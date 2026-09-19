@@ -113,42 +113,43 @@ services:
       AUDIO_BACKEND_URL: "http://${AUDIO_HOST:-hyperion}:8091"
       # SearXNG URL — the frontend fetches this to populate the search engine URL.
       SEARXNG_URL: "http://${SEARXNG_HOST:-localhost}:8081"
-      # Memos URL — the frontend fetches this to point the Memos tab's iframe
-      # at the proxy in front of it (see memos-proxy below), same pattern as
+      # Trilium URL — the frontend fetches this to point the Wiki tab's iframe
+      # at the proxy in front of it (see trilium-proxy below), same pattern as
       # SEARXNG_URL above. Must be an address the BROWSER can reach, so use
-      # SERVER_HOST, not the container-internal "memos" hostname.
-      MEMOS_URL: "https://${SERVER_HOST:-localhost}:${MEMOS_PROXY_LISTEN_PORT:-9002}"
+      # SERVER_HOST, not the container-internal "trilium" hostname.
+      TRILIUM_URL: "https://${SERVER_HOST:-localhost}:${TRILIUM_PROXY_LISTEN_PORT:-9002}"
     command: ["python3", "helm_server.py", "8443"]
 
-  # ── Memos (self-hosted notes, iframed into the Memos tab) ───────────────────
-  # Memos ships its own X-Frame-Options / CSP that blocks cross-origin
-  # framing, so it's never reached directly by the browser — only memos-proxy
-  # (below) is. No host port is published here; memos-proxy reaches it over
-  # the compose network by service name.
-  memos:
-    image: neosmemo/memos:stable
-    container_name: memos
+  # ── TriliumNext (self-hosted knowledgebase, iframed into the Wiki tab) ──────
+  # TriliumNext ships its own clickjacking protection that blocks cross-origin
+  # framing, so it's never reached directly by the browser — only
+  # trilium-proxy (below) is. No host port is published here; trilium-proxy
+  # reaches it over the compose network by service name.
+  trilium:
+    image: triliumnext/notes:latest
+    container_name: trilium
     restart: unless-stopped
     volumes:
-      - ./memos-data:/var/opt/memos
+      - ./trilium-data:/home/node/trilium-data
 
-  # helm_tls_proxy.py in front of memos: strips X-Frame-Options / rewrites CSP
-  # frame-ancestors and Set-Cookie SameSite/Secure so the Memos web UI can be
-  # iframed cross-origin from Helm's origin and keep its session cookie — see
-  # CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern". Reuses the helm
-  # image (COPY . . already bakes in helm_tls_proxy.py; stdlib-only, no extra
-  # deps) rather than a separate Dockerfile, and reuses Helm's own
-  # cert.pem/key.pem from ./data rather than managing a second cert.
-  memos-proxy:
+  # helm_tls_proxy.py in front of trilium: strips X-Frame-Options / rewrites
+  # CSP frame-ancestors and Set-Cookie SameSite/Secure so the TriliumNext web
+  # UI can be iframed cross-origin from Helm's origin and keep its session
+  # cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern".
+  # Reuses the helm image (COPY . . already bakes in helm_tls_proxy.py;
+  # stdlib-only, no extra deps) rather than a separate Dockerfile, and reuses
+  # Helm's own cert.pem/key.pem from ./data rather than managing a second
+  # cert.
+  trilium-proxy:
     build:
       context: .
       dockerfile: Dockerfile.helm
-    container_name: memos-proxy
+    container_name: trilium-proxy
     restart: unless-stopped
     depends_on:
-      - memos
+      - trilium
     ports:
-      - "${MEMOS_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9002:9002}"
+      - "${TRILIUM_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9002:9002}"
     volumes:
       - ./data:/app/state
     environment:
@@ -158,8 +159,8 @@ services:
       # the browser used to load Helm itself — see helm_tls_proxy.py's own
       # note on this. Defaults to the same SERVER_HOST as the helm service,
       # on helm's published port (8443).
-      HELM_FRAME_ORIGINS: "${MEMOS_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
-    command: ["python3", "helm_tls_proxy.py", "9002", "5230", "memos"]
+      HELM_FRAME_ORIGINS: "${TRILIUM_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9002", "8080", "trilium"]
 
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,
