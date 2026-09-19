@@ -17,12 +17,17 @@ chain for the core app.
 - **hyperion** — separate host where `pass` + gpg-agent live; `vault_server.py`
   runs there and `helm_server.py` proxies `/api/vault/*` to it over HTTP with a
   shared-secret token (`vault_token.txt`, copied to both machines).
-- There is currently no Wiki tab / knowledgebase app in Helm. It cycled
-  through Memos → TriliumNext → SilverBullet (each iframed via a
-  `helm_tls_proxy.py`-fronted container in the same `docker-compose.yml`
-  stack as `helm`) and all three were pulled back out — see git history if
-  you need the reasons. Don't add one back without being asked; the search
-  for a replacement is paused.
+- **leafwiki** / **leafwiki-proxy** — containers in the same
+  `docker-compose.yml` stack as `helm` itself, not on hyperion or a separate
+  host. `leafwiki-proxy` (`helm_tls_proxy.py`) fronts the LeafWiki container
+  so the Wiki tab can iframe it cross-origin — see "helm_tls_proxy.py
+  cookie-rewriting pattern" below. The Wiki tab cycled through Memos →
+  TriliumNext → SilverBullet before landing here — see git history if you
+  need the reasons those didn't work out. LeafWiki's pages are plain
+  Markdown files under `./leafwiki-data`, and its admin account is set
+  deterministically via `LEAFWIKI_JWT_SECRET`/`LEAFWIKI_ADMIN_PASSWORD` env
+  vars on first boot — no browser setup wizard, unlike TriliumNext's earlier
+  broken login flow.
 - User on the host is `carl` (see docker-group comments, IRC log paths).
 - Don't assume everything runs on one machine — if you're about to shell out
   to something host-specific (`pass`, gpg, a systemd unit), check whether it's

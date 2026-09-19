@@ -113,7 +113,66 @@ services:
       AUDIO_BACKEND_URL: "http://${AUDIO_HOST:-hyperion}:8091"
       # SearXNG URL — the frontend fetches this to populate the search engine URL.
       SEARXNG_URL: "http://${SEARXNG_HOST:-localhost}:8081"
+      # LeafWiki URL — the frontend fetches this to point the Wiki tab's
+      # iframe at the proxy in front of it (see leafwiki-proxy below), same
+      # pattern as SEARXNG_URL above. Must be an address the BROWSER can
+      # reach, so use SERVER_HOST, not the container-internal "leafwiki"
+      # hostname. A fresh port (9004) rather than reusing 9002/9003 from the
+      # Memos/TriliumNext/SilverBullet era, so no stale browser-side
+      # cookies/cache/service-worker state can carry over to this origin.
+      LEAFWIKI_URL: "https://${SERVER_HOST:-localhost}:${LEAFWIKI_PROXY_LISTEN_PORT:-9004}"
     command: ["python3", "helm_server.py", "8443"]
+
+  # ── LeafWiki (self-hosted markdown wiki, iframed into the Wiki tab) ─────────
+  # LeafWiki only speaks plain HTTP itself (see leafwiki-proxy below for the
+  # TLS termination Helm's HTTPS origin requires to avoid mixed-content
+  # blocking). Admin credentials are set deterministically via env vars on
+  # first boot — no browser setup wizard, deliberately avoiding the class of
+  # bug that broke TriliumNext's password login earlier (see git history).
+  # LEAFWIKI_ALLOW_INSECURE=true is required because the container itself
+  # only ever sees plain HTTP on leafwiki-proxy's backend leg; leafwiki-proxy
+  # (not LeafWiki) is what adds SameSite=None; Secure on the way back out to
+  # the browser — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern".
+  leafwiki:
+    image: ghcr.io/perber/leafwiki:latest
+    container_name: leafwiki
+    restart: unless-stopped
+    environment:
+      LEAFWIKI_JWT_SECRET: "${LEAFWIKI_JWT_SECRET:?set a random secret in .env, e.g. openssl rand -hex 32}"
+      LEAFWIKI_ADMIN_PASSWORD: "${LEAFWIKI_ADMIN_PASSWORD:?set an initial admin password in .env}"
+      LEAFWIKI_ALLOW_INSECURE: "true"
+    volumes:
+      - ./leafwiki-data:/app/data
+
+  # helm_tls_proxy.py in front of leafwiki: strips X-Frame-Options / rewrites
+  # CSP frame-ancestors and Set-Cookie SameSite/Secure so the LeafWiki web UI
+  # can be iframed cross-origin from Helm's origin and keep its session
+  # cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern".
+  # Reuses the helm image (COPY . . already bakes in helm_tls_proxy.py;
+  # stdlib-only, no extra deps) rather than a separate Dockerfile, and reuses
+  # Helm's own cert.pem/key.pem from ./data rather than managing a second
+  # cert.
+  leafwiki-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: leafwiki-proxy
+    restart: unless-stopped
+    depends_on:
+      - leafwiki
+    ports:
+      - "${LEAFWIKI_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9004:9004}"
+    volumes:
+      - ./data:/app/state
+    environment:
+      HELM_TLS_CERT: "/app/state/cert.pem"
+      HELM_TLS_KEY: "/app/state/key.pem"
+      # frame-ancestors needs an EXACT scheme+host+port match against what
+      # the browser used to load Helm itself — see helm_tls_proxy.py's own
+      # note on this. Defaults to the same SERVER_HOST as the helm service,
+      # on helm's published port (8443).
+      HELM_FRAME_ORIGINS: "${LEAFWIKI_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9004", "8080", "leafwiki"]
 
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,
