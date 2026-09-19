@@ -17,13 +17,12 @@ chain for the core app.
 - **hyperion** — separate host where `pass` + gpg-agent live; `vault_server.py`
   runs there and `helm_server.py` proxies `/api/vault/*` to it over HTTP with a
   shared-secret token (`vault_token.txt`, copied to both machines).
-- **silverbullet** / **silverbullet-proxy** — containers in the same
-  `docker-compose.yml` stack as `helm` itself, not on hyperion or a separate
-  host. `silverbullet-proxy` (`helm_tls_proxy.py`) fronts the SilverBullet
-  container so the Wiki tab can iframe it cross-origin — see
-  "helm_tls_proxy.py cookie-rewriting pattern" below. (The Wiki tab briefly
-  tried TriliumNext before this; that didn't work out — see git history if
-  you need the reason.)
+- There is currently no Wiki tab / knowledgebase app in Helm. It cycled
+  through Memos → TriliumNext → SilverBullet (each iframed via a
+  `helm_tls_proxy.py`-fronted container in the same `docker-compose.yml`
+  stack as `helm`) and all three were pulled back out — see git history if
+  you need the reasons. Don't add one back without being asked; the search
+  for a replacement is paused.
 - User on the host is `carl` (see docker-group comments, IRC log paths).
 - Don't assume everything runs on one machine — if you're about to shell out
   to something host-specific (`pass`, gpg, a systemd unit), check whether it's

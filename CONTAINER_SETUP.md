@@ -10,24 +10,18 @@ natively on a separate host:
 |---|---|---|
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
-| SilverBullet (`silverbullet` + `silverbullet-proxy`) | **Container (any host)** | Markdown notes app for the Wiki tab; iframed cross-origin through `silverbullet-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
-| **Music / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Hermes was removed and hasn't been re-added. |
+| **Music / Wiki / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Wiki.js and Hermes were removed and haven't been re-added. |
 
-> **Note:** The old MPD-backed Music tab (playback via ncmpcpp/ttyd) and the
-> Hermes tab have been removed from Helm — for music playback, use a
+> **Note:** The old MPD-backed Music tab (playback via ncmpcpp/ttyd), Wiki.js,
+> and Hermes tabs have been removed from Helm — for music playback, use a
 > dedicated MPD client (e.g. `rmpc` or `ncmpcpp` on Linux, `Stylophone` on
-> Windows) against the MPD daemon on whichever host it runs on. There was
-> also an earlier Wiki.js-backed Wiki tab (hardcoded to `popcorn:9002`) that
-> was removed; the current **Wiki tab is unrelated** — it iframes
-> SilverBullet through the same `helm_tls_proxy.py` cookie-rewriting pattern,
-> configured properly via `/api/config` this time instead of a hardcoded
-> host. The Wiki tab has cycled through Memos → TriliumNext → SilverBullet;
-> each swap reuses the same proxy slot the previous one occupied (`:9002` for
-> Memos/TriliumNext, moved to `:9003` for SilverBullet specifically so no
-> stale browser-side cookies/cache from the TriliumNext debugging session
-> could carry over to a fresh origin). See
+> Windows) against the MPD daemon on whichever host it runs on. There is
+> currently **no Wiki tab** — it cycled through Memos → TriliumNext →
+> SilverBullet (each iframed via a `helm_tls_proxy.py` proxy, same pattern
+> Wiki.js originally used) and all three were pulled back out; the search for
+> a replacement knowledgebase app is paused. See
 > [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
 >
 > This is unrelated to the newer **musicXplorer** tab, which isn't a player at
