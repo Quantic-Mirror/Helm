@@ -8241,6 +8241,15 @@ let SOMAFM_AUDIO = null;              // shared <audio> element, created lazily 
 let SOMAFM_PLAYING = false;           // whether the live stream is currently playing
 let SOMAFM_PLAYING_STATION = null;    // which station id SOMAFM_AUDIO is tuned to
 
+// Keyed by widget id, not station — two widgets on the same station still
+// get independent "have I already notified for this track" tracking, same
+// as SOMAFM_TIMERS. Deliberately NOT part of `state`/`w` — this is
+// per-session bookkeeping to dedupe notifications across polls, not a
+// setting worth syncing across devices. undefined for a given widgetId
+// means "first render since the widget mounted" — used to suppress firing
+// a notification for whatever was already playing when the page loaded.
+const SOMAFM_LAST_NOTIFIED = {};
+
 // Keyed by station id so multiple Now Playing widgets on different stations
 // don't clobber each other's history. Still shared across widgets on the
 // *same* station (including the Lyrics widget, which always uses the
@@ -8336,6 +8345,7 @@ function renderSomaFMWidget(w) {
       <span class="col-dot" style="background:#FFA657"></span>
       <select class="column-title" style="cursor:pointer" data-somafm-station="${w.id}" title="Switch station">${stationOptions}</select>
       <div class="col-actions" style="opacity:1">
+        <button class="icon-btn${w.notify ? ' active' : ''}" title="${w.notify ? 'Desktop notifications on track change: on' : 'Desktop notifications on track change: off'}" data-somafm-notify="${w.id}">🔔</button>
         <button class="icon-btn" title="Refresh now" data-somafm-refresh="${w.id}">↻</button>
         <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
       </div>
@@ -8350,6 +8360,11 @@ function renderSomaFMWidget(w) {
     if (header) header.onmousedown = () => { el.draggable = true; };
     el.addEventListener('dragend', () => { el.draggable = false; });
     document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    el.querySelector('[data-somafm-notify]').onclick = (e) => {
+      e.stopPropagation();
+      toggleSomaFMNotify(w, e.currentTarget);
+    };
 
     el.querySelector('[data-somafm-refresh]').onclick = (e) => {
       e.stopPropagation();
@@ -8376,6 +8391,71 @@ function renderSomaFMWidget(w) {
 function resetSomaFMPollTimer(widgetId) {
   clearInterval(SOMAFM_TIMERS[widgetId]);
   SOMAFM_TIMERS[widgetId] = setInterval(() => loadSomaFMWidget(widgetId), SOMAFM_POLL_MS);
+}
+
+// Opt-in per widget (persisted in w.notify, like w.station) rather than a
+// global setting — someone running two SomaFM widgets might only care about
+// one of them. Requesting permission has to happen from this click handler
+// specifically; browsers reject Notification.requestPermission() calls that
+// aren't triggered by a direct user gesture.
+function toggleSomaFMNotify(w, btn) {
+  if (typeof Notification === 'undefined') {
+    toast('This browser does not support desktop notifications.');
+    return;
+  }
+  if (w.notify) {
+    w.notify = false;
+    save();
+    btn.classList.remove('active');
+    btn.title = 'Desktop notifications on track change: off';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    toast('Notifications are blocked for this site — check your browser\'s site permissions.');
+    return;
+  }
+  const enable = () => {
+    w.notify = true;
+    save();
+    btn.classList.add('active');
+    btn.title = 'Desktop notifications on track change: on';
+    // Suppress a notification for whatever's already showing as "Now
+    // Playing" — only future track changes should fire one. Reads the same
+    // cache renderSomaFMBody() does rather than scraping the rendered DOM.
+    const station = getSomaFMWidgetStation(w);
+    const cached = SOMAFM_TRACKS_CACHE[station];
+    const now = cached && (cached.tracks.find(t => t.isNow) || cached.tracks[0]);
+    if (now) SOMAFM_LAST_NOTIFIED[w.id] = somaFMTrackKey(now);
+  };
+  if (Notification.permission === 'granted') { enable(); return; }
+  Notification.requestPermission().then(perm => { if (perm === 'granted') enable(); });
+}
+
+// Shared identity key for "is this the same track as last time" comparisons
+// — used both when seeding SOMAFM_LAST_NOTIFIED (toggleSomaFMNotify) and
+// when checking for a change (renderSomaFMBody), so the two never drift out
+// of sync with each other.
+function somaFMTrackKey(track) {
+  return track.artist + ' — ' + track.song;
+}
+
+// Fires a desktop notification via the browser's native Notification API —
+// on Linux this routes through whatever the OS notification daemon is (e.g.
+// KDE Plasma's), with zero server-side involvement needed. That matters
+// specifically here: helm_server.py runs on the VPS, not the user's desktop,
+// so there is no way for the *server* to ever trigger a desktop popup —
+// this only works because it's the browser tab (running locally) that does
+// it, not helm_server.py.
+function notifySomaFMTrackChange(track, stationName, widgetId) {
+  try {
+    new Notification(`${track.artist} — ${track.song}`, {
+      body: `Now playing on SomaFM: ${stationName}`,
+      tag: 'helm-somafm-' + widgetId, // replaces this widget's previous popup instead of stacking
+    });
+  } catch (e) {
+    // Notification can throw in odd embedding contexts — a missed popup
+    // isn't worth breaking widget rendering over.
+  }
 }
 
 // Table layout (as of 2026): a header row (td.boldblue cells), separator
@@ -8468,6 +8548,20 @@ function renderSomaFMBody(widgetId, tracks, station) {
 
   const now = tracks.find(t => t.isNow) || tracks[0];
   const history = tracks.filter(t => t !== now).slice(0, 6);
+
+  // Desktop notification on track change, opt-in per widget (see
+  // toggleSomaFMNotify). SOMAFM_LAST_NOTIFIED[widgetId] === undefined means
+  // this is the first render since the widget mounted — seed it without
+  // firing, so opening/reloading the dashboard never pops a notification
+  // for whatever was already playing.
+  const nowKey = somaFMTrackKey(now);
+  if (nowKey !== SOMAFM_LAST_NOTIFIED[widgetId]) {
+    const w = (state.widgets || []).find(x => x.id === widgetId);
+    if (w && w.notify && SOMAFM_LAST_NOTIFIED[widgetId] !== undefined) {
+      notifySomaFMTrackChange(now, SOMAFM_STATIONS[station].name, widgetId);
+    }
+    SOMAFM_LAST_NOTIFIED[widgetId] = nowKey;
+  }
 
   const grabBtn = (t, cls) => `
     <button class="${cls}" data-somafm-grab title="Send &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to Audio Grabber"
