@@ -11,14 +11,22 @@ chain for the core app.
 
 ## Topology
 
-- **popcorn** — the host `helm_server.py` runs on; serves the dashboard itself.
+- **the VPS** — the host `helm_server.py` runs on (via `docker-compose.yml`);
+  serves the dashboard itself. (Not popcorn — an earlier version of this file
+  said popcorn, but the live `helm` container runs on the VPS.)
 - **hyperion** — separate host where `pass` + gpg-agent live; `vault_server.py`
   runs there and `helm_server.py` proxies `/api/vault/*` to it over HTTP with a
   shared-secret token (`vault_token.txt`, copied to both machines).
+- **trilium** / **trilium-proxy** — containers in the same `docker-compose.yml`
+  stack as `helm` itself, not on hyperion or a separate host. `trilium-proxy`
+  (`helm_tls_proxy.py`) fronts the TriliumNext container so the Wiki tab can
+  iframe it cross-origin — see "helm_tls_proxy.py cookie-rewriting pattern"
+  below.
 - User on the host is `carl` (see docker-group comments, IRC log paths).
 - Don't assume everything runs on one machine — if you're about to shell out
   to something host-specific (`pass`, gpg, a systemd unit), check whether it's
-  actually meant to run on popcorn or gets proxied to hyperion instead.
+  actually meant to run on the VPS (where `helm_server.py` itself runs) or
+  gets proxied to hyperion instead.
 - Hermes is not integrated into Helm — no Hermes tab, no embedded webui iframe,
   no `hermes-page` section in `index.html`. The desktop app connects to the
   Hermes backend on popcorn over an SSH tunnel instead. Do not add a Hermes tab
