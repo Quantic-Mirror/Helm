@@ -185,8 +185,15 @@ services:
   # reaches the server, so this replaces the native client-side-Web-Crypto
   # Journal tab removed earlier (see git history) with a dedicated app
   # rather than re-rolling that crypto by hand again.
-  # ALLOW_REGISTRATION stays false — ADMIN_PASSWORD below is the one account
-  # this dashboard needs, same single-user posture as LEAFWIKI_ADMIN_PASSWORD.
+  # ADMIN_PASSWORD only gates DailyTxT's own admin panel (user management,
+  # temporarily reopening registration) — it is NOT a login for the diary
+  # itself and there is no default "admin" diary account. A real user
+  # account only exists once someone registers one, so
+  # DAILYTXT_ALLOW_REGISTRATION must be set to "true" in .env for the very
+  # first boot; once you've registered your account through the normal
+  # DailyTxT login page, flip it back to "false" (or unset it) and restart
+  # this container — the admin panel can still reopen registration
+  # temporarily later if you ever need a second account.
   dailytxt:
     image: phitux/dailytxt:latest
     container_name: dailytxt
@@ -194,7 +201,7 @@ services:
     environment:
       SECRET_TOKEN: "${DAILYTXT_SECRET_TOKEN:?set a random secret in .env, e.g. openssl rand -base64 32}"
       ADMIN_PASSWORD: "${DAILYTXT_ADMIN_PASSWORD:?set an initial admin password in .env}"
-      ALLOW_REGISTRATION: "false"
+      ALLOW_REGISTRATION: "${DAILYTXT_ALLOW_REGISTRATION:-false}"
       LOGOUT_AFTER_DAYS: "${DAILYTXT_LOGOUT_AFTER_DAYS:-40}"
     volumes:
       - ./dailytxt-data:/data
