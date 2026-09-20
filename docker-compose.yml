@@ -121,6 +121,10 @@ services:
       # Memos/TriliumNext/SilverBullet era, so no stale browser-side
       # cookies/cache/service-worker state can carry over to this origin.
       LEAFWIKI_URL: "https://${SERVER_HOST:-localhost}:${LEAFWIKI_PROXY_LISTEN_PORT:-9004}"
+      # DailyTxT URL — same pattern as LEAFWIKI_URL above, for the Journal
+      # tab's iframe. Fresh port (9005) following the 9004 precedent, so no
+      # stale browser-side state from any earlier port ever bleeds in.
+      DAILYTXT_URL: "https://${SERVER_HOST:-localhost}:${DAILYTXT_PROXY_LISTEN_PORT:-9005}"
     command: ["python3", "helm_server.py", "8443"]
 
   # ── LeafWiki (self-hosted markdown wiki, iframed into the Wiki tab) ─────────
@@ -173,6 +177,55 @@ services:
       # on helm's published port (8443).
       HELM_FRAME_ORIGINS: "${LEAFWIKI_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
     command: ["python3", "helm_tls_proxy.py", "9004", "8080", "leafwiki"]
+
+  # ── DailyTxT (self-hosted encrypted diary, iframed into the Journal tab) ───
+  # DailyTxT only speaks plain HTTP itself (see dailytxt-proxy below for the
+  # TLS termination Helm's HTTPS origin requires to avoid mixed-content
+  # blocking). Content is end-to-end encrypted client-side before it ever
+  # reaches the server, so this replaces the native client-side-Web-Crypto
+  # Journal tab removed earlier (see git history) with a dedicated app
+  # rather than re-rolling that crypto by hand again.
+  # ALLOW_REGISTRATION stays false — ADMIN_PASSWORD below is the one account
+  # this dashboard needs, same single-user posture as LEAFWIKI_ADMIN_PASSWORD.
+  dailytxt:
+    image: phitux/dailytxt:latest
+    container_name: dailytxt
+    restart: unless-stopped
+    environment:
+      SECRET_TOKEN: "${DAILYTXT_SECRET_TOKEN:?set a random secret in .env, e.g. openssl rand -base64 32}"
+      ADMIN_PASSWORD: "${DAILYTXT_ADMIN_PASSWORD:?set an initial admin password in .env}"
+      ALLOW_REGISTRATION: "false"
+      LOGOUT_AFTER_DAYS: "${DAILYTXT_LOGOUT_AFTER_DAYS:-40}"
+    volumes:
+      - ./dailytxt-data:/data
+
+  # helm_tls_proxy.py in front of dailytxt: strips X-Frame-Options / rewrites
+  # CSP frame-ancestors and Set-Cookie SameSite/Secure so the DailyTxT web UI
+  # can be iframed cross-origin from Helm's origin and keep its (http-only)
+  # session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting
+  # pattern". Reuses the helm image and Helm's own cert.pem/key.pem, same as
+  # leafwiki-proxy above.
+  dailytxt-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: dailytxt-proxy
+    restart: unless-stopped
+    depends_on:
+      - dailytxt
+    ports:
+      - "${DAILYTXT_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9005:9005}"
+    volumes:
+      - ./data:/app/state
+    environment:
+      HELM_TLS_CERT: "/app/state/cert.pem"
+      HELM_TLS_KEY: "/app/state/key.pem"
+      # frame-ancestors needs an EXACT scheme+host+port match against what
+      # the browser used to load Helm itself — see helm_tls_proxy.py's own
+      # note on this. Defaults to the same SERVER_HOST as the helm service,
+      # on helm's published port (8443).
+      HELM_FRAME_ORIGINS: "${DAILYTXT_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9005", "80", "dailytxt"]
 
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,

@@ -24,6 +24,7 @@ data/
 searxng-settings/
 searxng-data/
 leafwiki-data/
+dailytxt-data/
 *.tar.gz
 helm-and-backup-runbook.md
 BACKUP-PIPELINE-GUIDE.md

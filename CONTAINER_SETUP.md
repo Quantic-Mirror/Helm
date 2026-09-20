@@ -11,6 +11,7 @@ natively on a separate host:
 | `helm_server.py` | **Container (any host)** | Core server, stdlib-only, perfectly containerizes |
 | SearXNG | **Container (any host)** | Powers the Search widget |
 | LeafWiki (`leafwiki` + `leafwiki-proxy`) | **Container (any host)** | Markdown wiki for the Wiki tab; iframed cross-origin through `leafwiki-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
+| DailyTxT (`dailytxt` + `dailytxt-proxy`) | **Container (any host)** | End-to-end-encrypted diary for the Journal tab; iframed cross-origin through `dailytxt-proxy` (`helm_tls_proxy.py`), same cookie/framing rewrite as LeafWiki above |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
 | **Music / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Hermes was removed and hasn't been re-added. |
@@ -24,7 +25,11 @@ natively on a separate host:
 > (removed) Wiki.js tab used. LeafWiki's pages are plain Markdown files on
 > disk (`./leafwiki-data`), and its admin account is set deterministically
 > via `LEAFWIKI_JWT_SECRET`/`LEAFWIKI_ADMIN_PASSWORD` in `.env` — no browser
-> setup wizard, unlike TriliumNext's earlier broken flow. See
+> setup wizard, unlike TriliumNext's earlier broken flow. The Journal tab
+> similarly replaces an earlier native client-side-Web-Crypto implementation
+> (removed — see git history) with **DailyTxT**, an encrypted-diary app that
+> handles the crypto itself; its admin account is set the same way, via
+> `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` in `.env`. See
 > [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
 >
 > This is unrelated to the newer **musicXplorer** tab, which isn't a player at

@@ -28,6 +28,14 @@ chain for the core app.
   deterministically via `LEAFWIKI_JWT_SECRET`/`LEAFWIKI_ADMIN_PASSWORD` env
   vars on first boot — no browser setup wizard, unlike TriliumNext's earlier
   broken login flow.
+- **dailytxt** / **dailytxt-proxy** — containers in the same `docker-
+  compose.yml` stack, wired the same way as leafwiki/leafwiki-proxy above:
+  `dailytxt-proxy` (`helm_tls_proxy.py`) fronts the DailyTxT container so the
+  Journal tab can iframe it cross-origin. DailyTxT replaces an earlier native
+  client-side-Web-Crypto Journal tab (removed — see git history) with a
+  dedicated encrypted-diary app; its admin account is set deterministically
+  via `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` env vars on first
+  boot, same no-setup-wizard posture as LeafWiki.
 - User on the host is `carl` (see docker-group comments, IRC log paths).
 - Don't assume everything runs on one machine — if you're about to shell out
   to something host-specific (`pass`, gpg, a systemd unit), check whether it's

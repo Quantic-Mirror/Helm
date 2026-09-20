@@ -1243,6 +1243,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "vault_url": VAULT_BACKEND,
                 "audio_url": AUDIO_BACKEND,
                 "leafwiki_url": os.environ.get("LEAFWIKI_URL", f"https://{SERVER_HOST}:9004"),
+                "dailytxt_url": os.environ.get("DAILYTXT_URL", f"https://{SERVER_HOST}:9005"),
             })
             return
 
