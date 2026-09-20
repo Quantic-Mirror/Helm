@@ -36,7 +36,7 @@ chain for the core app.
   dedicated encrypted-diary app; its admin account is set deterministically
   via `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` env vars on first
   boot, same no-setup-wizard posture as LeafWiki.
-- User on the host is `carl` (see docker-group comments, IRC log paths).
+- User on the host is `carl` (see docker-group comments).
 - Don't assume everything runs on one machine — if you're about to shell out
   to something host-specific (`pass`, gpg, a systemd unit), check whether it's
   actually meant to run on the VPS (where `helm_server.py` itself runs) or
@@ -156,11 +156,9 @@ Examples already in the codebase — follow this precedent for new work:
   in `try/except ImportError` so its absence degrades a single feature
   (password strength scoring) instead of breaking the server.
 - **Talk to existing stores directly instead of standing up new services.**
-  IRC alerts read The Lounge's own SQLite log file read-only
-  (`sqlite3.connect(..., mode=ro)`) rather than running a bot or reaching
-  into the IRC iframe. The password vault shells out to `pass` rather than
-  reimplementing GPG handling — "so it inherits gpg-agent's cache/timeout/
-  lock behavior automatically" (vault_api.py:3-4).
+  The password vault shells out to `pass` rather than reimplementing GPG
+  handling — "so it inherits gpg-agent's cache/timeout/lock behavior
+  automatically" (vault_api.py:3-4).
 - **Talk to daemons over their native socket instead of shelling out to a
   CLI.** Docker status/logs/control go through the Unix socket API directly
   (`_UnixSocketHTTPConnection` in helm_server.py) instead of parsing
@@ -226,13 +224,12 @@ around the gap.
   `<path>.tmp` file first, then `os.replace(tmp, path)` — this is atomic on
   POSIX and Windows and avoids a torn/corrupt file if the process dies
   mid-write. Follow this for any new persisted file (see
-  `_write_state_to_disk`, `_maybe_write_backup`, `_irc_save_ack` in
-  `helm_server.py`).
+  `_write_state_to_disk`, `_maybe_write_backup` in `helm_server.py`).
 - **Section headers in Python files** use a `# ── NAME ──────...` banner
-  comment to delimit major regions of `helm_server.py` (VAULT / AUDIO PROXY, IRC
-  ALERTS, SYSTEM STATS, SERVICE MONITORING, LOG VIEWER, ...). Add new
-  functionality under an existing banner if it fits, or add a new one rather
-  than interleaving unrelated logic.
+  comment to delimit major regions of `helm_server.py` (VAULT / AUDIO PROXY,
+  SYSTEM STATS, SERVICE MONITORING, LOG VIEWER, ...). Add new functionality
+  under an existing banner if it fits, or add a new one rather than
+  interleaving unrelated logic.
 - **Comments explain *why*, not *what*.** The codebase leans heavily on
   comments that justify a non-obvious design decision or flag a subtle bug
   that was avoided (the UTC-vs-naive-datetime note in `_get_docker_logs`,
