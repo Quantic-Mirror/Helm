@@ -18,7 +18,7 @@ Type=simple
 WorkingDirectory=/home/isaboo/repos/Helm
 Environment=WG0_SUBNET=10.66.0.0/24
 # Environment=WG_EGRESS_IFACE=eth0
-ExecStart=/usr/bin/python3 /home/isaboo/repos/Helm/wg_control_server.py /run/helm-wg-control.sock
+ExecStart=/usr/bin/python3 /home/isaboo/repos/Helm/wg_control_server.py /run/helm-wg/control.sock
 Restart=on-failure
 RestartSec=5
 

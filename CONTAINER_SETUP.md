@@ -276,21 +276,21 @@ natively on the **same VPS** that the `helm` container itself runs on
    `journalctl -u helm-wg-control.service`, that's this directory missing —
    the `mkdir` above is a one-time step, not something the service creates
    on its own boot.
-9. Confirm `helm-wg-control.service` is actually `active (running)` (step 8)
-   **before** this step — if `docker compose up -d` runs first and
-   `/run/helm-wg-control.sock` doesn't exist yet, Docker silently creates it
-   as a **directory** instead of leaving it for the real socket, which then
-   makes `wg_control_server.py` fail with `IsADirectoryError`. (It
-   self-heals a stale directory found at startup as of this fix, but
-   getting the order right the first time avoids the detour of also having
-   to `docker compose restart helm` afterward to pick up the corrected
-   mount.) Then set `WGCTL_GID` in `.env` (from step 6) and run
-   `docker compose up -d` so the `helm` container picks up the new
-   `group_add` entry and the `/run/helm-wg-control.sock` bind mount.
+9. Set `WGCTL_GID` in `.env` (from step 6) and run `docker compose up -d` so
+   the `helm` container picks up the new `group_add` entry and the
+   `/run/helm-wg` bind mount. The mount is the socket's **parent
+   directory**, not the socket file itself, deliberately — a single-file
+   bind mount would pin the container's view to whatever inode existed at
+   container start, so every future restart of `helm-wg-control.service`
+   (which deletes and recreates its socket file) would otherwise leave the
+   container looking at a dead socket ("Connection refused") until the
+   container was ALSO restarted. Order relative to step 8 doesn't matter
+   here — a directory mount is fine whether or not the socket exists yet
+   when the container first starts.
 10. Smoke test before touching the UI:
     ```bash
-    curl --unix-socket /run/helm-wg-control.sock http://localhost/status
-    docker compose exec helm curl --unix-socket /run/helm-wg-control.sock http://localhost/status
+    curl --unix-socket /run/helm-wg/control.sock http://localhost/status
+    docker compose exec helm curl --unix-socket /run/helm-wg/control.sock http://localhost/status
     ```
     Both should return the same JSON. If the second one fails with a
     permission error, double-check `WGCTL_GID` actually matches

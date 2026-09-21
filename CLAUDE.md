@@ -45,7 +45,7 @@ chain for the core app.
   Docker container doesn't get even with `NET_ADMIN` unless using
   `network_mode: host` — see "WireGuard VPN proxy" below for why that
   alternative was rejected. `helm_server.py` proxies `/api/vpn/*` to it over
-  a Unix socket (`/run/helm-wg-control.sock`), not TCP+token like
+  a Unix socket (`/run/helm-wg/control.sock`), not TCP+token like
   vault/audio, since this backend is always local — see the "WireGuard VPN
   proxy" banner in `helm_server.py` and `CONTAINER_SETUP.md`'s VPN section
   for the one-time host setup this requires.
@@ -248,11 +248,16 @@ deliberate:
    (hyperion), so `proxy_to_vault`/`proxy_to_audio` need a real network
    call and a shared-secret token. `wg_control_server.py` runs on the
    *same* host as the `helm` container — just a different privilege domain
-   — so it listens on `/run/helm-wg-control.sock` instead, the same idea as
+   — so it listens on `/run/helm-wg/control.sock` instead, the same idea as
    the existing Docker-socket access (`_docker_api()`): socket file
-   permissions (root:`wgctl`, mode 0660; the `helm` container joins `wgctl`
-   via `group_add`, mirroring `DOCKER_GID`) are the access boundary, no
-   token needed.
+   permissions (root:`wgctl`, mode 0660 on the socket, 0750 on its parent
+   directory; the `helm` container joins `wgctl` via `group_add`, mirroring
+   `DOCKER_GID`) are the access boundary, no token needed. The container
+   bind-mounts the socket's *parent directory*, not the socket file itself
+   — a single-file mount would pin the container to whatever inode existed
+   at container start, so every restart of `wg_control_server.py` (which
+   deletes and recreates its socket file) would otherwise leave the
+   container looking at a dead socket until it was restarted too.
 2. **A Docker container with `network_mode: host` + `NET_ADMIN`, controlled
    via `docker exec` over the already-mounted `docker.sock`, was considered
    and rejected.** Docker's exec API takes an arbitrary `Cmd: [...]` — that

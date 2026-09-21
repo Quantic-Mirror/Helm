@@ -685,7 +685,7 @@ def _docker_api(path, method="GET", body=None, socket_path="/var/run/docker.sock
 # this is always local: the socket's root:wgctl 0660 permissions ARE the auth
 # boundary (helm container joins the wgctl group via group_add, same
 # mechanism as DOCKER_GID).
-WG_CONTROL_SOCK = os.environ.get("WG_CONTROL_SOCK", "/run/helm-wg-control.sock")
+WG_CONTROL_SOCK = os.environ.get("WG_CONTROL_SOCK", "/run/helm-wg/control.sock")
 
 
 def proxy_to_wg(method, path, body_bytes=None):
@@ -698,7 +698,7 @@ def proxy_to_wg(method, path, body_bytes=None):
         conn.close()
         return resp.status, raw
     except PermissionError:
-        return 503, json.dumps({"error": "permission denied on helm-wg-control.sock — is the helm container in the wgctl group?"}).encode("utf-8")
+        return 503, json.dumps({"error": "permission denied on the wg control socket — is the helm container in the wgctl group?"}).encode("utf-8")
     except FileNotFoundError:
         return 503, json.dumps({"error": "wg_control_server.py not running (socket not found)"}).encode("utf-8")
     except Exception as e:

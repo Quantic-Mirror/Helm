@@ -3,7 +3,7 @@ wg_control_server.py — thin JSON-over-Unix-socket HTTP layer around wg_api.py.
 
 Runs natively on the VPS host as root (see helm-wg-control.service) — NOT in
 Docker, since WireGuard needs the host's own real network namespace. Listens
-on a Unix domain socket (default /run/helm-wg-control.sock) rather than a
+on a Unix domain socket (default /run/helm-wg/control.sock) rather than a
 TCP port: unlike vault_server.py/audio_grabber_server.py (which proxy to a
 different HOST and need a shared-secret token over the network), this
 backend is always local to helm_server.py's container, so socket file
@@ -28,7 +28,7 @@ from http.server import BaseHTTPRequestHandler
 
 import wg_api
 
-DEFAULT_SOCK_PATH = "/run/helm-wg-control.sock"
+DEFAULT_SOCK_PATH = "/run/helm-wg/control.sock"
 SOCKET_GROUP = "wgctl"
 WATCHDOG_INTERVAL_SECONDS = 30
 
@@ -94,13 +94,34 @@ def _watchdog_loop():
 
 def main():
     sock_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SOCK_PATH
+    sock_dir = os.path.dirname(sock_path)
+
+    # The socket's PARENT DIRECTORY is what gets bind-mounted into the helm
+    # container (see docker-compose.yml), not the socket file itself. A
+    # single-file bind mount pins the container's view to whatever inode
+    # existed when the container started — every restart of this process
+    # deletes and recreates the socket file (a new inode), which then
+    # leaves the container looking at a dead, orphaned socket ("Connection
+    # refused") until the container itself is also restarted. A directory
+    # bind mount doesn't have this problem: the container sees the
+    # directory's live contents, so a fresh socket file appearing inside it
+    # is visible immediately, no container restart needed.
+    if sock_dir:
+        os.makedirs(sock_dir, exist_ok=True)
+        try:
+            shutil.chown(sock_dir, group=SOCKET_GROUP)
+            os.chmod(sock_dir, 0o750)  # root:wgctl rwxr-x--- — group needs traverse+list to reach the socket inside
+        except LookupError:
+            print(f"WARNING: group '{SOCKET_GROUP}' does not exist — {sock_dir} left "
+                  f"owned by whoever ran this. Run: groupadd --system {SOCKET_GROUP}",
+                  file=sys.stderr)
+        except PermissionError:
+            print(f"WARNING: could not chgrp/chmod {sock_dir} — run this as root.", file=sys.stderr)
 
     if os.path.isdir(sock_path):
-        # Docker auto-creates the bind-mount source as a directory if it
-        # doesn't exist yet when the container first starts — harmless to
-        # remove (nothing else ever writes into it); os.rmdir (not rmtree)
-        # so this fails loudly instead of silently deleting the wrong thing
-        # if that assumption is ever wrong.
+        # Defensive backstop from an earlier design (bind-mounting the
+        # socket file directly, before the directory-mount fix above) —
+        # shouldn't happen anymore, but harmless to still guard against.
         os.rmdir(sock_path)
     elif os.path.exists(sock_path):
         os.remove(sock_path)  # stale socket from a prior crash
@@ -114,9 +135,7 @@ def main():
     try:
         shutil.chown(sock_path, group=SOCKET_GROUP)
     except LookupError:
-        print(f"WARNING: group '{SOCKET_GROUP}' does not exist — socket left "
-              f"owned by whoever ran this. Run: groupadd --system {SOCKET_GROUP}",
-              file=sys.stderr)
+        pass  # already warned about the missing group above
     except PermissionError:
         print(f"WARNING: could not chgrp {sock_path} to '{SOCKET_GROUP}' — "
               f"run this as root.", file=sys.stderr)
