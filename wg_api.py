@@ -229,12 +229,21 @@ def _rule_exists(subnet):
         return False
     net = ipaddress.ip_network(subnet, strict=False)
     for r in rules:
-        if r.get("src"):
-            try:
-                if ipaddress.ip_network(r["src"], strict=False) == net:
-                    return True
-            except ValueError:
-                continue
+        src = r.get("src")
+        if not src:
+            continue
+        # `ip -j rule show` splits the source network into separate "src"
+        # (bare address, e.g. "10.66.0.0") and "srclen" (prefix length,
+        # e.g. 24) fields — it does NOT give a combined "10.66.0.0/24"
+        # string. Parsing r["src"] alone silently defaults to a /32 host
+        # match that can never equal an actual /24 subnet, which made this
+        # check a permanent false negative even after filtering by table.
+        cidr = f"{src}/{r['srclen']}" if "srclen" in r else src
+        try:
+            if ipaddress.ip_network(cidr, strict=False) == net:
+                return True
+        except ValueError:
+            continue
     return False
 
 
