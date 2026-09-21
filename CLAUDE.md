@@ -36,19 +36,6 @@ chain for the core app.
   dedicated encrypted-diary app; its admin account is set deterministically
   via `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` env vars on first
   boot, same no-setup-wizard posture as LeafWiki.
-- **wg_control_server.py** — runs natively on the VPS host itself, NOT in
-  Docker (unlike leafwiki/dailytxt above) — it manages `wg0` (a personal
-  WireGuard VPN server hyperion/shrike connect into with their own native
-  WireGuard clients) plus a set of WireGuard client "circuits" to Windscribe
-  access points, switching which one (or "direct") wg0's client traffic
-  exits through. It needs the VPS's own real network namespace, which a
-  Docker container doesn't get even with `NET_ADMIN` unless using
-  `network_mode: host` — see "WireGuard VPN proxy" below for why that
-  alternative was rejected. `helm_server.py` proxies `/api/vpn/*` to it over
-  a Unix socket (`/run/helm-wg/control.sock`), not TCP+token like
-  vault/audio, since this backend is always local — see the "WireGuard VPN
-  proxy" banner in `helm_server.py` and `CONTAINER_SETUP.md`'s VPN section
-  for the one-time host setup this requires.
 - User on the host is `carl` (see docker-group comments).
 - Don't assume everything runs on one machine — if you're about to shell out
   to something host-specific (`pass`, gpg, a systemd unit), check whether it's
@@ -230,65 +217,6 @@ hand-patch the target app's config. If the new service needs WebSocket
 upgrades, that's explicitly *not* supported yet ("flag it rather than
 guessing silently," helm_tls_proxy.py:17-19) — raise it rather than faking
 around the gap.
-
-## WireGuard VPN proxy (`wg_control_server.py`)
-
-`helm_server.py` runs in a Docker container with no `NET_ADMIN`/host-network
-access, so it can't create or control WireGuard interfaces directly.
-Following the vault/audio precedent of "a feature needs real privileged host
-access → small native helper process that helm_server.py proxies to,"
-`wg_control_server.py` runs natively on the VPS host (not in Docker) and
-owns `wg0` (the personal VPN server hyperion/shrike connect to) plus a set
-of WireGuard client "circuits" to Windscribe access points.
-
-Two things make this different from the vault/audio proxy shape, both
-deliberate:
-
-1. **Unix socket, not TCP+token.** vault/audio run on a *different* host
-   (hyperion), so `proxy_to_vault`/`proxy_to_audio` need a real network
-   call and a shared-secret token. `wg_control_server.py` runs on the
-   *same* host as the `helm` container — just a different privilege domain
-   — so it listens on `/run/helm-wg/control.sock` instead, the same idea as
-   the existing Docker-socket access (`_docker_api()`): socket file
-   permissions (root:`wgctl`, mode 0660 on the socket, 0750 on its parent
-   directory; the `helm` container joins `wgctl` via `group_add`, mirroring
-   `DOCKER_GID`) are the access boundary, no token needed. The container
-   bind-mounts the socket's *parent directory*, not the socket file itself
-   — a single-file mount would pin the container to whatever inode existed
-   at container start, so every restart of `wg_control_server.py` (which
-   deletes and recreates its socket file) would otherwise leave the
-   container looking at a dead socket until it was restarted too.
-2. **A Docker container with `network_mode: host` + `NET_ADMIN`, controlled
-   via `docker exec` over the already-mounted `docker.sock`, was considered
-   and rejected.** Docker's exec API takes an arbitrary `Cmd: [...]` — that
-   would mean anything reaching `helm_server.py`'s existing Docker-proxy
-   code path gets arbitrary root-on-host-network command execution, which
-   defeats the point of introducing a privilege boundary at all.
-   `wg_control_server.py` exposes exactly two verbs (`GET /status`,
-   `POST /circuit`) with fixed server-side logic instead — a compromise of
-   `helm_server.py` can at most flip which circuit is active, never run an
-   arbitrary command.
-
-**Kill switch, by design, not by exception handling.** A custom routing
-table (`windscribe`) always has exactly one occupant for its default
-route — either `blackhole` or a specific circuit's interface — swapped
-atomically with `ip route replace` (never an add/delete pair, which would
-create a window with zero or two candidate routes; an earlier draft that
-tried to out-rank a blackhole route via a higher route *metric* had this
-backwards — metric 0, the default, already wins). The `ip rule` selecting
-that table only exists while a circuit is meant to be active; removing it
-(not leaving it pointed at a blackhole) is what lets wg0 traffic fall
-through to the main table for "Direct" mode. `wg_api.py`'s `switch_to()`,
-the watchdog's `fail_closed_now()`, and startup's `reconcile()` are all one
-function used three ways, not three independently-written state machines —
-see the module docstring and comments in `wg_api.py` for the full ordering
-(blackhole first, then bring the new interface up, then confirm a real
-handshake before ever un-blackholing). Every Windscribe circuit config
-needs `Table = off` (or `wg-quick` installs its *own* full-tunnel policy
-routing and hijacks the host's entire default route, not just the intended
-slice — including the admin's own SSH session) and `PersistentKeepalive =
-25` (or an idle-but-healthy tunnel's aging handshake timestamp
-false-positives the watchdog's staleness check) — see `CONTAINER_SETUP.md`.
 
 ## Other conventions
 
