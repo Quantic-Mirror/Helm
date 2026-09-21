@@ -23,6 +23,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -86,11 +87,28 @@ def _require_wg0_subnet():
 
 # ── circuit discovery ────────────────────────────────────────────────────────
 
+# Linux caps network interface names at IFNAMSIZ-1 = 15 characters.
+# wg-quick derives the interface name from the config filename and just
+# fails with a generic "does not exist" (not a length complaint) if it's
+# too long — so validate this ourselves at discovery time instead of
+# listing a circuit that's guaranteed to fail the moment it's selected.
+MAX_IFACE_LEN = 15
+
+
 def list_circuit_ids():
     """Circuit id == the .conf filename stem, e.g. windscribe-1.conf -> 'windscribe-1'."""
     if not WG_DIR.is_dir():
         return []
-    return sorted(p.stem for p in WG_DIR.glob("windscribe-*.conf"))
+    ids = []
+    for p in sorted(WG_DIR.glob("windscribe-*.conf")):
+        if len(p.stem) > MAX_IFACE_LEN:
+            print(f"WARNING: skipping {p.name} — interface name '{p.stem}' is "
+                  f"{len(p.stem)} chars, over Linux's {MAX_IFACE_LEN}-char limit "
+                  f"for network interface names. Rename the file to something "
+                  f"shorter (e.g. windscribe-atl.conf).", file=sys.stderr)
+            continue
+        ids.append(p.stem)
+    return ids
 
 
 def _circuit_conf_path(circuit_id):

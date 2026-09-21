@@ -232,8 +232,20 @@ natively on the **same VPS** that the `helm` container itself runs on
    of that dependency chain. Note the subnet you give it (e.g.
    `10.66.0.0/24`) — you'll need it below.
 5. Place each Windscribe manual config at `/etc/wireguard/windscribe-<name>.conf`
-   (e.g. `windscribe-nyc.conf`), `chmod 600`. **Before ever running `wg-quick
-   up` on any of them**, edit each one to add:
+   (e.g. `windscribe-nyc.conf`), `chmod 600`. **Keep `<name>` to 4 characters
+   or fewer** — Linux caps network interface names at 15 characters total,
+   `wg-quick` derives the interface name directly from the filename, and the
+   required `windscribe-` prefix alone already uses 11 of those 15. Going
+   over doesn't get flagged as a length problem; `wg-quick up` just fails
+   with a generic `` `windscribe-whatever' does not exist ``, and Windscribe's
+   own default export filenames (e.g. `Windscribe-Atlanta-Magic-City-WG.conf`)
+   are always far too long to use directly — always rename them (an airport
+   code like `windscribe-atl.conf` reads better than `windscribe-1.conf` if
+   you have more than a couple). `wg_api.py` also skips (with a warning in
+   `journalctl -u helm-wg-control.service`) any `windscribe-*.conf` it finds
+   over the limit, so an oversized file won't silently appear as a selectable
+   circuit that's guaranteed to fail. **Before ever running `wg-quick up` on
+   any of them**, edit each one to add:
    - `Table = off` under `[Interface]` — without this, `wg-quick` installs
      its *own* full-tunnel policy routing and hijacks the **host's entire
      default route** (including your SSH session), not just the traffic
