@@ -313,6 +313,69 @@ connectivity through the VPN itself is the signal to open the VPN tab and
 reselect a circuit (see CLAUDE.md for why this was a deliberate choice, not
 an oversight).
 
+### Connecting hyperion/shrike to `wg0` — and avoiding a self-lockout
+
+Each device (hyperion, shrike) needs its own client config, generated on
+that device — the private key never needs to leave it. Add the resulting
+public key as a `[Peer]` on the VPS's `wg0.conf` (step 4 above).
+
+```bash
+wg genkey | tee wg0-client_private.key | wg pubkey > wg0-client_public.key
+```
+
+**⚠️ Before bringing this up for the first time, read this.** A normal
+full-tunnel client config looks like:
+
+```ini
+[Interface]
+PrivateKey = <this device's private key>
+Address = 10.66.0.2/24   # .3 on the next device, etc.
+
+[Peer]
+PublicKey = <the VPS's server_public.key contents>
+Endpoint = <VPS Tailscale IP or public IP>:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+```
+
+`AllowedIPs = 0.0.0.0/0, ::/0` means **everything** from this device routes
+through `wg0` once the tunnel is up — including traffic to reach Helm's own
+dashboard. If the `windscribe` table happens to be blackholed at that
+moment (mid-troubleshooting, or because a circuit dropped and nothing's
+been reselected since), bringing this tunnel up **cuts off the only way to
+reach Helm and fix it** — hit live during this feature's own first setup.
+
+The fix: exempt the VPS's own management address from the full tunnel, so
+Helm stays reachable via its own independent routing (e.g. Tailscale's own
+mesh) no matter what state `wg0`/Windscribe is in. Add `PostUp`/`PostDown`
+hooks:
+
+```ini
+[Interface]
+PrivateKey = <this device's private key>
+Address = 10.66.0.2/24
+PostUp = ip rule add to <VPS Tailscale IP>/32 table main priority 50
+PostDown = ip rule del to <VPS Tailscale IP>/32 table main priority 50
+
+[Peer]
+PublicKey = <the VPS's server_public.key contents>
+Endpoint = <VPS Tailscale IP or public IP>:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+```
+
+The `PostUp` rule is a higher-priority (lower number) policy route than
+`wg-quick`'s own generated full-tunnel rule, so traffic to that one address
+keeps using the normal routing table instead of the tunnel — Helm stays
+reachable, everything else still fully tunnels. `PostDown` removes it
+cleanly on `wg-quick down`, so it doesn't accumulate across reconnects.
+
+If you do get locked out despite this (e.g. before adding the hooks to an
+already-running tunnel): `sudo wg-quick down wg0-client` on that device
+restores normal connectivity immediately, letting you reach Helm, pick a
+circuit, and only then bring the tunnel back up — it'll come up already
+routable instead of dead-on-arrival.
+
 ## The Services / Logs tabs
 
 `MONITORED_SERVICES` in `helm_server.py` ships **docker-only** — the `helm` and
