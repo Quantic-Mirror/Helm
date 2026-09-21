@@ -95,7 +95,14 @@ def _watchdog_loop():
 def main():
     sock_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SOCK_PATH
 
-    if os.path.exists(sock_path):
+    if os.path.isdir(sock_path):
+        # Docker auto-creates the bind-mount source as a directory if it
+        # doesn't exist yet when the container first starts — harmless to
+        # remove (nothing else ever writes into it); os.rmdir (not rmtree)
+        # so this fails loudly instead of silently deleting the wrong thing
+        # if that assumption is ever wrong.
+        os.rmdir(sock_path)
+    elif os.path.exists(sock_path):
         os.remove(sock_path)  # stale socket from a prior crash
 
     old_umask = os.umask(0o117)  # created 0660 — no world/other access, no permission-window race

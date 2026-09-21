@@ -222,9 +222,15 @@ natively on the **same VPS** that the `helm` container itself runs on
    echo '200 windscribe' | sudo tee -a /etc/iproute2/rt_tables
    ```
 4. Set up `wg0` (your personal VPN server) however you normally would —
-   `wg genkey`, a `[Interface]`/`[Peer]` block per device (hyperion, shrike),
-   `wg-quick up wg0`, `systemctl enable wg-quick@wg0`. Note the subnet you
-   give it (e.g. `10.66.0.0/24`) — you'll need it below.
+   `wg genkey`, a `[Interface]`/`[Peer]` block per device (hyperion, shrike).
+   Bring it up via **`sudo systemctl enable --now wg-quick@wg0`**, not a
+   manual `wg-quick up wg0` followed by a separate `enable` — running
+   `wg-quick up` by hand first and enabling the unit afterward leaves
+   systemd *thinking* the service was never started, so anything that later
+   depends on it (`helm-wg-control.service` below) fails with "Interface
+   wg0 already exists" the moment systemd tries to start it itself as part
+   of that dependency chain. Note the subnet you give it (e.g.
+   `10.66.0.0/24`) — you'll need it below.
 5. Place each Windscribe manual config at `/etc/wireguard/windscribe-<name>.conf`
    (e.g. `windscribe-nyc.conf`), `chmod 600`. **Before ever running `wg-quick
    up` on any of them**, edit each one to add:
@@ -246,16 +252,41 @@ natively on the **same VPS** that the `helm` container itself runs on
    profile could still override them.
 8. Copy `wg_api.py`, `wg_control_server.py`, and `helm-wg-control.service`
    from this repo onto the VPS (they're not baked into the `helm` Docker
-   image — this process runs outside Docker entirely). Edit the unit file's
-   `WG0_SUBNET=` to match what you used in step 4, then:
+   image — this process runs outside Docker entirely; if `~/helm` here is
+   already a git clone, `git pull` is enough). **Before installing it**,
+   edit the unit file to match your actual setup:
+   - `WorkingDirectory=` and the `ExecStart=` path both hardcode
+     `/home/isaboo/repos/Helm` — that's wherever this file happened to be
+     written from, not a placeholder. Update both to wherever you actually
+     cloned the repo on the VPS (e.g. `~/helm`), or the process fails
+     immediately with `status=200/CHDIR`.
+   - `WG0_SUBNET=` to match what you used in step 4.
+
+   Then create the state directory the unit's `ReadWritePaths=` sandboxing
+   expects — systemd needs it to already exist to bind-mount it into the
+   sandbox, it won't create it for you:
    ```bash
+   sudo mkdir -p /etc/helm-wg
    sudo cp helm-wg-control.service /etc/systemd/system/
    sudo systemctl daemon-reload
    sudo systemctl enable --now helm-wg-control.service
    ```
-9. Set `WGCTL_GID` in `.env` (from step 6) and run `docker compose up -d` so
-   the `helm` container picks up the new `group_add` entry and the
-   `/run/helm-wg-control.sock` bind mount.
+   If you ever see `Failed to set up mount namespacing: .../etc/helm-wg: No
+   such file or directory` (status `226/NAMESPACE`) in
+   `journalctl -u helm-wg-control.service`, that's this directory missing —
+   the `mkdir` above is a one-time step, not something the service creates
+   on its own boot.
+9. Confirm `helm-wg-control.service` is actually `active (running)` (step 8)
+   **before** this step — if `docker compose up -d` runs first and
+   `/run/helm-wg-control.sock` doesn't exist yet, Docker silently creates it
+   as a **directory** instead of leaving it for the real socket, which then
+   makes `wg_control_server.py` fail with `IsADirectoryError`. (It
+   self-heals a stale directory found at startup as of this fix, but
+   getting the order right the first time avoids the detour of also having
+   to `docker compose restart helm` afterward to pick up the corrected
+   mount.) Then set `WGCTL_GID` in `.env` (from step 6) and run
+   `docker compose up -d` so the `helm` container picks up the new
+   `group_add` entry and the `/run/helm-wg-control.sock` bind mount.
 10. Smoke test before touching the UI:
     ```bash
     curl --unix-socket /run/helm-wg-control.sock http://localhost/status
