@@ -14,6 +14,7 @@ natively on a separate host:
 | DailyTxT (`dailytxt` + `dailytxt-proxy`) | **Container (any host)** | End-to-end-encrypted diary for the Journal tab; iframed cross-origin through `dailytxt-proxy` (`helm_tls_proxy.py`), same cookie/framing rewrite as LeafWiki above |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
+| **VPN** (`wg_control_server.py` + WireGuard) | **Native on the VPS itself** | Needs the VPS's own real network namespace (a container even with `NET_ADMIN` doesn't get one without `network_mode: host`, which was deliberately rejected — see CLAUDE.md "WireGuard VPN proxy"); talks to `helm_server.py` over a Unix socket, not a proxied host |
 | **Music / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Hermes was removed and hasn't been re-added. |
 
 > **Note:** The old MPD-backed Music tab (playback via ncmpcpp/ttyd) and the
@@ -201,6 +202,73 @@ HELM_CA_FILE=/etc/helm/helm-ca.crt      # or HELM_TLS_INSECURE=1 on a Tailscale 
 There is no broker: an event emitted while the Helm host is unreachable is
 retried for ~3 minutes and then dropped. The backup itself is unaffected —
 `emit_event.py` failures are non-fatal to the calling script.
+
+## VPN (`wg_control_server.py`)
+
+Unlike vault/audio above, this does **not** run on a separate host — it runs
+natively on the **same VPS** that the `helm` container itself runs on
+(WireGuard needs the VPS's own real network namespace; see CLAUDE.md
+"WireGuard VPN proxy" for why). One-time setup, in order:
+
+1. Install WireGuard tooling: `apt install wireguard-tools` (or your distro's
+   equivalent — `iproute2`/`iptables` are normally already present).
+2. Enable forwarding permanently:
+   ```bash
+   echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-helm-wg.conf
+   sudo sysctl --system
+   ```
+3. Add a custom routing table:
+   ```bash
+   echo '200 windscribe' | sudo tee -a /etc/iproute2/rt_tables
+   ```
+4. Set up `wg0` (your personal VPN server) however you normally would —
+   `wg genkey`, a `[Interface]`/`[Peer]` block per device (hyperion, shrike),
+   `wg-quick up wg0`, `systemctl enable wg-quick@wg0`. Note the subnet you
+   give it (e.g. `10.66.0.0/24`) — you'll need it below.
+5. Place each Windscribe manual config at `/etc/wireguard/windscribe-<name>.conf`
+   (e.g. `windscribe-nyc.conf`), `chmod 600`. **Before ever running `wg-quick
+   up` on any of them**, edit each one to add:
+   - `Table = off` under `[Interface]` — without this, `wg-quick` installs
+     its *own* full-tunnel policy routing and hijacks the **host's entire
+     default route** (including your SSH session), not just the traffic
+     this setup means to route.
+   - `PersistentKeepalive = 25` under `[Peer]` — without this, an idle but
+     healthy tunnel's handshake timestamp just ages with nothing to trigger
+     a rekey, and the kill-switch watchdog will false-positive it as dead.
+6. Create the socket-permission group:
+   ```bash
+   sudo groupadd --system wgctl
+   getent group wgctl   # note the GID, set WGCTL_GID in .env to match
+   ```
+7. Check `sudo iptables -L FORWARD` — if the default policy is `DROP` (some
+   `ufw` profiles set this), `wg_api.py`'s `reconcile()` installs explicit
+   `ACCEPT` rules for the relevant interfaces at startup, but a stricter ufw
+   profile could still override them.
+8. Copy `wg_api.py`, `wg_control_server.py`, and `helm-wg-control.service`
+   from this repo onto the VPS (they're not baked into the `helm` Docker
+   image — this process runs outside Docker entirely). Edit the unit file's
+   `WG0_SUBNET=` to match what you used in step 4, then:
+   ```bash
+   sudo cp helm-wg-control.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now helm-wg-control.service
+   ```
+9. Set `WGCTL_GID` in `.env` (from step 6) and run `docker compose up -d` so
+   the `helm` container picks up the new `group_add` entry and the
+   `/run/helm-wg-control.sock` bind mount.
+10. Smoke test before touching the UI:
+    ```bash
+    curl --unix-socket /run/helm-wg-control.sock http://localhost/status
+    docker compose exec helm curl --unix-socket /run/helm-wg-control.sock http://localhost/status
+    ```
+    Both should return the same JSON. If the second one fails with a
+    permission error, double-check `WGCTL_GID` actually matches
+    `getent group wgctl`.
+
+There is no notification service wired up for a dropped circuit — losing
+connectivity through the VPN itself is the signal to open the VPN tab and
+reselect a circuit (see CLAUDE.md for why this was a deliberate choice, not
+an oversight).
 
 ## The Services / Logs tabs
 

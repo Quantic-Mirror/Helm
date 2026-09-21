@@ -677,6 +677,34 @@ def _docker_api(path, method="GET", body=None, socket_path="/var/run/docker.sock
         return None, str(e)
 
 
+# ── WIREGUARD VPN PROXY ──────────────────────────────────────────────────────
+# wg_control_server.py runs natively (root, systemd) on THIS SAME host, not in
+# Docker — WireGuard interfaces need a real route out the VPS's own NIC, which
+# a namespaced container doesn't get even with NET_ADMIN. Talked to over a
+# Unix socket (like docker.sock above), not TCP+token like vault/audio, since
+# this is always local: the socket's root:wgctl 0660 permissions ARE the auth
+# boundary (helm container joins the wgctl group via group_add, same
+# mechanism as DOCKER_GID).
+WG_CONTROL_SOCK = os.environ.get("WG_CONTROL_SOCK", "/run/helm-wg-control.sock")
+
+
+def proxy_to_wg(method, path, body_bytes=None):
+    try:
+        conn = _UnixSocketHTTPConnection(WG_CONTROL_SOCK)
+        headers = {"Content-Type": "application/json"} if body_bytes else {}
+        conn.request(method, path, body=body_bytes, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read()
+        conn.close()
+        return resp.status, raw
+    except PermissionError:
+        return 503, json.dumps({"error": "permission denied on helm-wg-control.sock — is the helm container in the wgctl group?"}).encode("utf-8")
+    except FileNotFoundError:
+        return 503, json.dumps({"error": "wg_control_server.py not running (socket not found)"}).encode("utf-8")
+    except Exception as e:
+        return 502, json.dumps({"error": str(e)}).encode("utf-8")
+
+
 def _run(cmd, timeout=10, env=None):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
@@ -1284,6 +1312,15 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
 
+        if parsed.path == "/api/vpn/status":
+            status, data = proxy_to_wg("GET", "/status")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
         super().do_GET()
 
     # ── PUT — last-write-wins, no version conflict rejection ──────────────────
@@ -1395,6 +1432,17 @@ class HelmHandler(SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body_bytes = self.rfile.read(length) if length else None
             status, data = proxy_to_vault("POST", self.path, body_bytes)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if parsed.path == "/api/vpn/circuit":
+            length = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(length) if length else None
+            status, data = proxy_to_wg("POST", "/circuit", body_bytes)
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))

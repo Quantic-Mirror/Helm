@@ -62,6 +62,10 @@ services:
       # control Docker containers via the socket API.
       # Find yours: getent group docker | cut -d: -f3
       - "${DOCKER_GID:-999}"
+      # Lets the container read/write the WireGuard control socket below
+      # (owned root:wgctl on the host — see helm-wg-control.service).
+      # Find yours: getent group wgctl | cut -d: -f3
+      - "${WGCTL_GID:-989}"
     # Host ./data is bind-mounted to /app/state (HELM_STATE_DIR below). It may
     # be empty on first run — marks_state.json and helm-backups/ are created
     # automatically. Drop in as needed:
@@ -74,6 +78,11 @@ services:
       # (searxng, etc.) via the Docker socket API. Safe to remove if you
       # don't need the Services tab to see other containers.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # wg_control_server.py's Unix socket (runs natively on the host, root,
+      # via helm-wg-control.service — see CLAUDE.md/CONTAINER_SETUP.md).
+      # NOT :ro — POST /api/vpn/circuit writes through this socket. Comment
+      # out (along with WG_CONTROL_SOCK below) if you don't want the VPN tab.
+      - /run/helm-wg-control.sock:/run/helm-wg-control.sock
       # OPTIONAL — only for monitoring the *host's* systemd-user services from
       # the Services/Logs tabs. Requires a running user session + journal on
       # the host (`loginctl enable-linger <user>`), otherwise `docker compose
@@ -125,6 +134,11 @@ services:
       # tab's iframe. Fresh port (9005) following the 9004 precedent, so no
       # stale browser-side state from any earlier port ever bleeds in.
       DAILYTXT_URL: "https://${SERVER_HOST:-localhost}:${DAILYTXT_PROXY_LISTEN_PORT:-9005}"
+      # wg_control_server.py's socket path, as seen from INSIDE this
+      # container (matches the bind-mount target above, not the host path) —
+      # unlike LEAFWIKI_URL/DAILYTXT_URL this is a local socket, not a URL
+      # the browser ever sees.
+      WG_CONTROL_SOCK: "/run/helm-wg-control.sock"
     command: ["python3", "helm_server.py", "8443"]
 
   # ── LeafWiki (self-hosted markdown wiki, iframed into the Wiki tab) ─────────

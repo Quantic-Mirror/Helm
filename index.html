@@ -2294,6 +2294,79 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .bp-event-name { color: var(--accent); flex-shrink: 0; }
 .bp-event-message { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ── VPN PAGE ─────────────────────────────────────────────────────────────────
+   Card/dot classes mirror the Backup Pipeline's 4-state pattern (.bp-*) above
+   — ok=circuit active with a fresh handshake, warn=switching, err=fail-closed
+   or wg_control_server.py unreachable, none=Direct (no circuit selected). */
+#vpn-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+#vpn-topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+#vpn-last-updated { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+
+#vpn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.vpn-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  transition: border-color 0.15s;
+}
+.vpn-card-ok   { border-color: rgba(63,185,80,0.3); }
+.vpn-card-warn { border-color: rgba(227,179,65,0.3); }
+.vpn-card-err  { border-color: rgba(248,81,73,0.3); }
+.vpn-card-none { border-color: var(--border); }
+
+.vpn-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.vpn-card-name {
+  font-family: var(--font-display);
+  font-size: 14px; font-weight: 600; color: var(--text); flex: 1;
+}
+.vpn-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+.vpn-dot-ok   { background: var(--green); color: var(--green); }
+.vpn-dot-warn { background: var(--amber); color: var(--amber); animation: bp-pulse 1.4s ease-in-out infinite; }
+.vpn-dot-err  { background: var(--red);   color: var(--red); }
+.vpn-dot-none { background: var(--text-dim); color: var(--text-dim); }
+
+body.theme-terminal .vpn-dot {
+  width: auto; height: auto; border-radius: 0; background: none !important;
+  box-shadow: none; font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+  animation: none;
+}
+body.theme-terminal .vpn-dot-ok::before   { content: '[OK]'; }
+body.theme-terminal .vpn-dot-warn::before { content: '[RUN]'; color: var(--amber); }
+body.theme-terminal .vpn-dot-err::before  { content: '[FAIL]'; color: var(--red); }
+body.theme-terminal .vpn-dot-none::before { content: '[--]'; }
+
+.vpn-card-status { font-size: 12px; color: var(--text-muted); }
+.vpn-card-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.vpn-card-actions { margin-top: 10px; }
+.vpn-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: none; color: var(--text);
+  font-family: var(--font-body); font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.vpn-btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--accent); color: var(--accent); }
+.vpn-btn:disabled { opacity: 0.5; cursor: default; }
+.vpn-btn-active { border-color: var(--green); color: var(--green); cursor: default; }
+
+.vpn-peer-list { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+.vpn-peer-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); padding: 2px 0; }
+
+.vpn-error, .vpn-loading {
+  padding: 40px 20px; text-align: center;
+  font-size: 13px; color: var(--text-dim);
+}
+
 /* ── MUSIC PAGE (Audio Grabber + musicXplorer merged) ───────────────────────── */
 #music-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
 #music-topbar {
@@ -3064,6 +3137,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#calendar" data-tab="calendar">📅 Calendar</a>
     <a class="tab-btn" href="#services" data-tab="services">🖥 Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
+    <a class="tab-btn" href="#vpn" data-tab="vpn">🔒 VPN</a>
     <a class="tab-btn" href="#music" data-tab="music">🎵 Music</a>
     <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
     <a class="tab-btn" href="#leafwiki" data-tab="leafwiki">📓 Wiki</a>
@@ -3220,6 +3294,20 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   </div>
   <div id="backups-summary"></div>
   <div id="backups-events"></div>
+</div>
+
+<!-- VPN PAGE — talks to /api/vpn/*, proxied by helm_server.py to
+     wg_control_server.py (a native helper on the VPS host, not in Docker —
+     see CLAUDE.md "WireGuard VPN proxy"). wg0 is the personal VPN server
+     hyperion/shrike connect to directly with their own WireGuard apps —
+     this tab does not control that side at all, only which Windscribe
+     circuit (or Direct) their traffic exits through. -->
+<div id="vpn-page" style="display:none">
+  <div id="vpn-topbar">
+    <span id="vpn-last-updated"></span>
+    <button class="btn" id="btn-refresh-vpn">↺ Refresh</button>
+  </div>
+  <div id="vpn-grid"></div>
 </div>
 
 <!-- MUSIC PAGE (Audio Grabber + musicXplorer merged) — a full-width tab bar
@@ -3667,6 +3755,10 @@ const SERVICES_POLL_MS = 2 * 60 * 1000;
 let backupsData = [];
 let backupsPollTimer = null;
 const BACKUPS_POLL_MS = 30 * 1000;
+let vpnData = null;
+let vpnPollTimer = null;
+let vpnSwitchInFlight = null; // circuit id currently mid-switch, for the "warn" card state
+const VPN_POLL_MS = 30 * 1000;
 let logsData = [];
 let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
@@ -9370,7 +9462,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'workout', 'leafwiki', 'journal'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'vpn', 'music', 'logs', 'workout', 'leafwiki', 'journal'];
 // Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
 // Music tab — redirect anyone with an old bookmarked/shared hash instead of
 // falling through to Dashboard.
@@ -9577,6 +9669,7 @@ function switchTab(tab) {
   show('calendar-page',  tab === 'calendar');
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
+  show('vpn-page',       tab === 'vpn');
   show('music-page',     tab === 'music');
   show('workout-page',   tab === 'workout');
   show('leafwiki-page',  tab === 'leafwiki');
@@ -9587,7 +9680,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', vpn: 'Helm — VPN', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
@@ -9599,6 +9692,8 @@ function switchTab(tab) {
   else stopServicesPolling();
   if (tab === 'backups')   { fetchBackupEvents(); startBackupsPolling(); }
   else stopBackupsPolling();
+  if (tab === 'vpn')       { fetchVpnStatus(); startVpnPolling(); }
+  else stopVpnPolling();
   if (tab === 'music')     { fetchAudioData(); startAudioPolling(); renderMusicXplorerPage(); }
   else stopAudioPolling();
   if (tab === 'logs')      {
@@ -9644,6 +9739,7 @@ document.getElementById('btn-invidious-config').onclick = changeInvidiousInstanc
 document.getElementById('btn-add-news-source').onclick = addNewsSource;
 document.getElementById('btn-refresh-services').onclick = fetchServices;
 document.getElementById('btn-refresh-backups').onclick = fetchBackupEvents;
+document.getElementById('btn-refresh-vpn').onclick = fetchVpnStatus;
 document.getElementById('btn-refresh-logs').onclick = fetchLogs;
 document.getElementById('btn-refresh-audio').onclick = fetchAudioData;
 document.getElementById('btn-audio-search').onclick = () => {
@@ -10982,6 +11078,151 @@ function startBackupsPolling() {
 function stopBackupsPolling() {
   clearInterval(backupsPollTimer);
   backupsPollTimer = null;
+}
+
+// ── VPN PAGE ─────────────────────────────────────────────────────────────────
+// Talks to /api/vpn/status and /api/vpn/circuit, proxied by helm_server.py
+// over a Unix socket to wg_control_server.py (a native helper on the VPS
+// host — see CLAUDE.md "WireGuard VPN proxy"). wg0 is the personal VPN
+// server hyperion/shrike connect to directly; this page only shows its
+// status and lets you pick which Windscribe circuit (or Direct) their
+// traffic exits through — connecting/disconnecting hyperion/shrike itself
+// stays a manual action in their own WireGuard apps, outside Helm entirely.
+function formatHandshakeAge(seconds) {
+  if (seconds == null) return 'never';
+  if (seconds < 5) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m ago`;
+}
+
+async function fetchVpnStatus() {
+  try {
+    const resp = await fetch('/api/vpn/status', { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || ('HTTP ' + resp.status));
+    }
+    vpnData = await resp.json();
+    renderVpnPage();
+    const el = document.getElementById('vpn-last-updated');
+    if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch (e) {
+    vpnData = null;
+    const grid = document.getElementById('vpn-grid');
+    if (grid) grid.innerHTML = `<div class="vpn-error">Could not reach the VPN backend: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderVpnPage() {
+  const grid = document.getElementById('vpn-grid');
+  if (!grid) return;
+  if (!vpnData) {
+    grid.innerHTML = '<div class="vpn-loading">Loading…</div>';
+    fetchVpnStatus();
+    return;
+  }
+
+  const cards = [buildVpnServerCardHTML(vpnData.wg0)];
+
+  if (vpnData.fail_closed) {
+    cards.push(`
+      <div class="vpn-card vpn-card-err">
+        <div class="vpn-card-header">
+          <span class="vpn-dot vpn-dot-err"></span>
+          <span class="vpn-card-name">Blocked (fail-closed)</span>
+        </div>
+        <div class="vpn-card-status">The last circuit dropped unexpectedly — traffic from hyperion/shrike is blocked, not routed direct. Select a circuit below to resume.</div>
+      </div>`);
+  }
+
+  cards.push(buildVpnCircuitCardHTML('direct', 'Direct', vpnData));
+  for (const c of vpnData.circuits) {
+    cards.push(buildVpnCircuitCardHTML(c.id, c.id, vpnData, c));
+  }
+
+  grid.innerHTML = cards.join('');
+  wireVpnCards();
+}
+
+function buildVpnServerCardHTML(wg0) {
+  const dot = `<span class="vpn-dot ${wg0.up ? 'vpn-dot-ok' : 'vpn-dot-none'}"></span>`;
+  const peers = (wg0.peers || []).map(p => `
+    <div class="vpn-peer-row">
+      <span>${escHtml(p.endpoint || p.public_key.slice(0, 12) + '…')}</span>
+      <span>${formatHandshakeAge(p.latest_handshake ? Math.max(0, Math.floor(Date.now() / 1000) - p.latest_handshake) : null)} · ↓${formatBytes(p.rx_bytes)} ↑${formatBytes(p.tx_bytes)}</span>
+    </div>`).join('');
+  return `
+    <div class="vpn-card ${wg0.up ? 'vpn-card-ok' : 'vpn-card-none'}">
+      <div class="vpn-card-header">
+        ${dot}
+        <span class="vpn-card-name">wg0 — personal VPN server</span>
+      </div>
+      <div class="vpn-card-status">${wg0.up ? `${(wg0.peers || []).length} peer(s) configured` : 'Interface down'}</div>
+      ${peers ? `<div class="vpn-peer-list">${peers}</div>` : ''}
+    </div>`;
+}
+
+function buildVpnCircuitCardHTML(id, label, vpnData, circuitInfo) {
+  const isActive = vpnData.active_circuit === id && !vpnData.fail_closed;
+  const isSwitching = vpnSwitchInFlight === id;
+  const state = isSwitching ? 'warn' : isActive ? 'ok' : 'none';
+  const dot = `<span class="vpn-dot vpn-dot-${state}"></span>`;
+  let status = 'Not selected';
+  if (isSwitching) status = 'Switching…';
+  else if (isActive) status = circuitInfo ? `Active · handshake ${formatHandshakeAge(circuitInfo.handshake_age_s)}` : 'Active';
+  else if (circuitInfo && !circuitInfo.up) status = 'Not connected';
+
+  const btnDisabled = isActive || isSwitching || vpnSwitchInFlight;
+  const btnLabel = isActive ? '✓ Active' : isSwitching ? 'Switching…' : 'Select';
+  const btnClass = isActive ? 'vpn-btn vpn-btn-active' : 'vpn-btn';
+
+  return `
+    <div class="vpn-card vpn-card-${state}">
+      <div class="vpn-card-header">
+        ${dot}
+        <span class="vpn-card-name">${escHtml(label)}</span>
+      </div>
+      <div class="vpn-card-status">${escHtml(status)}</div>
+      <div class="vpn-card-actions">
+        <button class="${btnClass}" data-vpn-circuit="${escHtml(id)}" ${btnDisabled ? 'disabled' : ''}>${btnLabel}</button>
+      </div>
+    </div>`;
+}
+
+function wireVpnCards() {
+  document.querySelectorAll('[data-vpn-circuit]').forEach(btn => {
+    btn.onclick = async () => {
+      const circuit = btn.dataset.vpnCircuit;
+      vpnSwitchInFlight = circuit;
+      renderVpnPage();
+      try {
+        const resp = await fetch('/api/vpn/circuit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ circuit }),
+          signal: AbortSignal.timeout(20000),
+        });
+        const result = await resp.json();
+        toast(resp.ok ? `Switched to ${circuit}` : `Failed: ${result.error || 'unknown error'}`);
+      } catch (e) {
+        toast('Circuit switch failed: ' + e.message);
+      }
+      vpnSwitchInFlight = null;
+      setTimeout(fetchVpnStatus, 1000);
+    };
+  });
+}
+
+function startVpnPolling() {
+  if (!vpnPollTimer) {
+    vpnPollTimer = setInterval(fetchVpnStatus, VPN_POLL_MS);
+  }
+}
+
+function stopVpnPolling() {
+  clearInterval(vpnPollTimer);
+  vpnPollTimer = null;
 }
 
 // ── AUDIO GRABBER PAGE ────────────────────────────────────────────────────────
