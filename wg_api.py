@@ -213,7 +213,14 @@ def get_status():
 # ── idempotent primitives ────────────────────────────────────────────────────
 
 def _rule_exists(subnet):
-    out, _, rc = _run(["ip", "-j", "rule", "show"])
+    # Filter by table NAME at the `ip` command level rather than comparing
+    # a "table" field from unfiltered JSON output ourselves — `ip -j rule
+    # show` (no filter) reports table as its raw numeric id (e.g. 200), not
+    # the resolved name, so comparing that field against RT_TABLE ("wind-
+    # scribe") as a string never matched and made this check a permanent
+    # false negative — every switch attempt then tried to blindly re-add an
+    # already-present rule and failed with "RTNETLINK answers: File exists".
+    out, _, rc = _run(["ip", "-j", "rule", "show", "table", RT_TABLE])
     if rc != 0:
         return False
     try:
@@ -222,7 +229,7 @@ def _rule_exists(subnet):
         return False
     net = ipaddress.ip_network(subnet, strict=False)
     for r in rules:
-        if r.get("table") == RT_TABLE and r.get("src"):
+        if r.get("src"):
             try:
                 if ipaddress.ip_network(r["src"], strict=False) == net:
                     return True
