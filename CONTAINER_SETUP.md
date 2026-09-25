@@ -96,15 +96,21 @@ variables — no hardcoding. Adapt this setup to any host.
    ```bash
    cp .env.example .env
    # Edit .env:
-   #   HELM_BIND         — your Tailscale IP (tailnet-only), or 0.0.0.0 for public
-   #   SERVER_HOST       — same Tailscale IP (from `tailscale ip -4`)
-   #   VAULT_HOSTS       — Tailscale IP(s) of the host running vault_server.py,
-   #                       comma-separated for a dual-boot workstation
-   #   AUDIO_HOSTS       — likewise for audio_grabber_server.py
-   #   SEARXNG_HOST      — same as SERVER_HOST (the browser hits SearXNG directly;
-   #                       "localhost" only works when browsing from the host)
-   #   HELM_UID/GID      — find with: id -u && id -g
-   #   DOCKER_GID        — find with: getent group docker | cut -d: -f3
+   #   HELM_BIND               — your Tailscale IP (tailnet-only), or 0.0.0.0 for public
+   #   SERVER_HOST             — same Tailscale IP (from `tailscale ip -4`)
+   #   VAULT_HOSTS             — Tailscale IP(s) of the host running vault_server.py,
+   #                             comma-separated for a dual-boot workstation
+   #   AUDIO_HOSTS             — likewise for audio_grabber_server.py
+   #   SEARXNG_HOST            — same as SERVER_HOST (the browser hits SearXNG directly;
+   #                             "localhost" only works when browsing from the host)
+   #   HELM_UID/GID            — find with: id -u && id -g
+   #   DOCKER_GID              — find with: getent group docker | cut -d: -f3
+   #   LEAFWIKI_JWT_SECRET     — required, no default: openssl rand -hex 32
+   #   LEAFWIKI_ADMIN_PASSWORD — required, no default; the leafwiki container
+   #                             refuses to start without both
+   #   DAILYTXT_SECRET_TOKEN   — required, no default: openssl rand -base64 32
+   #   DAILYTXT_ADMIN_PASSWORD — required, no default (gates DailyTxT's admin
+   #                             panel only, not a diary login — see .env.example)
    ```
 
 5. **Set up the data directory (optional — it's created empty on first run):**
@@ -113,8 +119,11 @@ variables — no hardcoding. Adapt this setup to any host.
    ```
    The code is baked into the image, so nothing needs copying here.
    `data/` is bind-mounted to `/app/state`; `marks_state.json` and
-   `helm-backups/` are created automatically. Add these only if you use the
-   corresponding feature:
+   `helm-backups/` are created automatically. `leafwiki-data/`,
+   `dailytxt-data/`, `searxng-settings/`, and `searxng-data/` are likewise
+   created empty on first run for their respective containers — nothing to
+   pre-populate there either. Add these only if you use the corresponding
+   feature:
    ```bash
    # Bring your existing bookmarks/state across (optional):
    cp /path/to/marks_state.json data/
@@ -122,6 +131,10 @@ variables — no hardcoding. Adapt this setup to any host.
    # Shared secrets for the vault / audio hosts (only if those are deployed):
    cp /path/to/vault_token.txt data/
    cp /path/to/audio_token.txt data/
+
+   # API access token, gating every /api/* route (recommended for any
+   # deployment reachable beyond 127.0.0.1 — see the Public/LAN section below):
+   openssl rand -hex 32 > data/helm_token.txt
 
    # Last.fm API key for musicXplorer's related-artist lookup (optional —
    # without it, that one panel shows a "not configured" message and
@@ -141,13 +154,82 @@ variables — no hardcoding. Adapt this setup to any host.
 6. **Start the stack:**
    ```bash
    docker compose up -d
+   docker compose ps   # helm, leafwiki, leafwiki-proxy, dailytxt, dailytxt-proxy, searxng — all Up
    ```
 
-7. **Verify:**
+7. **DailyTxT first boot — register your diary account:**
+   DailyTxT has no default account. Set `DAILYTXT_ALLOW_REGISTRATION=true` in
+   `.env`, `docker compose up -d dailytxt` to apply it, open the Journal tab
+   and register through DailyTxT's own login page, then set
+   `DAILYTXT_ALLOW_REGISTRATION=false` (or remove the line) and restart the
+   `dailytxt` container again. `DAILYTXT_ADMIN_PASSWORD` only gates DailyTxT's
+   separate admin/user-management panel, not this login.
+
+8. **Verify:**
    - Dashboard: `https://<Tailscale-IP>:8443` (import the self-signed cert once)
    - SearXNG: accessible via the Dashboard's Search widget (proxied through /api/config)
+   - Wiki tab: LeafWiki loads and its admin account logs in with `LEAFWIKI_ADMIN_PASSWORD`
+   - Journal tab: DailyTxT loads and the account registered in step 7 logs in
 
-8. **Set up the vault on the separate host:** see `WSL2_VAULT_SETUP.md`.
+9. **Set up the vault on the separate host:** see `WSL2_VAULT_SETUP.md`.
+
+## LeafWiki git content backup (optional)
+
+LeafWiki has its own built-in **Git Backup** feature (experimental as of
+v0.11.3): on a configurable interval it commits `root/` (pages) and `assets/`
+— not the SQLite database — and pushes to a remote Git repo over SSH or
+HTTP(S). This is the recommended way to get Wiki-tab content off the VPS;
+without it, `leafwiki-data/` has no off-site copy (the R2 mirror pipeline in
+`BACKUP-PIPELINE-GUIDE.md` doesn't cover it — see that file's note). One-time
+setup, SSH variant:
+
+1. **Create a dedicated private repo** for the backup content, e.g.
+   `youruser/leafwiki-backup`.
+
+2. **Generate a dedicated deploy key** (don't reuse an account-wide key —
+   this one only needs write access to the single backup repo):
+   ```bash
+   ssh-keygen -t ed25519 -N '' -f ./leafwiki_backup_ed25519 -C leafwiki-git-backup
+   ```
+   Add `leafwiki_backup_ed25519.pub` to the backup repo's **Settings ▸ Deploy
+   keys ▸ Add deploy key**, with **Allow write access** checked.
+
+3. **Drop the private key and a known_hosts file into `./leafwiki-data/`**
+   on the container host (bind-mounted to `/app/data`, gitignored — same
+   pattern as `data/*_token.txt`):
+   ```bash
+   mv ./leafwiki_backup_ed25519 ./leafwiki-data/leafwiki_backup_ed25519
+   chmod 600 ./leafwiki-data/leafwiki_backup_ed25519
+   ssh-keyscan -t ed25519,rsa,ecdsa github.com > ./leafwiki-data/leafwiki_known_hosts
+   ```
+   (The `leafwiki` container has no `USER` in its image — it runs as root and
+   its `/app/data` is world-writable — so `chmod 600` is enough; no UID
+   matching needed, unlike `HELM_UID`/`HELM_GID` for the `helm` service.)
+
+4. **Set in `.env`** (see the commented-out block there for the full list):
+   ```bash
+   LEAFWIKI_GIT_BACKUP=true
+   LEAFWIKI_GIT_BACKUP_REMOTE=git@github.com:youruser/leafwiki-backup.git
+   LEAFWIKI_GIT_BACKUP_BRANCH=main
+   LEAFWIKI_GIT_BACKUP_SSH_KEY_PATH=/app/data/leafwiki_backup_ed25519
+   LEAFWIKI_GIT_BACKUP_SSH_KNOWN_HOSTS=/app/data/leafwiki_known_hosts
+   LEAFWIKI_GIT_BACKUP_INTERVAL=60m
+   ```
+   Skipping `LEAFWIKI_GIT_BACKUP_SSH_KNOWN_HOSTS` doesn't fail startup, but
+   LeafWiki then disables SSH host-key verification (no `~/.ssh/known_hosts`
+   exists in the container) — set it explicitly.
+
+5. **Apply and verify:**
+   ```bash
+   docker compose up -d leafwiki
+   docker compose logs leafwiki --tail 50   # no "Conflict — remote diverged" warning
+   ```
+   Or trigger one manually from LeafWiki's **Git Content Backup** admin page,
+   then check the backup repo on GitHub for a new commit.
+
+For an HTTPS + fine-grained-PAT variant instead of SSH, or the `--git-backup-path`
+option (nesting the backup in a monorepo subdirectory), see the "Git Backup"
+section of the [LeafWiki README](https://github.com/perber/leafwiki#git-backup-v0113-experimental).
 
 ## What runs on the separate host (setup once, per OS)
 
@@ -225,7 +307,12 @@ If you prefer to expose Helm publicly instead of over Tailscale:
    move the host port)
 2. Use Let's Encrypt certs (via nginx/caddy reverse proxy)
 3. Point `SERVER_HOST` to your public domain
-4. **Add authentication** — Helm has no built-in auth; protect `/api/*`
-   behind nginx basic auth or similar
+4. **Set `data/helm_token.txt`** (`openssl rand -hex 32 > data/helm_token.txt`)
+   — with this file present, every `/api/*` route requires
+   `Authorization: Bearer <token>` (except `GET /api/health` and
+   `POST /api/backup-events`, which has its own `X-Backup-Token`). Enter the
+   token once per device/browser via the Data ▾ menu's 🔑 Access Token item. With no
+   such file, auth is disabled (fail-open) — strongly recommended to set this
+   for any deployment reachable beyond `127.0.0.1`.
 
 See the commented-out section in `.env.example` for the exact settings.

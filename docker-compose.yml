@@ -145,6 +145,19 @@ services:
       LEAFWIKI_JWT_SECRET: "${LEAFWIKI_JWT_SECRET:?set a random secret in .env, e.g. openssl rand -hex 32}"
       LEAFWIKI_ADMIN_PASSWORD: "${LEAFWIKI_ADMIN_PASSWORD:?set an initial admin password in .env}"
       LEAFWIKI_ALLOW_INSECURE: "true"
+      # Git Backup (LeafWiki's own feature, experimental as of v0.11.3): pushes
+      # wiki content (root/ + assets/, not the SQLite db) to a remote repo on
+      # an interval. Off unless LEAFWIKI_GIT_BACKUP=true is set in .env — see
+      # CONTAINER_SETUP.md "LeafWiki git content backup". The SSH key is a
+      # file path, not a raw value, so it lives in ./leafwiki-data (bind-
+      # mounted, gitignored) alongside LeafWiki's own data rather than as an
+      # awkward multi-line .env value — same pattern as helm_token.txt etc.
+      LEAFWIKI_GIT_BACKUP: "${LEAFWIKI_GIT_BACKUP:-false}"
+      LEAFWIKI_GIT_BACKUP_REMOTE: "${LEAFWIKI_GIT_BACKUP_REMOTE:-}"
+      LEAFWIKI_GIT_BACKUP_BRANCH: "${LEAFWIKI_GIT_BACKUP_BRANCH:-main}"
+      LEAFWIKI_GIT_BACKUP_SSH_KEY_PATH: "${LEAFWIKI_GIT_BACKUP_SSH_KEY_PATH:-}"
+      LEAFWIKI_GIT_BACKUP_SSH_KNOWN_HOSTS: "${LEAFWIKI_GIT_BACKUP_SSH_KNOWN_HOSTS:-}"
+      LEAFWIKI_GIT_BACKUP_INTERVAL: "${LEAFWIKI_GIT_BACKUP_INTERVAL:-60m}"
     volumes:
       - ./leafwiki-data:/app/data
 
