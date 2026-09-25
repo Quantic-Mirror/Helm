@@ -22,12 +22,15 @@ A self-hosted personal dashboard. Bookmarks, YouTube feeds, calendar, news feeds
 - **Workout tracker** - log sessions and exercises
 - **Audio Grabber** - download audio from a URL via yt-dlp (runs on a separate host, proxied through `/api/audio/*`)
 - **musicXplorer** - favorite a SomaFM now-playing track and get a YouTube embed, official site/YouTube channel/Wikipedia links (via MusicBrainz + Wikidata), and Last.fm-powered related-artist discovery
+- **Wiki** - Markdown wiki (LeafWiki), iframed cross-origin through a TLS reverse proxy (`leafwiki-proxy`)
+- **Journal** - encrypted diary (DailyTxT), iframed the same way through `dailytxt-proxy`
 - **Backup Pipeline** - observability for external backup jobs; scripts POST status events to `/api/backup-events`, shown as per-stage status lights and a live event feed
 - **Services page** - status of the sibling Docker containers (`helm`, `searxng-core`), with start/stop/restart for the controllable ones
 - **Log viewer** - realtime `docker logs` for the monitored services, filterable per service, error/warning/info levels
 - **Multi-device sync** - the Python backend is the canonical store; changes push and pull silently across all devices on the network
 - **Rolling backups** - the server automatically snapshots state on every save, keeping the 10 most recent
 - **Encrypted config export** - AES-256-GCM via the browser's Web Crypto API; no external library
+- **Optional API access token** - when `helm_token.txt` exists in the state dir, every `/api/*` route requires a shared bearer token; set per-device via the Data ▾ menu's 🔑 Access Token item. Disabled (fail-open) when the file is absent.
 - **In-app article reader** - click any news headline to open a clean reader pane without leaving the page
 - **HTTPS** - auto-detected from `cert.pem` / `key.pem` in the state dir
 - **Browser extension** - save any page to Helm from the toolbar, with folder selection and already-bookmarked indicator
@@ -64,7 +67,8 @@ helm/
 ├── vault_api.py            #   its request logic
 ├── audio_grabber_server.py # Standalone yt-dlp audio downloader (runs on a separate host)
 ├── emit_event.py           # CLI used by external backup scripts to POST to /api/backup-events
-├── helm_tls_proxy.py       # Generic TLS reverse proxy for iframed apps (currently unused)
+├── helm_tls_proxy.py       # Generic TLS reverse proxy that fronts LeafWiki and DailyTxT so
+│                           #   they can be iframed cross-origin (leafwiki-proxy, dailytxt-proxy)
 ├── manifest.json           # PWA manifest
 ├── sw.js                   # Service worker (offline app shell cache)
 ├── icon-192.png            # PWA icon
@@ -72,15 +76,19 @@ helm/
 ├── helm-extension/         # Firefox browser extension
 │   └── manifest.json + background/ popup/ content/ icons/
 ├── Dockerfile.helm         # Container image (code baked in)
-├── docker-compose.yml      # helm + searxng services
+├── docker-compose.yml      # helm, leafwiki(-proxy), dailytxt(-proxy), searxng services
 ├── CONTAINER_SETUP.md      # Container / VPS deployment guide
-└── data/                   # State dir (not committed — created at runtime):
-    ├── marks_state.json    #   live state database
-    ├── helm-backups/       #   rolling snapshots
-    ├── backup_events.json  #   backup-pipeline event feed
-    ├── cert.pem / key.pem  #   TLS (generate locally; enables HTTPS)
-    ├── *_token.txt         #   shared secrets for the vault / audio / backup endpoints
-    └── lastfm_api_key.txt  #   Last.fm API key for musicXplorer's related-artist lookup (optional)
+├── data/                   # State dir (not committed — created at runtime):
+│   ├── marks_state.json    #   live state database
+│   ├── helm-backups/       #   rolling snapshots
+│   ├── backup_events.json  #   backup-pipeline event feed
+│   ├── cert.pem / key.pem  #   TLS (generate locally; enables HTTPS)
+│   ├── *_token.txt         #   shared secrets: helm_token.txt (API auth), vault_token.txt,
+│   │                       #   audio_token.txt, backup_token.txt
+│   └── lastfm_api_key.txt  #   Last.fm API key for musicXplorer's related-artist lookup (optional)
+├── leafwiki-data/          # LeafWiki's own data dir (not committed — Wiki tab's pages)
+├── dailytxt-data/          # DailyTxT's own data dir (not committed — Journal tab's entries)
+└── searxng-settings/, searxng-data/  # SearXNG's own config/data dirs (not committed)
 ```
 
 > The state dir is `data/` under the container bind-mount, or the directory
@@ -221,18 +229,13 @@ The backend exposes several endpoints alongside serving the static files:
 | `/api/audio/*` | GET / POST | Proxied to `audio_grabber_server.py` on the audio host (shared-token auth) |
 | `/api/musicxplorer/similar?artist=` | GET | Related artists via Last.fm's `artist.getsimilar` (needs `lastfm_api_key.txt`; 503 without one) |
 
+All `/api/*` routes (except `GET /api/health` and `POST /api/backup-events`) require `Authorization: Bearer <token>` when `helm_token.txt` exists in the state dir; `GET /api/backups*` also accepts the backup pipeline's `X-Backup-Token`. With no `helm_token.txt`, auth is disabled.
+
 ---
 
 ## Multi-Device Sync
 
 The server holds the canonical state in `marks_state.json` (in the state dir). Every device pulls the server state on page load and pushes any local changes within 600 ms of a save. The polling interval is 5 seconds. Sync is silent — no dialogs, no conflict prompts. Last write wins.
-
----
-
-## To-Do
-
-Fix config restore not restoring News Feeds
-
 
 ---
 

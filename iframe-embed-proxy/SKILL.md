@@ -59,7 +59,7 @@ A reference implementation of this exact pattern is Helm's `helm_tls_proxy.py`, 
 
 ## Pitfalls
 
-- **WebSocket is explicitly unsupported by the generic proxy.** Do not silently pretend you rewrote it. If the app needs WS, either switch it to SSE/long-polling at the app layer, or embed it directly on its own TLS origin (not via the proxy). The ttyd player in Helm does exactly this (its own TLS on `hyperion:8443`, iframe `src` set to that origin directly, because the proxy does not do WS).
+- **WebSocket is explicitly unsupported by the generic proxy.** Do not silently pretend you rewrote it. If the app needs WS, either switch it to SSE/long-polling at the app layer, or embed it directly on its own TLS origin (not via the proxy) — give the iframe `src` that origin directly rather than routing it through `helm_tls_proxy.py`. (Helm had one such WS-only tab in the past, a ttyd-backed terminal; it was later removed for unrelated reasons, but embedding it on its own TLS origin — bypassing the proxy entirely — was the working pattern while it existed.)
 - **`X-Frame-Options: SAMEORIGIN` only blocks the cross-origin case.** Don't "fix" a blank cross-origin iframe by setting `SAMEORIGIN` — that keeps blocking you. Strip the header outright.
 - **CSP `frame-ancestors` is enforced by the browser before fetching the iframe content**, so stripping it on the proxy response is correct. (This differs from `frame-src`, which governs *what the page itself* may embed.)
 - **CSP `sandbox` with `allow-scripts` but no `allow-same-origin` blocks cookie-setting.** If the embedded app can't read/write its session cookie, add that token.
@@ -76,4 +76,4 @@ A reference implementation of this exact pattern is Helm's `helm_tls_proxy.py`, 
 
 ## References
 
-- `references/helm-proxy-pattern.md` — excerpted notes from Helm's CLAUDE.md on the documented `helm_tls_proxy.py` header/cookie rewriting pattern.
+- Helm's `CLAUDE.md`, section "`helm_tls_proxy.py` cookie-rewriting pattern" — the source notes this skill is based on. Helm's `docker-compose.yml` also has two live examples: `leafwiki-proxy` fronting LeafWiki (the Wiki tab) and `dailytxt-proxy` fronting DailyTxT (the Journal tab), both via `helm_tls_proxy.py`.

@@ -60,7 +60,9 @@ worked fine when it only ever ran from a later user click.
 
 **Fix pattern already established in this file**: move the declaration up
 into the early declarations block near the top of the script (around
-index.html:3106–3178), *before* any code that might synchronously reach it
+index.html:3630–3760 as of this writing — the block has grown over time, so
+search for `TAGS`/`COL_COLORS`/`let state` to relocate it rather than trusting
+this line range verbatim), *before* any code that might synchronously reach it
 during startup. Leave a comment at the old spot and the new spot explaining
 why, e.g.:
 
