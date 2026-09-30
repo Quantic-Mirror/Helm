@@ -280,6 +280,16 @@ services:
       DB_TYPE: "sqlite"
       DB_PATH: "/app/data/lyftr.db"
       REGISTRATION: "${LYFTR_REGISTRATION:-first-user}"
+      # Lyftr's backend CORS-checks the Origin header on browser requests
+      # (curl/wget without an Origin header bypass this check entirely,
+      # which is why it's easy to miss in manual testing). Must be the
+      # origin the BROWSER actually sees, i.e. lyftr-proxy's own address —
+      # a request made by JS running inside the iframe carries the iframe
+      # document's own origin, not Helm's parent-page origin. Left unset,
+      # every real browser request gets rejected before it reaches any
+      # handler (a bare empty-body 403, not Lyftr's own "registration
+      # closed" JSON error — that distinction is how this got diagnosed).
+      CORS_ORIGIN: "${LYFTR_CORS_ORIGIN:-https://${SERVER_HOST:-localhost}:${LYFTR_PROXY_LISTEN_PORT:-9006}}"
     volumes:
       - ./lyftr-data:/app/data
 
