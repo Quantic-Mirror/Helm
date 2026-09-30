@@ -1244,6 +1244,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "audio_url": AUDIO_BACKEND,
                 "leafwiki_url": os.environ.get("LEAFWIKI_URL", f"https://{SERVER_HOST}:9004"),
                 "dailytxt_url": os.environ.get("DAILYTXT_URL", f"https://{SERVER_HOST}:9005"),
+                "lyftr_url": os.environ.get("LYFTR_URL", f"https://{SERVER_HOST}:9006"),
             })
             return
 

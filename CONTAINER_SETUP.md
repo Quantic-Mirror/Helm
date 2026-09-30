@@ -12,6 +12,7 @@ natively on a separate host:
 | SearXNG | **Container (any host)** | Powers the Search widget |
 | LeafWiki (`leafwiki` + `leafwiki-proxy`) | **Container (any host)** | Markdown wiki for the Wiki tab; iframed cross-origin through `leafwiki-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
 | DailyTxT (`dailytxt` + `dailytxt-proxy`) | **Container (any host)** | End-to-end-encrypted diary for the Journal tab; iframed cross-origin through `dailytxt-proxy` (`helm_tls_proxy.py`), same cookie/framing rewrite as LeafWiki above |
+| Lyftr (`lyftr-backend` + `lyftr-frontend` + `lyftr-proxy`) | **Container (any host)** | Bodyweight-friendly workout tracker for the Workout tab; iframed cross-origin through `lyftr-proxy` (`helm_tls_proxy.py`), same framing-header strip as LeafWiki/DailyTxT above (auth is a client-side JWT, not a cookie, so the cookie rewrite is a no-op here) |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
 | **Music / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Hermes was removed and hasn't been re-added. |
@@ -29,7 +30,12 @@ natively on a separate host:
 > similarly replaces an earlier native client-side-Web-Crypto implementation
 > (removed — see git history) with **DailyTxT**, an encrypted-diary app that
 > handles the crypto itself; its admin account is set the same way, via
-> `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` in `.env`. See
+> `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` in `.env`. The Workout tab
+> similarly replaces an earlier native client-side implementation (removed —
+> see git history) with **Lyftr**, a bodyweight-friendly self-hosted tracker;
+> its setup is a `LYFTR_JWT_SECRET` in `.env` plus registering your own
+> account through Lyftr's own login page on first boot (see step 7 below) —
+> no separate admin password to set, unlike LeafWiki/DailyTxT. See
 > [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
 >
 > This is unrelated to the newer **musicXplorer** tab, which isn't a player at
@@ -111,6 +117,7 @@ variables — no hardcoding. Adapt this setup to any host.
    #   DAILYTXT_SECRET_TOKEN   — required, no default: openssl rand -base64 32
    #   DAILYTXT_ADMIN_PASSWORD — required, no default (gates DailyTxT's admin
    #                             panel only, not a diary login — see .env.example)
+   #   LYFTR_JWT_SECRET        — required, no default: openssl rand -hex 32
    ```
 
 5. **Set up the data directory (optional — it's created empty on first run):**
@@ -120,10 +127,10 @@ variables — no hardcoding. Adapt this setup to any host.
    The code is baked into the image, so nothing needs copying here.
    `data/` is bind-mounted to `/app/state`; `marks_state.json` and
    `helm-backups/` are created automatically. `leafwiki-data/`,
-   `dailytxt-data/`, `searxng-settings/`, and `searxng-data/` are likewise
-   created empty on first run for their respective containers — nothing to
-   pre-populate there either. Add these only if you use the corresponding
-   feature:
+   `dailytxt-data/`, `lyftr-data/`, `searxng-settings/`, and `searxng-data/`
+   are likewise created empty on first run for their respective containers —
+   nothing to pre-populate there either. Add these only if you use the
+   corresponding feature:
    ```bash
    # Bring your existing bookmarks/state across (optional):
    cp /path/to/marks_state.json data/
@@ -154,7 +161,7 @@ variables — no hardcoding. Adapt this setup to any host.
 6. **Start the stack:**
    ```bash
    docker compose up -d
-   docker compose ps   # helm, leafwiki, leafwiki-proxy, dailytxt, dailytxt-proxy, searxng — all Up
+   docker compose ps   # helm, leafwiki, leafwiki-proxy, dailytxt, dailytxt-proxy, lyftr-backend, lyftr-frontend, lyftr-proxy, searxng — all Up
    ```
 
 7. **DailyTxT first boot — register your diary account:**
@@ -165,13 +172,20 @@ variables — no hardcoding. Adapt this setup to any host.
    `dailytxt` container again. `DAILYTXT_ADMIN_PASSWORD` only gates DailyTxT's
    separate admin/user-management panel, not this login.
 
-8. **Verify:**
+8. **Lyftr first boot — register your workout account:**
+   Lyftr also has no default account, but its `REGISTRATION=first-user` default
+   (see `.env.example`) needs no flag-flipping afterward: open the Workout tab
+   and register through Lyftr's own login page — the first account created
+   becomes the only account and registration closes itself. No restart needed.
+
+9. **Verify:**
    - Dashboard: `https://<Tailscale-IP>:8443` (import the self-signed cert once)
    - SearXNG: accessible via the Dashboard's Search widget (proxied through /api/config)
    - Wiki tab: LeafWiki loads and its admin account logs in with `LEAFWIKI_ADMIN_PASSWORD`
    - Journal tab: DailyTxT loads and the account registered in step 7 logs in
+   - Workout tab: Lyftr loads and the account registered in step 8 logs in
 
-9. **Set up the vault on the separate host:** see `WSL2_VAULT_SETUP.md`.
+10. **Set up the vault on the separate host:** see `WSL2_VAULT_SETUP.md`.
 
 ## LeafWiki git content backup (optional)
 
@@ -298,6 +312,68 @@ and uncomment the `/run/user/${UID}/...` socket mounts in `docker-compose.yml`.
 That needs a running user session + journal on the host
 (`loginctl enable-linger <user>`); without it `docker compose up` fails on the
 missing socket path, which is why those mounts ship commented out.
+
+## Troubleshooting: Helm breaks when a VPN (Windscribe) is on
+
+**Symptom** (browser machine has Windscribe connected; Helm reached over
+Tailscale): widgets load very slowly, YouTube feeds fail with
+`TypeError: NetworkError when attempting to fetch resource`, News feeds don't
+load, and the Services / Backup pipeline pages stay empty. Everything Helm
+shows goes through `/api/*` on the Tailscale address, so anything that stops
+that connection breaks the whole dashboard, not one feature. `curl` to
+`https://<Tailscale-IP>:8443/api/health` times out. Disconnecting the VPN fixes it.
+
+This is a client-side problem on the machine running the browser, not a Helm
+bug. Two independent causes, both needed to fix it:
+
+1. **Routing.** Windscribe's WireGuard tunnel (`utun420`) uses addresses in
+   `100.64.0.0/10` — the same CGNAT range Tailscale uses — and installs a
+   policy rule sending everything to routing table 51820. Its priority beats
+   Tailscale's rule (table 52, priority 5270), so `ip route get <Tailscale-IP>`
+   shows `dev utun420` instead of `tailscale0` and packets go into the VPN,
+   which can't deliver them. Fix: an earlier `ip rule` for `100.64.0.0/10` that
+   looks up table 52. Table 52 only holds tailnet peers, so a miss falls
+   through to Windscribe's rules and normal traffic is unaffected.
+2. **Windscribe's firewall.** With the firewall enabled, `table inet windscribe`
+   has `policy drop` on `input`/`output` and never accepts `tailscale0`, so TCP
+   over the tailnet is dropped before it reaches the interface.
+   (`tailscale ping` still works — it's handled inside `tailscaled` and never
+   touches `tailscale0` — which makes this easy to misdiagnose. `tcpdump -i
+   tailscale0` showing nothing is the tell.) Fix: accept rules for `tailscale0`
+   in the `st_in` / `st_out` chains, which Windscribe `jump`s to last. A rule in
+   a separate nft table does **not** work: an accept in one base chain doesn't
+   override a drop in another at the same hook.
+
+**Gotcha:** Windscribe rebuilds both the rules and the nft table on every
+reconnect, and it places its `ip rule` entries just *below* the lowest existing
+priority (5208, then 98 once ours was at 100, then 48...). A fixed priority
+therefore eventually loses to it — the fix has to track Windscribe's priority.
+
+**Fix (persistent):** `client-fixes/tailscale-windscribe-fix.sh` is an
+idempotent script that re-applies both fixes, keeping the `ip rule` strictly
+below Windscribe's; `tailscale-windscribe-fix.service` runs it every 5 seconds.
+Install on the browser machine (not the Helm host):
+
+```bash
+sudo install -m 755 client-fixes/tailscale-windscribe-fix.sh /usr/local/bin/
+sudo install -m 644 client-fixes/tailscale-windscribe-fix.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tailscale-windscribe-fix.service
+```
+
+Verify with Windscribe connected and its firewall on:
+
+```bash
+ip route get <Tailscale-IP>        # dev tailscale0 table 52
+curl -sk -m 10 -o /dev/null -w '%{http_code} %{time_total}s\n' https://<Tailscale-IP>:8443/api/health
+```
+
+Security note: the accept rule covers all of `tailscale0`. That is fine for a
+tailnet, but if you use a Tailscale **exit node**, internet traffic also rides
+`tailscale0` and would bypass Windscribe's firewall.
+
+Alternatively, turn off Windscribe's firewall / kill switch (loses leak
+protection) — with it off only the routing fix is needed.
 
 ## Public/LAN deployment (alternative to Tailscale)
 

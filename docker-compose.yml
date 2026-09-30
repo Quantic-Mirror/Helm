@@ -125,6 +125,12 @@ services:
       # tab's iframe. Fresh port (9005) following the 9004 precedent, so no
       # stale browser-side state from any earlier port ever bleeds in.
       DAILYTXT_URL: "https://${SERVER_HOST:-localhost}:${DAILYTXT_PROXY_LISTEN_PORT:-9005}"
+      # Lyftr URL — same pattern as LEAFWIKI_URL/DAILYTXT_URL above, for the
+      # Workout tab's iframe. Fresh port (9006) following the 9004/9005
+      # precedent, so no stale browser-side state from the removed native
+      # Workout tab (it never used a proxy port, so this is purely about not
+      # reusing 9004/9005) ever bleeds in.
+      LYFTR_URL: "https://${SERVER_HOST:-localhost}:${LYFTR_PROXY_LISTEN_PORT:-9006}"
     command: ["python3", "helm_server.py", "8443"]
 
   # ── LeafWiki (self-hosted markdown wiki, iframed into the Wiki tab) ─────────
@@ -246,6 +252,73 @@ services:
       # on helm's published port (8443).
       HELM_FRAME_ORIGINS: "${DAILYTXT_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
     command: ["python3", "helm_tls_proxy.py", "9005", "80", "dailytxt"]
+
+  # ── Lyftr (self-hosted workout tracker, iframed into the Workout tab) ───────
+  # Lyftr ships as two containers upstream (Go/Gin API backend + SQLite,
+  # React/nginx frontend that reverse-proxies /api to the backend
+  # internally) — unlike LeafWiki/DailyTxT's single-container images, so
+  # there are two lyftr-* services below plus the usual lyftr-proxy for TLS
+  # termination + framing headers. Auth is a JWT bearer token kept
+  # client-side (localStorage), not a cookie, so lyftr-proxy's cookie
+  # SameSite/Secure rewrite is a no-op here — it's still reused for the
+  # framing-header strip and to avoid mixed-content blocking on Helm's HTTPS
+  # origin, same as leafwiki-proxy/dailytxt-proxy.
+  # REGISTRATION=first-user is Lyftr's own deterministic-ish setup mode: it
+  # keys off the users table being empty, so the very first account anyone
+  # registers through the normal login page becomes the (only) account and
+  # the mode self-closes — no separate "flip a flag back after registering"
+  # step like DAILYTXT_ALLOW_REGISTRATION needs. Beta software as of
+  # 2026-09 (Cawlumm/lyftr, v0.1.x) — expect rough edges.
+  lyftr-backend:
+    image: cwlumm/lyftr-backend:latest
+    container_name: lyftr-backend
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: "${LYFTR_JWT_SECRET:?set a random secret in .env, e.g. openssl rand -hex 32}"
+      ENV: "production"
+      PORT: "3000"
+      DB_TYPE: "sqlite"
+      DB_PATH: "/app/data/lyftr.db"
+      REGISTRATION: "${LYFTR_REGISTRATION:-first-user}"
+    volumes:
+      - ./lyftr-data:/app/data
+
+  lyftr-frontend:
+    image: cwlumm/lyftr-frontend:latest
+    container_name: lyftr-frontend
+    restart: unless-stopped
+    depends_on:
+      - lyftr-backend
+    environment:
+      BACKEND_ORIGIN: "lyftr-backend:3000"
+
+  # helm_tls_proxy.py in front of lyftr-frontend: strips X-Frame-Options /
+  # rewrites CSP frame-ancestors so the Lyftr web UI can be iframed
+  # cross-origin from Helm's own origin, and terminates TLS so Helm's HTTPS
+  # origin doesn't mixed-content-block it — see CLAUDE.md "helm_tls_proxy.py
+  # cookie-rewriting pattern". Reuses the helm image and Helm's own
+  # cert.pem/key.pem, same as leafwiki-proxy/dailytxt-proxy above.
+  lyftr-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: lyftr-proxy
+    restart: unless-stopped
+    depends_on:
+      - lyftr-frontend
+    ports:
+      - "${LYFTR_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9006:9006}"
+    volumes:
+      - ./data:/app/state
+    environment:
+      HELM_TLS_CERT: "/app/state/cert.pem"
+      HELM_TLS_KEY: "/app/state/key.pem"
+      # frame-ancestors needs an EXACT scheme+host+port match against what
+      # the browser used to load Helm itself — see helm_tls_proxy.py's own
+      # note on this. Defaults to the same SERVER_HOST as the helm service,
+      # on helm's published port (8443).
+      HELM_FRAME_ORIGINS: "${LYFTR_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9006", "80", "lyftr-frontend"]
 
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,

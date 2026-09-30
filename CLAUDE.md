@@ -36,6 +36,20 @@ chain for the core app.
   dedicated encrypted-diary app; its admin account is set deterministically
   via `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` env vars on first
   boot, same no-setup-wizard posture as LeafWiki.
+- **lyftr-backend** / **lyftr-frontend** / **lyftr-proxy** — containers in the
+  same `docker-compose.yml` stack. Unlike LeafWiki/DailyTxT's single-container
+  images, Lyftr ships as two upstream containers (Go/Gin API + SQLite backend,
+  React/nginx frontend that reverse-proxies `/api` to the backend internally);
+  `lyftr-proxy` (`helm_tls_proxy.py`) fronts `lyftr-frontend` so the Workout
+  tab can iframe it cross-origin. Lyftr replaces an earlier native
+  client-side Workout tab (removed — see git history) with a dedicated,
+  bodyweight-friendly tracker. Auth is a JWT bearer token kept client-side
+  (localStorage), not a cookie, so `helm_tls_proxy.py`'s cookie rewrite is a
+  no-op for it — it's still reused for the framing-header strip and TLS
+  termination. Setup is `LYFTR_JWT_SECRET` plus registering an account
+  through Lyftr's own login page on first boot (`REGISTRATION=first-user`
+  self-closes after that — no admin password/flag to reset afterward, unlike
+  LeafWiki/DailyTxT).
 - User on the host is `carl` (see docker-group comments).
 - Don't assume everything runs on one machine — if you're about to shell out
   to something host-specific (`pass`, gpg, a systemd unit), check whether it's
@@ -88,10 +102,13 @@ declaration up," not "wrap it in `var`" or "guard with `typeof` checks."
 Helm has two fixed profiles. **Per-profile** data is the bookmark board
 (`state.columns` + `state.bookmarks` + `state.collapsedCols`) and the YouTube
 feed list (`state.feeds`). **Shared** across both: News/RSS (`newsSources`),
-dashboard `widgets`, `calendarEvents`, `workouts`/`workoutRoutines`, and
-`settings` (theme included). The two profiles differ **only** in that
-per-profile data — every tab is visible in both, and all other content is
-identical.
+dashboard `widgets`, `calendarEvents`, and `settings` (theme included). The
+two profiles differ **only** in that per-profile data — every tab is visible
+in both, and all other content is identical. (The Workout tab used to add
+`state.workouts`/`workoutRoutines` to this shared list — since it's now an
+iframed Lyftr instance with its own account/storage, those keys are no
+longer read or written by the frontend; a pre-Lyftr sync blob may still have
+them lying around inertly.)
 
 Design decisions, each load-bearing — don't undo them without a reason:
 
