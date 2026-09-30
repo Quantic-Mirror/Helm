@@ -2753,6 +2753,18 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 #sync-indicator.syncing { color: var(--accent); }
 #sync-indicator.offline { color: var(--text-dim); }
 
+/* ── LYFTR (WORKOUT) PAGE ─────────────────────────────────────────────────── */
+#lyftr-page {
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+#lyftr-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
 /* ── LEAFWIKI PAGE ────────────────────────────────────────────────────────── */
 #leafwiki-page {
   height: calc(100vh - 56px);
@@ -8780,10 +8792,11 @@ async function initConfig() {
     }
   } catch (e) {
     // Config endpoint not available (e.g. running via python3 directly).
-    // Fall back to localhost for SearxNG, LeafWiki, and DailyTxT.
+    // Fall back to localhost for SearxNG, LeafWiki, DailyTxT, and Lyftr.
     ENGINES.searx.url = 'http://localhost:8080/search?q=';
     document.getElementById('leafwiki-frame').src = 'https://localhost:9004';
     document.getElementById('dailytxt-frame').src = 'https://localhost:9005';
+    document.getElementById('lyftr-frame').src = 'https://localhost:9006';
   }
 }
 
