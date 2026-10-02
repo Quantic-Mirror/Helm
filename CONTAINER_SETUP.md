@@ -12,7 +12,6 @@ natively on a separate host:
 | SearXNG | **Container (any host)** | Powers the Search widget |
 | LeafWiki (`leafwiki` + `leafwiki-proxy`) | **Container (any host)** | Markdown wiki for the Wiki tab; iframed cross-origin through `leafwiki-proxy` (`helm_tls_proxy.py`), which strips its framing headers and rewrites its session cookie — see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern" |
 | DailyTxT (`dailytxt` + `dailytxt-proxy`) | **Container (any host)** | End-to-end-encrypted diary for the Journal tab; iframed cross-origin through `dailytxt-proxy` (`helm_tls_proxy.py`), same cookie/framing rewrite as LeafWiki above |
-| Lyftr (`lyftr-backend` + `lyftr-frontend` + `lyftr-proxy`) | **Container (any host)** | Bodyweight-friendly workout tracker for the Workout tab; iframed cross-origin through `lyftr-proxy` (`helm_tls_proxy.py`), same framing-header strip as LeafWiki/DailyTxT above (auth is a client-side JWT, not a cookie, so the cookie rewrite is a no-op here) |
 | **Password vault** (`vault_server.py` + `pass` + gpg) | **Native on a separate host** | `pass` and gpg are Linux-only; the pass store is a git clone of a private repo |
 | **Audio grabber** (`audio_grabber_server.py` + yt-dlp) | **Native on a separate host** | Depends on yt-dlp + browser cookies in `~/.local/bin` |
 | **Music / Hermes tabs** (the old MPD-backed player, not musicXplorer) | **Removed** | Music needed MPD + ncmpcpp + ttyd over WebSocket (unsupported by the proxy); Hermes was removed and hasn't been re-added. |
@@ -30,12 +29,7 @@ natively on a separate host:
 > similarly replaces an earlier native client-side-Web-Crypto implementation
 > (removed — see git history) with **DailyTxT**, an encrypted-diary app that
 > handles the crypto itself; its admin account is set the same way, via
-> `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` in `.env`. The Workout tab
-> similarly replaces an earlier native client-side implementation (removed —
-> see git history) with **Lyftr**, a bodyweight-friendly self-hosted tracker;
-> its setup is a `LYFTR_JWT_SECRET` in `.env` plus registering your own
-> account through Lyftr's own login page on first boot (see step 7 below) —
-> no separate admin password to set, unlike LeafWiki/DailyTxT. See
+> `DAILYTXT_SECRET_TOKEN`/`DAILYTXT_ADMIN_PASSWORD` in `.env`. See
 > [WSL2_VAULT_SETUP.md](./WSL2_VAULT_SETUP.md) for the vault dual-boot setup.
 >
 > This is unrelated to the newer **musicXplorer** tab, which isn't a player at
@@ -117,7 +111,6 @@ variables — no hardcoding. Adapt this setup to any host.
    #   DAILYTXT_SECRET_TOKEN   — required, no default: openssl rand -base64 32
    #   DAILYTXT_ADMIN_PASSWORD — required, no default (gates DailyTxT's admin
    #                             panel only, not a diary login — see .env.example)
-   #   LYFTR_JWT_SECRET        — required, no default: openssl rand -hex 32
    ```
 
 5. **Set up the data directory (optional — it's created empty on first run):**
@@ -127,7 +120,7 @@ variables — no hardcoding. Adapt this setup to any host.
    The code is baked into the image, so nothing needs copying here.
    `data/` is bind-mounted to `/app/state`; `marks_state.json` and
    `helm-backups/` are created automatically. `leafwiki-data/`,
-   `dailytxt-data/`, `lyftr-data/`, `searxng-settings/`, and `searxng-data/`
+   `dailytxt-data/`, `searxng-settings/`, and `searxng-data/`
    are likewise created empty on first run for their respective containers —
    nothing to pre-populate there either. Add these only if you use the
    corresponding feature:
@@ -161,7 +154,7 @@ variables — no hardcoding. Adapt this setup to any host.
 6. **Start the stack:**
    ```bash
    docker compose up -d
-   docker compose ps   # helm, leafwiki, leafwiki-proxy, dailytxt, dailytxt-proxy, lyftr-backend, lyftr-frontend, lyftr-proxy, searxng — all Up
+   docker compose ps   # helm, leafwiki, leafwiki-proxy, dailytxt, dailytxt-proxy, searxng — all Up
    ```
 
 7. **DailyTxT first boot — register your diary account:**
@@ -172,20 +165,13 @@ variables — no hardcoding. Adapt this setup to any host.
    `dailytxt` container again. `DAILYTXT_ADMIN_PASSWORD` only gates DailyTxT's
    separate admin/user-management panel, not this login.
 
-8. **Lyftr first boot — register your workout account:**
-   Lyftr also has no default account, but its `REGISTRATION=first-user` default
-   (see `.env.example`) needs no flag-flipping afterward: open the Workout tab
-   and register through Lyftr's own login page — the first account created
-   becomes the only account and registration closes itself. No restart needed.
-
-9. **Verify:**
+8. **Verify:**
    - Dashboard: `https://<Tailscale-IP>:8443` (import the self-signed cert once)
    - SearXNG: accessible via the Dashboard's Search widget (proxied through /api/config)
    - Wiki tab: LeafWiki loads and its admin account logs in with `LEAFWIKI_ADMIN_PASSWORD`
    - Journal tab: DailyTxT loads and the account registered in step 7 logs in
-   - Workout tab: Lyftr loads and the account registered in step 8 logs in
 
-10. **Set up the vault on the separate host:** see `WSL2_VAULT_SETUP.md`.
+9. **Set up the vault on the separate host:** see `WSL2_VAULT_SETUP.md`.
 
 ## LeafWiki git content backup (optional)
 

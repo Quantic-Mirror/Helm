@@ -19,7 +19,6 @@ A self-hosted personal dashboard. Bookmarks, YouTube feeds, calendar, news feeds
 - **YouTube Feeds** - add channels by ID or handle, video carousel per channel, Invidious support, sort by manual/alphabetical/recently active
 - **News Feeds** - RSS 2.0 and Atom sources, per-source cards and a combined chronological timeline, auto-detection of feed URL from a site URL
 - **Calendar** - event scheduler with configurable reminders
-- **Workout** - bodyweight-friendly workout tracker (Lyftr), iframed cross-origin through a TLS reverse proxy (`lyftr-proxy`), same pattern as Wiki/Journal below
 - **Audio Grabber** - download audio from a URL via yt-dlp (runs on a separate host, proxied through `/api/audio/*`)
 - **musicXplorer** - favorite a SomaFM now-playing track and get a YouTube embed, official site/YouTube channel/Wikipedia links (via MusicBrainz + Wikidata), and Last.fm-powered related-artist discovery
 - **Wiki** - Markdown wiki (LeafWiki), iframed cross-origin through a TLS reverse proxy (`leafwiki-proxy`)
@@ -67,9 +66,8 @@ helm/
 ├── vault_api.py            #   its request logic
 ├── audio_grabber_server.py # Standalone yt-dlp audio downloader (runs on a separate host)
 ├── emit_event.py           # CLI used by external backup scripts to POST to /api/backup-events
-├── helm_tls_proxy.py       # Generic TLS reverse proxy that fronts LeafWiki, DailyTxT and Lyftr
-│                           #   so they can be iframed cross-origin (leafwiki-proxy, dailytxt-proxy,
-│                           #   lyftr-proxy)
+├── helm_tls_proxy.py       # Generic TLS reverse proxy that fronts LeafWiki and DailyTxT
+│                           #   so they can be iframed cross-origin (leafwiki-proxy, dailytxt-proxy)
 ├── manifest.json           # PWA manifest
 ├── sw.js                   # Service worker (offline app shell cache)
 ├── icon-192.png            # PWA icon
@@ -77,7 +75,7 @@ helm/
 ├── helm-extension/         # Firefox browser extension
 │   └── manifest.json + background/ popup/ content/ icons/
 ├── Dockerfile.helm         # Container image (code baked in)
-├── docker-compose.yml      # helm, leafwiki(-proxy), dailytxt(-proxy), lyftr-backend/frontend(-proxy), searxng services
+├── docker-compose.yml      # helm, leafwiki(-proxy), dailytxt(-proxy), searxng services
 ├── CONTAINER_SETUP.md      # Container / VPS deployment guide
 ├── client-fixes/          # Scripts for the *browser* machine, not the server:
 │   └── tailscale-windscribe-fix.{sh,service}  #   keeps Tailscale reachable under Windscribe
@@ -91,7 +89,6 @@ helm/
 │   └── lastfm_api_key.txt  #   Last.fm API key for musicXplorer's related-artist lookup (optional)
 ├── leafwiki-data/          # LeafWiki's own data dir (not committed — Wiki tab's pages)
 ├── dailytxt-data/          # DailyTxT's own data dir (not committed — Journal tab's entries)
-├── lyftr-data/             # Lyftr's own data dir (not committed — Workout tab's SQLite db)
 └── searxng-settings/, searxng-data/  # SearXNG's own config/data dirs (not committed)
 ```
 

@@ -2753,18 +2753,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 #sync-indicator.syncing { color: var(--accent); }
 #sync-indicator.offline { color: var(--text-dim); }
 
-/* ── LYFTR (WORKOUT) PAGE ─────────────────────────────────────────────────── */
-#lyftr-page {
-  height: calc(100vh - 56px);
-  overflow: hidden;
-}
-#lyftr-frame {
-  width: 100%;
-  height: 100%;
-  border: none;
-  display: block;
-}
-
 /* ── LEAFWIKI PAGE ────────────────────────────────────────────────────────── */
 #leafwiki-page {
   height: calc(100vh - 56px);
@@ -2898,7 +2886,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#services" data-tab="services">🖥 Services</a>
     <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
     <a class="tab-btn" href="#music" data-tab="music">🎵 Music</a>
-    <a class="tab-btn" href="#workout" data-tab="workout">🏋 Workout</a>
     <a class="tab-btn" href="#leafwiki" data-tab="leafwiki">📓 Wiki</a>
     <a class="tab-btn" href="#journal" data-tab="journal">📔 Journal</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
@@ -3157,23 +3144,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <button class="btn" id="btn-refresh-logs">↺ Refresh</button>
   </div>
   <div id="logs-body"></div>
-</div>
-
-<!-- LYFTR (WORKOUT) PAGE -->
-<!-- Lyftr is embedded via lyftr-proxy (helm_tls_proxy.py in front of the
-     lyftr-frontend container), which strips its X-Frame-Options/CSP frame-
-     ancestors so it can be iframed cross-origin from Helm's own origin —
-     see CLAUDE.md "helm_tls_proxy.py cookie-rewriting pattern". Lyftr
-     itself authenticates with a JWT bearer token kept client-side (not a
-     cookie), so the proxy's Set-Cookie rewrite is a no-op here — it's still
-     reused for the framing-header strip and TLS termination, same as
-     leafwiki-proxy/dailytxt-proxy below. src is left empty here and set
-     from /api/config's lyftr_url in initConfig(), same as leafwiki_url/
-     dailytxt_url. Replaces the earlier native client-side Workout tab
-     (removed — see git history) with a dedicated bodyweight-friendly
-     tracker instead of hand-rolling one. -->
-<div id="lyftr-page" style="display:none">
-  <iframe id="lyftr-frame" src="" allow="clipboard-write"></iframe>
 </div>
 
 <!-- LEAFWIKI PAGE -->
@@ -8692,7 +8662,7 @@ updateInvidiousButton();
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'workout', 'leafwiki', 'journal'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'leafwiki', 'journal'];
 // Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
 // Music tab — redirect anyone with an old bookmarked/shared hash instead of
 // falling through to Dashboard.
@@ -8788,15 +8758,13 @@ async function initConfig() {
       if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
       if (cfg.leafwiki_url) document.getElementById('leafwiki-frame').src = cfg.leafwiki_url;
       if (cfg.dailytxt_url) document.getElementById('dailytxt-frame').src = cfg.dailytxt_url;
-      if (cfg.lyftr_url) document.getElementById('lyftr-frame').src = cfg.lyftr_url;
     }
   } catch (e) {
     // Config endpoint not available (e.g. running via python3 directly).
-    // Fall back to localhost for SearxNG, LeafWiki, DailyTxT, and Lyftr.
+    // Fall back to localhost for SearxNG, LeafWiki, and DailyTxT.
     ENGINES.searx.url = 'http://localhost:8080/search?q=';
     document.getElementById('leafwiki-frame').src = 'https://localhost:9004';
     document.getElementById('dailytxt-frame').src = 'https://localhost:9005';
-    document.getElementById('lyftr-frame').src = 'https://localhost:9006';
   }
 }
 
@@ -8902,7 +8870,6 @@ function switchTab(tab) {
   show('services-page',  tab === 'services');
   show('backups-page',   tab === 'backups');
   show('music-page',     tab === 'music');
-  show('lyftr-page',     tab === 'workout');
   show('leafwiki-page',  tab === 'leafwiki');
   show('dailytxt-page',  tab === 'journal');
   show('logs-page',      tab === 'logs');
@@ -8911,7 +8878,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', workout: 'Helm — Workout', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal' };
   document.title = titles[tab] || 'Helm';
 
   if (tab === 'feeds')     renderFeeds();
