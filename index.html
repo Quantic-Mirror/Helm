@@ -2328,6 +2328,48 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 
 /* ── MUSIC PAGE (Audio Grabber + musicXplorer merged) ───────────────────────── */
 #music-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
+
+/* ── RELEASES section ───────────────────────────────────────────────────── */
+.releases-meta { font-size: 12px; color: var(--text-dim); margin-bottom: 14px; }
+.releases-meta a { color: var(--text-dim); }
+.releases-stale { opacity: 0.7; font-style: italic; }
+#releases-list {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+}
+.release-card {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px;
+}
+.release-cover {
+  width: 92px; height: 92px; flex: 0 0 92px;
+  object-fit: cover; border-radius: 5px; background: var(--bg);
+}
+.release-cover-none {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); font-size: 22px;
+}
+.release-info { min-width: 0; flex: 1; }
+.release-artist {
+  font-weight: 600; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.release-title { font-size: 13px; color: var(--text-dim); margin-top: 1px; }
+.release-sub { font-size: 11px; color: var(--text-dim); margin-top: 3px; opacity: 0.85; }
+.release-tags { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 4px; }
+.release-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 9px;
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+}
+.release-links { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 5px; }
+.release-link {
+  font-size: 11px; text-decoration: none; padding: 2px 8px;
+  border: 1px solid var(--border); border-radius: 5px;
+  color: var(--text); background: var(--bg);
+}
+.release-link:hover { border-color: var(--text-dim); }
+.release-nolink { font-size: 11px; color: var(--text-dim); opacity: 0.6; font-style: italic; }
 #music-topbar {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 16px;
@@ -3097,10 +3139,20 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   </div>
 
   <div class="music-tabs">
+    <button class="music-tab-btn" data-music-section="releases">Releases</button>
     <button class="music-tab-btn" data-music-section="download">Download</button>
     <button class="music-tab-btn" data-music-section="jobs">Downloads<span class="music-tab-count"></span></button>
     <button class="music-tab-btn" data-music-section="files">Files<span class="music-tab-count"></span></button>
-    <button class="music-tab-btn" data-music-section="favorites">Favorites<span class="music-tab-count"></span></button>
+    <button class="music-tab-btn" data-music-section="favorites">Favorites</button>
+  </div>
+
+  <!-- RELEASES: recent indie-pop albums from MusicBrainz. Deliberately
+       "recent", not "upcoming" -- MusicBrainz has 0 albums registered with
+       future release dates over a 180-day forward window (measured), so an
+       upcoming list would always render empty. -->
+  <div class="music-tab-panel" id="music-releases-body">
+    <div id="releases-status" class="svc-loading">Loading recent releases…</div>
+    <div id="releases-list"></div>
   </div>
 
   <div class="music-tab-panel" id="music-download-body">
@@ -3497,7 +3549,7 @@ let MUSIC_TAB_TOUCHED = false;
 // later const there threw "Cannot access before initialization", which
 // aborted the rest of this top-level script — silently breaking every
 // .onclick wiring after that point, page-wide, not just on the Music tab).
-const MUSIC_SECTION_BODY_IDS = { download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'music-favorites-panel' };
+const MUSIC_SECTION_BODY_IDS = { releases: 'music-releases-body', download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'music-favorites-panel' };
 // Moved up from next to fetchMusicBrainz() further down the file, same TDZ
 // reason — see the comment left at that call site.
 let MUSICX_MB_LAST_CALL = 0;
@@ -9123,6 +9175,10 @@ document.querySelectorAll('.music-tab-btn').forEach(btn => {
     MUSIC_TAB_TOUCHED = true;
     MUSIC_ACTIVE_TAB = btn.dataset.musicSection;
     updateMusicSectionChrome();
+    // Releases data is only pulled when the section is actually opened -- it's
+    // the one Music section with nothing to do otherwise, and a cold
+    // /api/releases can take ~80s the very first time (see helm_server.py).
+    if (MUSIC_ACTIVE_TAB === 'releases') fetchReleases();
   };
 });
 document.getElementById('logs-service-filter').onchange = fetchLogs;
@@ -10481,6 +10537,110 @@ async function fetchAudioData() {
       `<div class="svc-error">Could not fetch audio data: ${escHtml(e.message)}</div>`;
     MUSIC_ACTIVE_TAB = 'jobs';
     updateMusicSectionChrome();
+  }
+}
+
+// ── RELEASES (Music tab) ───────────────────────────────────────────────────
+// Recent indie-pop albums, fetched from /api/releases (MusicBrainz, cached
+// server-side). One fetch per Music tab visit, cached in-page so re-switching
+// sections doesn't re-request. Set to null to force a refetch.
+let RELEASES_CACHE_DATA = null;
+let RELEASES_LOADING = false;
+
+// Bandcamp is a listen link like YouTube; homepage is not. Both get shown, but
+// with different affordance so "go hear something" is one click for either.
+const RELEASE_LINK_ORDER = [
+  ['youtube',      '▶ YouTube',    'Watch on YouTube'],
+  ['bandcamp',     '🎧 Bandcamp',  'Listen on Bandcamp'],
+  ['homepage',     '🌐 Site',      'Official site'],
+  ['soundcloud',   '🔊 SoundCloud','Listen on SoundCloud'],
+  ['discogs',      '💿 Discogs',   'Discogs entry'],
+];
+
+function releaseDateLabel(date) {
+  // MusicBrainz dates are usually ISO (2026-09-04) but are sometimes just a
+  // year (2026) or year-month (2026-09) -- those are less precise, so show them
+  // as-is rather than inventing a day that isn't in the data.
+  if (!date) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const d = new Date(date + 'T00:00:00');
+    if (!isNaN(d)) return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  if (/^\d{4}-\d{2}$/.test(date)) {
+    const d = new Date(date + '-01T00:00:00');
+    if (!isNaN(d)) return d.toLocaleDateString([], { year: 'numeric', month: 'long' }) + ' (month unknown)';
+  }
+  if (/^\d{4}$/.test(date)) return date + ' (year only)';
+  return date;
+}
+
+function renderReleases() {
+  const listEl = document.getElementById('releases-list');
+  const statusEl = document.getElementById('releases-status');
+  if (!listEl || !statusEl) return;
+
+  const data = RELEASES_CACHE_DATA;
+  if (!data) {
+    statusEl.textContent = 'Loading recent releases…';
+    statusEl.className = 'svc-loading';
+    listEl.innerHTML = '';
+    return;
+  }
+
+  const rels = data.releases || [];
+  if (!rels.length) {
+    statusEl.textContent = 'No releases found in the last 120 days. MusicBrainz only lists what has been tagged, so quiet months are normal.';
+    statusEl.className = 'svc-loading';
+    listEl.innerHTML = '';
+    return;
+  }
+
+  const withLinks = rels.filter(r => RELEASE_LINK_ORDER.some(([k]) => r[k])).length;
+  // 'stale' means the server served cached data and is refreshing behind it --
+  // say so rather than implying the data is freshly fetched.
+  statusEl.className = 'releases-meta';
+  statusEl.innerHTML = `${rels.length} albums/EPs from the last 120 days &middot; ` +
+    `${withLinks} with a listen link &middot; updated ${escHtml(data.updated || '?')}` +
+    (data.stale ? ' <span class="releases-stale">(refreshing…)</span>' : '') +
+    ` &middot; via <a href="https://musicbrainz.org/" target="_blank" rel="noopener">MusicBrainz</a>`;
+
+  listEl.innerHTML = rels.map(r => {
+    const links = RELEASE_LINK_ORDER
+      .filter(([key]) => r[key])
+      .map(([key, label, title]) =>
+        `<a class="release-link" href="${escHtml(r[key])}" target="_blank" rel="noopener noreferrer" title="${escHtml(title)}">${label}</a>`)
+      .join('');
+    const cover = r.cover
+      ? `<img class="release-cover" src="${escHtml(r.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+      : '<div class="release-cover release-cover-none">♪</div>';
+    const tags = (r.tags || []).map(t => `<span class="release-tag">${escHtml(t)}</span>`).join('');
+    return `<div class="release-card">
+      ${cover}
+      <div class="release-info">
+        <div class="release-artist">${escHtml(r.artist)}</div>
+        <div class="release-title">${escHtml(r.title)}</div>
+        <div class="release-sub">${escHtml(releaseDateLabel(r.date))}${r.type ? ' · ' + escHtml(r.type) : ''}</div>
+        ${tags ? `<div class="release-tags">${tags}</div>` : ''}
+        <div class="release-links">${links || '<span class="release-nolink">no public link</span>'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function fetchReleases(force) {
+  if (force) RELEASES_CACHE_DATA = null;
+  if (RELEASES_CACHE_DATA || RELEASES_LOADING) { renderReleases(); return; }
+  RELEASES_LOADING = true;
+  try {
+    const resp = await fetch('/api/releases', { signal: AbortSignal.timeout(20000) });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(body.error || ('HTTP ' + resp.status));
+    RELEASES_CACHE_DATA = body;
+  } catch (e) {
+    RELEASES_CACHE_DATA = { releases: [], error: e.message };
+  } finally {
+    RELEASES_LOADING = false;
+    renderReleases();
   }
 }
 

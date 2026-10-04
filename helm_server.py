@@ -306,6 +306,237 @@ def get_lastfm_similar(artist):
     return 200, json.dumps({"similar": similar}).encode("utf-8")
 
 
+# ── MusicBrainz release radar (Music tab → Releases) ──────────────────────────
+#
+# Recent indie-pop releases for the Music tab's "Releases" section. MusicBrainz
+# is the only free source that carries a real release date per release-group;
+# Last.fm's album.getinfo returns released=None, and iTunes' genreId parameter
+# is silently ignored (it returns the same rows as no genre at all), so neither
+# can answer this. Measured on the live API: the "indie pop" tag yields ~4
+# albums/30d, ~20/90d, ~39/365d -- sparse but genuinely on-genre.
+#
+# Why the backend does this rather than the browser: resolving each artist's
+# links needs one url-rels call PER ARTIST (~24 artists) and MusicBrainz
+# enforces ~1 req/sec per IP. Doing that client-side means a ~25s page load and
+# a 503 storm. Here it's paced, cached to disk, and refreshed in the background
+# so a request is served from cache almost always.
+#
+# Why there's no "upcoming" list: bands don't register planned future dates in
+# MusicBrainz. Measured forward-looking volume for the same query is 0 albums in
+# the next 180 days. A future section would render empty, so this returns recent
+# releases only, and the frontend renders the date it's actually known by.
+MB_BASE = "https://musicbrainz.org/ws/2/"
+MB_COVER_BASE = "https://coverartarchive.org/release-group/"
+RELEASES_CACHE_FILE = os.path.join(STATE_DIR, "releases_cache.json")
+RELEASES_CACHE_TTL = 6 * 3600        # MusicBrainz release tags settle slowly
+RELEASES_REFRESH_LOCK = threading.Lock()
+
+# Tags are crowd-contributed free text, so a union query pulls in punk, metal
+# and post-rock. Genre is therefore scored, not trusted: a hard blocklist for
+# genres that should never appear, then a weighted sum of what's left. The
+# threshold is load-bearing -- at 5, "lo-fi" game-soundtrack spam floods in
+# (ULTRAKILL Lofi, DELTARUNE Lofi); at 10 the survivors are recognisably the
+# genre requested. Edit these in index.html? No -- this list is the backend's.
+RELEASE_TAGS = ["indie pop", "twee pop", "jangle pop", "indie", "indietronica",
+                "bedroom pop", "dream pop", "lo-fi", "indie rock", "shoegaze"]
+RELEASE_TAG_WEIGHTS = {
+    "indie pop": 10, "twee pop": 9, "jangle pop": 9, "indie": 7,
+    "indietronica": 6, "bedroom pop": 6, "dream pop": 6,
+    "lo-fi": 5, "indie rock": 5, "shoegaze": 4,
+}
+RELEASE_BLOCKED_TAGS = {
+    "punk", "punk rock", "hardcore punk", "post-punk", "pop punk", "skate punk",
+    "metal", "death metal", "black metal", "thrash metal", "doom metal",
+    "heavy metal", "folk metal", "metalcore", "post-rock", "glam rock",
+    "reggae", "reggae rock", "dancehall", "classical", "jazz", "hip hop",
+    "country", "folk", "bluegrass", "blues", "disco", "funk", "soul", "trap",
+}
+RELEASE_MIN_SCORE = 10
+# Artist link relation types, in the order we'd rather show them.
+RELEASE_LINK_TYPES = ["youtube", "bandcamp", "official homepage", "soundcloud", "discogs"]
+
+
+def _mb_get(path, params, timeout=20):
+    """One paced MusicBrainz call. Returns parsed JSON, or None on any failure."""
+    url = MB_BASE + path + "?" + urlencode(params)
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT,
+                                               "Accept": "application/json"})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            # 503 is the rate limiter; back off and retry. A 404 means no such
+            # entity, which won't fix itself -- stop immediately.
+            if e.code == 503 and attempt < 2:
+                time.sleep(2.0 * (attempt + 1))
+                continue
+            return None
+        except Exception:
+            if attempt < 2:
+                time.sleep(1.5)
+                continue
+            return None
+    return None
+
+
+def _release_score(tags):
+    """Weigh a release's tags, or return -1 if it's genre-blocked."""
+    names = {t.lower() for t in tags}
+    if names & RELEASE_BLOCKED_TAGS:
+        return -1
+    return sum(RELEASE_TAG_WEIGHTS.get(n, 0) for n in names)
+
+
+def _release_cover_url(release_group_id):
+    """Front-cover thumbnail URL from the Cover Art Archive, or None."""
+    try:
+        req = urllib.request.Request(
+            MB_COVER_BASE + release_group_id + "?fmt=json",
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    for img in data.get("images", []):
+        if "Front" in (img.get("types") or []):
+            return img.get("thumbnails", {}).get("250") or img.get("resource")
+    images = data.get("images") or []
+    return images[0].get("resource") if images else None
+
+
+def _release_artist_links(artist_id):
+    """Public links for an artist, best-first. Note the URL lives at
+    relation['url']['resource'] -- NOT relation['resource'], which reads as
+    'this artist has no links' for every artist and is easy to get wrong."""
+    data = _mb_get("artist/" + artist_id, {"fmt": "json", "inc": "url-rels"})
+    if not data:
+        return {}
+    found = {}
+    for rel in data.get("relations") or []:
+        url = (rel.get("url") or {}).get("resource")
+        rtype = rel.get("type")
+        if url and rtype in RELEASE_LINK_TYPES and rtype not in found:
+            found[rtype] = url
+    return found
+
+
+def _fetch_releases():
+    """Build the release list from MusicBrainz. Slow (~30s: one paced call per
+    artist) — always called behind the cache, never on a user request path."""
+    now = time.time()
+    today = time.strftime("%Y-%m-%d")
+    # 120 days back is enough to fill a list without paging indefinitely; the
+    # window is a Lucene range so MusicBrainz does the filtering server-side.
+    window_start = time.strftime("%Y-%m-%d", time.localtime(now - 120 * 86400))
+    tag_clause = " OR ".join('tag:"%s"' % t for t in RELEASE_TAGS)
+    query = "(%s) AND firstreleasedate:[%s TO %s]" % (tag_clause, window_start, today)
+
+    data = _mb_get("release-group", {"query": query, "fmt": "json",
+                                    "limit": 100, "inc": "artist-credits+tags+genres"})
+    if not data:
+        return None
+
+    seen_artists = set()
+    releases = []
+    for rg in data.get("release-groups", []):
+        # Singles outnumber albums and dilute the list; keep albums and EPs.
+        if rg.get("primary-type") not in ("Album", "EP"):
+            continue
+        tags = [t.get("name", "") for t in (rg.get("tags") or [])]
+        if _release_score(tags) < RELEASE_MIN_SCORE:
+            continue
+        credit = rg.get("artist-credit") or []
+        if not credit:
+            continue
+        artist = credit[0].get("artist") or {}
+        artist_id = artist.get("id")
+        name = artist.get("name", "")
+        if not artist_id or not name:
+            continue
+        # One artist can front several qualifying releases in the window;
+        # link lookup is per-artist, so resolve each artist exactly once.
+        if artist_id not in seen_artists:
+            seen_artists.add(artist_id)
+            links = _release_artist_links(artist_id)
+        else:
+            links = {}
+        releases.append({
+            "title": rg.get("title", ""),
+            "artist": name,
+            "artist_id": artist_id,
+            "date": rg.get("first-release-date", ""),
+            "type": rg.get("primary-type", ""),
+            "tags": sorted(t for t in tags if t.lower() in RELEASE_TAG_WEIGHTS)[:4],
+            "cover": _release_cover_url(rg["id"]),
+            "youtube": links.get("youtube"),
+            "bandcamp": links.get("bandcamp"),
+            "homepage": links.get("official homepage"),
+            "soundcloud": links.get("soundcloud"),
+            "discogs": links.get("discogs"),
+        })
+        # Spread the work: one artist + one cover-art lookup per release, and
+        # MusicBrainz's limiter counts coverartarchive against the same budget.
+        time.sleep(1.05)
+
+    # Some first-release-date values are a bare year ("2026") -- sort tolerates
+    # short strings, but newest-first must treat them as least precise.
+    releases.sort(key=lambda r: (r["date"] or "", r["artist"].lower()), reverse=True)
+    return {"updated_at": now, "updated": time.strftime("%Y-%m-%d %H:%M"),
+            "source": "musicbrainz", "tags": RELEASE_TAGS,
+            "releases": releases}
+
+
+def get_releases():
+    """Cached release list. Serves stale cache, refreshes in the background."""
+    cached = None
+    try:
+        with open(RELEASES_CACHE_FILE) as f:
+            cached = json.load(f)
+    except Exception:
+        cached = None
+
+    fresh = cached and (time.time() - cached.get("updated_at", 0) < RELEASES_CACHE_TTL)
+    if fresh:
+        return 200, json.dumps(cached).encode("utf-8")
+
+    if cached:
+        # Stale but present: answer immediately, refresh for next time. A cold
+        # refresh takes ~30s, which is far too long to block a page load on.
+        if RELEASES_REFRESH_LOCK.acquire(blocking=False):
+            def _bg():
+                try:
+                    fresh_data = _fetch_releases()
+                    if fresh_data:
+                        tmp = RELEASES_CACHE_FILE + ".tmp"
+                        with open(tmp, "w") as f:
+                            json.dump(fresh_data, f)
+                        os.replace(tmp, RELEASES_CACHE_FILE)   # atomic
+                finally:
+                    RELEASES_REFRESH_LOCK.release()
+            threading.Thread(target=_bg, daemon=True).start()
+        cached["stale"] = True
+        return 200, json.dumps(cached).encode("utf-8")
+
+    # Cold cache: the first load has to wait for the fetch, once.
+    if RELEASES_REFRESH_LOCK.acquire(blocking=False):
+        try:
+            data = _fetch_releases()
+            if data:
+                tmp = RELEASES_CACHE_FILE + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(data, f)
+                os.replace(tmp, RELEASES_CACHE_FILE)
+                return 200, json.dumps(data).encode("utf-8")
+            # Fetch failed -- fall through to a clear error rather than an
+            # empty list, which would read as "no indie pop exists".
+            return 502, json.dumps({
+                "error": "Could not reach MusicBrainz for releases"}).encode("utf-8")
+        finally:
+            RELEASES_REFRESH_LOCK.release()
+    return 503, json.dumps({"error": "Release list is being built, try again shortly"}).encode("utf-8")
+
+
 # ── SERVER HOST (for generating correct URLs in /api/config) ────────────────────
 # Used by the frontend to construct absolute URLs for proxied services.
 # Defaults to "localhost" — override with SERVER_HOST env var.
@@ -1339,6 +1570,15 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 self.send_json(400, {"error": "Missing artist parameter"})
                 return
             status, data = get_lastfm_similar(artist)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if parsed.path == "/api/releases":
+            status, data = get_releases()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
