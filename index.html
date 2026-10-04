@@ -3942,8 +3942,15 @@ function highlight(text) {
   return escHtml(text).replace(new RegExp(`(${q})`, 'gi'), '<mark>$1</mark>');
 }
 
+// Coerce to string first: call sites legitimately pass numbers (e.g. the
+// Services tab's svc.memory_mb / svc.restarts), and a number has no
+// .replace() — the old `(s || '')` version threw
+// "(intermediate value).replace is not a function" on the Services page.
+// Still falsy-to-empty for everything else, exactly as before, so a missing
+// "" and a real numeric 0 stay distinguishable only where it matters.
 function escHtml(s) {
-  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ? s : '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // Safe interpolation of an untrusted string into a single-quoted JS string
