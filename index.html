@@ -10587,6 +10587,19 @@ function renderReleases() {
     return;
   }
 
+  // An error is NOT an empty list. Rendering "no releases found" for a 401 or
+  // a failed fetch reads as "indie pop is dead" and hides the real fault —
+  // the usual cause is this browser having no Helm access token set.
+  if (data.error) {
+    statusEl.className = 'svc-error';
+    statusEl.innerHTML = `Could not load releases: ${escHtml(data.error)}`
+      + (String(data.status) === '401'
+          ? ' — this browser may need the Helm access token (Profile menu → Access token).'
+          : '');
+    listEl.innerHTML = '';
+    return;
+  }
+
   const rels = data.releases || [];
   if (!rels.length) {
     statusEl.textContent = 'No releases found in the last 120 days. MusicBrainz only lists what has been tagged, so quiet months are normal.';
@@ -10634,10 +10647,12 @@ async function fetchReleases(force) {
   try {
     const resp = await fetch('/api/releases', { signal: AbortSignal.timeout(20000) });
     const body = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(body.error || ('HTTP ' + resp.status));
+    if (!resp.ok) throw Object.assign(new Error(body.error || ('HTTP ' + resp.status)), { status: resp.status });
     RELEASES_CACHE_DATA = body;
   } catch (e) {
-    RELEASES_CACHE_DATA = { releases: [], error: e.message };
+    // Keep the status so renderReleases() can distinguish 401 (no token in this
+    // browser) from a genuine upstream failure.
+    RELEASES_CACHE_DATA = { releases: [], error: e.message, status: e.status };
   } finally {
     RELEASES_LOADING = false;
     renderReleases();
