@@ -1050,6 +1050,34 @@ body.profile-work #profile-switcher {
 .sunmoon-label { font-size: 12px; color: var(--text-muted); flex: 1; }
 .sunmoon-value { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
 
+/* Tailscale peers widget */
+.tailscale-body { padding: 12px 14px 14px; }
+.tailscale-loading, .tailscale-error {
+  font-size: 12px; color: var(--text-dim); padding: 8px 0;
+}
+.tailscale-self {
+  font-size: 12px; color: var(--text-muted); padding-bottom: 8px;
+  margin-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.tailscale-peer {
+  display: flex; align-items: center; gap: 8px; padding: 4px 0;
+}
+.tailscale-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; background: var(--text-dim);
+}
+.tailscale-dot.online { background: var(--green); }
+.tailscale-name {
+  font-size: 12px; color: var(--text); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tailscale-name.self { font-style: italic; }
+.tailscale-ip {
+  font-size: 11px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.tailscale-offline .tailscale-name { color: var(--text-dim); }
+
 /* On This Day widget */
 .onthisday-body { padding: 12px 14px 14px; }
 .otd-loading, .otd-error {
@@ -2933,6 +2961,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
           <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
           <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
+          <button class="dropdown-item" id="btn-add-tailscale">Tailscale Peers</button>
           <button class="dropdown-item" id="btn-add-comics">Comics</button>
           <button class="dropdown-item" id="btn-add-somafm">SomaFM Now Playing</button>
           <button class="dropdown-item" id="btn-add-lyrics">SomaFM Lyrics</button>
@@ -3993,6 +4022,7 @@ function renderDashboard() {
     randomwiki: renderRandomWikiWidget,
     quoteoftheday: renderQuoteWidget,
     sunmoon: renderSunMoonWidget,
+  tailscale: renderTailscaleWidget,
     comics: renderComicsWidget,
     somafm: renderSomaFMWidget,
     lyrics: renderLyricsWidget,
@@ -8263,6 +8293,12 @@ function renderQuoteHtml(body, quote) {
 
 const SUNMOON_CACHE = {}; // widgetId -> { data, ts }
 
+// Tailscale peers cache is keyed by widgetId too, but there's only ever one
+// Tailscale per host, so any widget can share the single fetched payload
+// rather than each one hitting /api/tailscale on its own poll tick.
+const TAILSCALE_CACHE = { data: null, ts: 0 };
+
+
 const MOON_PHASES = [
   { name: 'New Moon',        icon: '🌑' },
   { name: 'Waxing Crescent', icon: '🌒' },
@@ -8375,6 +8411,111 @@ function renderSunMoonHtml(body, data) {
       <span class="sunmoon-label">${escHtml(data.moon.name)}</span>
       <span class="sunmoon-value">${data.moon.illumination}%</span>
     </div>
+  `;
+}
+
+// ── TAILSCALE PEERS WIDGET ─────────────────────────────────────────────────────
+// Reads /api/tailscale, which queries tailscaled's LocalAPI over its unix
+// socket (no CLI in the container, no token — see get_tailscale_status).
+// Degrades to an explanatory message rather than a broken card when the socket
+// isn't mounted, since that's a compose-config state, not an error.
+
+function renderTailscaleWidget(w) {
+  const el = document.createElement('div');
+  el.className = 'folder-card widget-card tailscale-widget';
+  el.dataset.widgetId = w.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="folder-header widget-header">
+      <span class="col-dot" style="background:#5E7CE2"></span>
+      <span class="column-title" style="cursor:default">Tailscale</span>
+      <div class="col-actions" style="opacity:1">
+        <button class="icon-btn" title="Refresh" data-ts-refresh="${w.id}">↻</button>
+        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
+      </div>
+    </div>
+    <div class="tailscale-body" id="tailscale-${w.id}">
+      <div class="tailscale-loading">Loading…</div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const header = el.querySelector('.widget-header');
+    if (header) header.onmousedown = () => { el.draggable = true; };
+    el.addEventListener('dragend', () => { el.draggable = false; });
+    document.addEventListener('mouseup', () => { el.draggable = false; });
+
+    const btn = el.querySelector('[data-ts-refresh]');
+    if (btn) btn.onclick = () => {
+      TAILSCALE_CACHE.ts = 0;   // force a refetch past the freshness window
+      loadTailscale(w);
+    };
+
+    loadTailscale(w);
+  }, 0);
+
+  return el;
+}
+
+async function loadTailscale(w) {
+  const body = document.getElementById('tailscale-' + w.id);
+  if (!body) return;
+
+  // Peer online/offline state changes on the order of seconds-to-minutes, so a
+  // 30s cache is plenty and keeps a 5s dashboard re-render from re-fetching.
+  if (TAILSCALE_CACHE.data && Date.now() - TAILSCALE_CACHE.ts < 30 * 1000) {
+    renderTailscaleHtml(body, TAILSCALE_CACHE.data);
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/tailscale');
+    if (resp.status === 401) {
+      body.innerHTML = '<div class="tailscale-error">Token required</div>';
+      return;
+    }
+    const data = await resp.json();
+    TAILSCALE_CACHE.data = data;
+    TAILSCALE_CACHE.ts = Date.now();
+    renderTailscaleHtml(body, data);
+  } catch (e) {
+    body.innerHTML = `<div class="tailscale-error">Could not load peers.<br><small>${escHtml(e.message)}</small></div>`;
+  }
+}
+
+function renderTailscaleHtml(body, data) {
+  if (!data.available) {
+    body.innerHTML = `<div class="tailscale-error">Tailscale unavailable<br><small>${escHtml(data.error || '')}</small></div>`;
+    return;
+  }
+  // Hide self from the peer list — the header line below already names it, and
+  // a "my-vps — this node" row is noise on a two-device tailnet.
+  const peers = (data.peers || []).filter(p => !p.is_self);
+  const self = data.self || {};
+
+  const selfIp = (self.ips || []).find(ip => ip && ip.indexOf(':') === -1) || '';
+  const rows = peers.length
+    ? peers.map(p => {
+        const ip = (p.ips || []).find(x => x && x.indexOf(':') === -1) || '';
+        return `
+      <div class="tailscale-peer${p.online ? '' : ' tailscale-offline'}">
+            <span class="tailscale-dot${p.online ? ' online' : ''}"></span>
+            <span class="tailscale-name">${escHtml(p.hostname || p.dns_name || p.id)}${p.exit_node ? ' ↗' : ''}</span>
+            <span class="tailscale-ip">${escHtml(ip)}</span>
+          </div>`;
+      }).join('')
+    : '<div class="tailscale-loading">No other peers on this tailnet</div>';
+
+  const onlineCount = peers.filter(p => p.online).length;
+
+  body.innerHTML = `
+    <div class="tailscale-self">
+      This node: ${escHtml(self.hostname || 'unknown')}${selfIp ? ' (' + escHtml(selfIp) + ')' : ''}
+      · ${onlineCount}/${peers.length} peers online
+      ${data.backend_state ? '· ' + escHtml(data.backend_state) : ''}
+    </div>
+    ${rows}
   `;
 }
 
@@ -8597,6 +8738,10 @@ document.getElementById('btn-add-quoteoftheday').onclick = () => {
 };
 document.getElementById('btn-add-sunmoon').onclick = () => {
   state.widgets.push({ id: uid(), type: 'sunmoon', city: 'Athens, GA', gridCol: 2 });
+  save(); render(); renderDashboard();
+};
+document.getElementById('btn-add-tailscale').onclick = () => {
+  state.widgets.push({ id: uid(), type: 'tailscale', gridCol: 0 });
   save(); render(); renderDashboard();
 };
 document.getElementById('btn-add-comics').onclick = () => {

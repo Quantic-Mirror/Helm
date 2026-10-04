@@ -635,6 +635,34 @@ MONITORED_SERVICES = [
         "container": "searxng-core",
         "controllable": True,
     },
+    {
+        "id":        "leafwiki",
+        "label":     "LeafWiki",
+        "type":      "docker",
+        "container": "leafwiki",
+        "controllable": True,
+    },
+    {
+        "id":        "leafwiki-proxy",
+        "label":     "LeafWiki Proxy",
+        "type":      "docker",
+        "container": "leafwiki-proxy",
+        "controllable": True,
+    },
+    {
+        "id":        "dailytxt",
+        "label":     "DailyTxT",
+        "type":      "docker",
+        "container": "dailytxt",
+        "controllable": True,
+    },
+    {
+        "id":        "dailytxt-proxy",
+        "label":     "DailyTxT Proxy",
+        "type":      "docker",
+        "container": "dailytxt-proxy",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
@@ -1085,6 +1113,67 @@ def get_network_info():
     return result
 
 
+TAILSCALE_SOCK = "/var/run/tailscale/tailscaled.sock"
+
+
+def get_tailscale_status():
+    """Return tailnet peer status from tailscaled's LocalAPI.
+
+    Talks to tailscaled over its own unix socket rather than shelling out to
+    the `tailscale` CLI: the Helm container doesn't ship that binary, but the
+    socket can be bind-mounted in. Reuses _UnixSocketHTTPConnection — same
+    reason the Docker helpers don't shell out to `docker ps`.
+
+    LocalAPI over the unix socket needs no bearer token (access is already
+    gated on filesystem perms), so there's no secret to store here.
+
+    Degrades to {"available": False, "error": ...} rather than raising: a box
+    without Tailscale is a normal config, not a server fault.
+    """
+    result = {"available": False, "peers": []}
+    try:
+        conn = _UnixSocketHTTPConnection(TAILSCALE_SOCK)
+        # The Host header must be the LocalAPI magic value or tailscaled 404s.
+        conn.request("GET", "/localapi/v0/status",
+                     headers={"Host": "local-tailscaled.sock"})
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8", errors="replace")
+        conn.close()
+        data = json.loads(raw)
+    except FileNotFoundError:
+        result["error"] = "tailscaled socket not mounted — bind-mount " + TAILSCALE_SOCK
+        return result
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+    self_node = (data.get("Self") or {}).get("ID")
+    result["available"] = True
+    result["backend_state"] = data.get("BackendState", "")
+    result["self"] = {
+        "hostname": (data.get("Self") or {}).get("HostName", ""),
+        "ips":      (data.get("Self") or {}).get("TailscaleIPs", []),
+    }
+
+    for key, peer in (data.get("Peer") or {}).items():
+        result["peers"].append({
+            "id":       key,
+            "hostname": peer.get("HostName", ""),
+            "dns_name": peer.get("DNSName", ""),
+            "os":       peer.get("OS", ""),
+            "ips":      peer.get("TailscaleIPs", []),
+            "online":   bool(peer.get("Online")),
+            # "is_self" lets the frontend mark/exclude the node Helm runs on
+            # without re-deriving it from the IP list.
+            "is_self":  key == self_node,
+            "last_seen": peer.get("LastSeen", ""),
+            "exit_node": bool(peer.get("ExitNode")),
+        })
+    # Online first, then by hostname, so the list is stable between polls.
+    result["peers"].sort(key=lambda p: (not p["online"], p["hostname"]))
+    return result
+
+
 class HelmHandler(SimpleHTTPRequestHandler):
     # A client that disappears mid-connection without a clean TCP close (e.g.
     # a laptop sleeping/losing wifi) would otherwise leave the handler thread
@@ -1249,6 +1338,10 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/network":
             self.send_json(200, get_network_info())
+            return
+
+        if parsed.path == "/api/tailscale":
+            self.send_json(200, get_tailscale_status())
             return
 
         if parsed.path == "/api/services":

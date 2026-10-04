@@ -74,6 +74,12 @@ services:
       # (searxng, etc.) via the Docker socket API. Safe to remove if you
       # don't need the Services tab to see other containers.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Tailscaled's LocalAPI socket, for the "Tailscale Peers" dashboard
+      # widget (/api/tailscale). Optional: without it the widget renders a
+      # "Tailscale unavailable" message. No token needed — unix-socket access
+      # is already gated on file perms. Safe to remove if you don't run the
+      # Tailscale widget.
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
       # OPTIONAL — only for monitoring the *host's* systemd-user services from
       # the Services/Logs tabs. Requires a running user session + journal on
       # the host (`loginctl enable-linger <user>`), otherwise `docker compose
