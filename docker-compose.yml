@@ -298,18 +298,27 @@ services:
     ports:
       # Bound to the tailnet IP only — never 0.0.0.0. Kavita has no host auth
       # by default and the books are private.
-      - "${KAVITA_BIND:-127.0.0.1}:${KAVITA_PORT:-5000}:5000"
+      - "${KAVITA_BIND:-${HELM_BIND:-127.0.0.1}}:${KAVITA_PORT:-5000}:5000"
     volumes:
       - ./data/kavita:/kavita/config
-      # Your library. Read-only: Kavita never needs to write to your books, and
-      # :ro means a bug in it cannot damage or delete them. Change this to point
-      # at whatever holds your EPUBs (e.g. /mnt/SharedStuff/books).
+      # The library. READ-ONLY: Kavita never needs to write to your books, and
+      # :ro means a bug in it cannot damage or delete them.
+      #
+      # This is a COPY on the VPS, not the originals. The books live on hyperion
+      # at /mnt/SharedStuff/Books, which is a local NTFS partition on that
+      # machine (fuseblk /dev/sda2) — NOT a network share, so the VPS has no
+      # route to it and Kavita saw an empty path and indexed nothing. Copy books
+      # in with: scp '/mnt/SharedStuff/Books/*.epub' vps:~/helm/data/kavita/books/
+      #
+      # The in-container path MUST be exactly /books — that is what the library
+      # in Kavita's DB points at. Pointing it at the host path (or the old
+      # /mnt/SharedStuff/Books) finds nothing, because that path does not exist
+      # inside the container.
       - "${KAVITA_LIBRARY:-./data/kavita/books}:/books:ro"
     environment:
       - "TZ=${TZ:-UTC}"
-      # Cap the .NET heap at 512M. Without this Kavita can grow into this
-      # host's free RAM and get the OOM killer pointed at a more important
-      # container.
+      # Cap the .NET heap so a runaway heap can't get the OOM killer pointed at
+      # Forgejo or Helm on this 3.8 GB host.
       - "DOTNET_GCHeapHardLimit=40000000"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5000/ping || exit 1"]
