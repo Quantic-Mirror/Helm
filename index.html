@@ -6042,7 +6042,7 @@ async function loadBackupsList() {
 }
 
 async function downloadBackupFile(filename) {
-  // Same fix as downloadAudioFile(): a bare <a href="/api/backups/…" download>
+  // A bare <a href="/api/backups/…" download>
   // link can't carry the Authorization header wrapFetchWithToken() attaches
   // to fetch() calls, so it 401s once helm_token.txt is configured. Fetch
   // through the authenticated fetch() and hand the browser a blob: URL.
@@ -10918,9 +10918,6 @@ function renderAudioPage() {
     filesEl.querySelectorAll('.audio-delete-btn').forEach(btn => {
       btn.onclick = () => deleteAudioFile(btn.dataset.filename);
     });
-    filesEl.querySelectorAll('.audio-dl-btn').forEach(btn => {
-      btn.onclick = () => downloadAudioFile(btn.dataset.filename);
-    });
   }
   updateMusicSectionChrome();
 }
@@ -10960,7 +10957,6 @@ function buildAudioFileRowHTML(f) {
         <span class="backup-size">${escHtml(label)} · ${escHtml(size)}</span>
       </div>
       <div class="backup-actions">
-        <button class="btn audio-dl-btn" data-filename="${escHtml(f.filename)}" title="Download">↓</button>
         <button class="btn audio-delete-btn" data-filename="${escHtml(f.filename)}" title="Delete">✕</button>
       </div>
     </div>`;
@@ -11049,26 +11045,6 @@ async function pickAudioSearchResult(videoId, title) {
     fetchAudioData();
   } catch(e) {
     toast('Could not queue download: ' + e.message);
-  }
-}
-
-async function downloadAudioFile(filename) {
-  // Plain <a href="/api/audio/files/…" download> links can't carry the
-  // Authorization header wrapFetchWithToken() attaches to fetch() calls, so
-  // when helm_token.txt is configured, a bare anchor click 401s. Fetch the
-  // bytes through the authenticated fetch() instead and hand the browser a
-  // blob: URL to save, same pattern saveConfig() uses for local exports.
-  try {
-    const resp = await fetch('/api/audio/files/' + encodeURIComponent(filename));
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const blob = await resp.blob();
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  } catch(e) {
-    toast('Could not download: ' + e.message);
   }
 }
 
