@@ -10607,6 +10607,11 @@ function saveRelease(r) {
   if (isReleaseSaved(key)) return;
   savedReleases().unshift({
     key,
+    // artist_id must be carried, not just folded into `key`: releaseCardHTML
+    // renders a saved card, and re-deriving the key from the stored fields
+    // would produce "|title" (no artist_id) and stop matching `key` -- which
+    // silently breaks Undo, since it filters both lists by that key.
+    artist_id: r.artist_id || '',
     title: r.title || '',
     artist: r.artist || '',
     date: r.date || '',
@@ -10670,11 +10675,15 @@ function releaseLinksHTML(r) {
 // sync with the live one it was made from.
 function releaseCardHTML(r, actions) {
   const links = releaseLinksHTML(r);
+  // Trust a stored key over re-deriving one. A saved entry already carries the
+  // exact key it was filed under; recomputing it from possibly-reduced fields
+  // is how Undo stops matching its own row.
+  const key = r.key || releaseKey(r);
   const cover = r.cover
     ? `<img class="release-cover" src="${escHtml(r.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
     : '<div class="release-cover release-cover-none">♪</div>';
   const tags = (r.tags || []).map(t => `<span class="release-tag">${escHtml(t)}</span>`).join('');
-  return `<div class="release-card" data-release-key="${escHtml(releaseKey(r))}">
+  return `<div class="release-card" data-release-key="${escHtml(key)}">
     ${cover}
     <div class="release-info">
       <div class="release-artist">${escHtml(r.artist)}</div>
