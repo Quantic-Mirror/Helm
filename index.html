@@ -2481,6 +2481,16 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   transition: border-color 0.15s;
 }
 #musicx-artist-search:focus { border-color: var(--accent); }
+.musicx-yt-form { display: flex; gap: 6px; margin-bottom: 14px; }
+#musicx-yt-input {
+  flex: 1; min-width: 0;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  font-family: var(--font-body); font-size: 12px;
+  padding: 6px 10px; outline: none;
+  transition: border-color 0.15s;
+}
+#musicx-yt-input:focus { border-color: var(--accent); }
 #musicx-artist-search-clear {
   position: absolute; right: 6px;
   background: none; border: none; color: var(--text-dim);
@@ -3227,6 +3237,11 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div class="music-tab-panel" id="music-favorites-panel">
     <div id="music-layout">
       <div id="music-sidebar">
+        <div class="musicx-panel-title">Add from YouTube</div>
+        <form id="musicx-yt-form" class="musicx-yt-form">
+          <input type="text" id="musicx-yt-input" placeholder="Paste a YouTube link…" autocomplete="off" spellcheck="false">
+          <button type="submit" class="btn" id="musicx-yt-add">Add</button>
+        </form>
         <div class="musicx-panel-title">Find Similar Artists</div>
         <form id="musicx-artist-search-form" class="musicx-search-wrap">
           <input type="text" id="musicx-artist-search" placeholder="Artist name…" autocomplete="off" spellcheck="false">
@@ -9211,6 +9226,10 @@ document.getElementById('btn-audio-batch-download').onclick = () => {
   submitAudioDownload('', '', batchEl.value);
   batchEl.value = '';
 };
+document.getElementById('musicx-yt-form').onsubmit = (e) => {
+  e.preventDefault();
+  addMusicxFromYoutubeLink(document.getElementById('musicx-yt-input').value);
+};
 document.getElementById('musicx-artist-search-form').onsubmit = (e) => {
   e.preventDefault();
   searchMusicxArtist(document.getElementById('musicx-artist-search').value);
@@ -11141,6 +11160,52 @@ function clearMusicxArtistSearch() {
   MUSICX_SEARCH_ARTIST = null;
   MUSICX_EXPLORE_ARTIST = null;
   renderMusicXplorerPage();
+}
+
+// Accepts the usual YouTube link shapes (watch, youtu.be, shorts, embed,
+// live, music.youtube.com) and returns the 11-char video id, or null.
+function youtubeIdFromLink(text) {
+  const m = (text || '').trim().match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/|music\.youtube\.com\/watch\?(?:.*&)?v=)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+// YouTube titles are usually "Artist - Song", and auto-generated "Topic"
+// channels put the artist in the channel name ("Artist - Topic") with a bare
+// song title. Anything else falls back to the channel name as the artist.
+function splitYoutubeTitle(title, uploader) {
+  if (/ - Topic$/.test(uploader)) return { artist: uploader.replace(/ - Topic$/, ''), song: title };
+  const m = title.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+  if (m) return { artist: m[1], song: m[2] };
+  return { artist: uploader || 'Unknown artist', song: title };
+}
+
+async function addMusicxFromYoutubeLink(link) {
+  const videoId = youtubeIdFromLink(link);
+  if (!videoId) { toast("That doesn't look like a YouTube video link"); return; }
+  const existing = (state.musicXplorer || []).find(e => e.videoId === videoId);
+  if (existing) { selectMusicxEntry(existing.id); toast('Already in favorites'); return; }
+
+  const inputEl = document.getElementById('musicx-yt-input');
+  const btnEl = document.getElementById('musicx-yt-add');
+  inputEl.disabled = btnEl.disabled = true;
+  try {
+    const hasBackend = await checkLocalBackend();
+    if (!hasBackend) throw new Error('Local backend not reachable');
+    const resp = await fetch('/api/audio/info?id=' + encodeURIComponent(videoId), { signal: AbortSignal.timeout(30000) });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+    const { artist, song } = splitYoutubeTitle(data.title, data.uploader || '');
+    const entry = { id: uid(), artist, song, album: '', videoId, addedAt: Date.now() };
+    state.musicXplorer = [entry, ...(state.musicXplorer || [])];
+    save();
+    inputEl.value = '';
+    toast(`Added "${artist} — ${song}" to favorites`);
+    selectMusicxEntry(entry.id);
+  } catch (e) {
+    toast(`Could not add that video: ${e.message}`);
+  } finally {
+    inputEl.disabled = btnEl.disabled = false;
+  }
 }
 
 function renderMusicXplorerPage() {

@@ -474,6 +474,34 @@ def search_audio_candidates(query, limit=AUDIO_SEARCH_LIMIT):
     return results, None
 
 
+YOUTUBE_VIDEO_ID_RE = re.compile(r'^[A-Za-z0-9_-]{11}$')
+
+
+def get_video_info(video_id):
+    """Title/channel for one YouTube video, so the Favorites page can add a
+    track from a pasted link without a second search. The id is validated
+    and the URL rebuilt here rather than passed through, so nothing from the
+    caller reaches yt-dlp except a bare 11-char video id."""
+    if not YOUTUBE_VIDEO_ID_RE.match(video_id or ""):
+        return None, "Invalid YouTube video id"
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    cmd = [YT_DLP_BIN, "--no-playlist", "--skip-download", "--dump-json", "--no-warnings"] + AUDIO_COOKIES_ARGS + YTDLP_EXTRA_ARGS + [url]
+    stdout, stderr, rc = _run(cmd, timeout=30, env=AUDIO_ENV)
+    if rc != 0:
+        tail = [l for l in (stderr or stdout or "").strip().splitlines() if l.strip()]
+        return None, (" / ".join(tail[-3:]) if tail else f"yt-dlp exited with code {rc}")
+    try:
+        obj = json.loads(stdout)
+    except Exception:
+        return None, "yt-dlp returned unparseable output"
+    return {
+        "id": video_id,
+        "title": obj.get("title") or "(untitled)",
+        "uploader": obj.get("uploader") or obj.get("channel") or "",
+        "duration": obj.get("duration"),
+    }, None
+
+
 def _new_audio_job(label):
     global _audio_job_seq
     with _audio_lock:
@@ -810,6 +838,16 @@ class AudioHandler(BaseHTTPRequestHandler):
                 self.send_json(502, {"error": err})
                 return
             self.send_json(200, {"results": results})
+            return
+
+        if parsed.path == "/api/audio/info":
+            video_id = (parse_qs(parsed.query).get("id", [""])[0]).strip()
+            info, err = get_video_info(video_id)
+            if err:
+                status = 400 if err == "Invalid YouTube video id" else 502
+                self.send_json(status, {"error": err})
+                return
+            self.send_json(200, info)
             return
 
         if parsed.path == "/api/audio/jobs":
