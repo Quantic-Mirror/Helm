@@ -277,6 +277,67 @@ services:
   # helm_server.py's token-authed POST /api/backup-events. There used to be a
   # rabbitmq broker + a backup-worker drainer container; both are gone.
 
+# ── Kavita (ebook library + reader, iframed into the Books tab) ───────────
+  #
+  # Kavita ships X-Frame-Options: SAMEORIGIN AND CSP frame-ancestors 'none'
+  # (verified live against the image, not read from docs), so a direct iframe
+  # renders blank. kavita-proxy runs it through helm_tls_proxy.py, which strips
+  # XFO and rewrites frame-ancestors to the Helm origin — the same fix already
+  # proven for LeafWiki and DailyTxT.
+  #
+  # Kavita serves plain HTTP on 5000 only. The proxy is not optional: Helm is
+  # HTTPS on 8443, and a cross-scheme iframe is mixed content.
+  #
+  # Memory: this is the first genuinely memory-hungry service on this host
+  # (1.6 GB free). Compose caps it via DOTNET_GCHeapHardLimit so a runaway
+  # heap can't OOM-kill Forgejo or Helm. Watch it after adding libraries.
+  kavita:
+    image: ghcr.io/kareadita/kavita:latest
+    container_name: kavita
+    restart: unless-stopped
+    ports:
+      # Bound to the tailnet IP only — never 0.0.0.0. Kavita has no host auth
+      # by default and the books are private.
+      - "${KAVITA_BIND:-127.0.0.1}:${KAVITA_PORT:-5000}:5000"
+    volumes:
+      - ./data/kavita:/kavita/config
+      # Your library. Read-only: Kavita never needs to write to your books, and
+      # :ro means a bug in it cannot damage or delete them. Change this to point
+      # at whatever holds your EPUBs (e.g. /mnt/SharedStuff/books).
+      - "${KAVITA_LIBRARY:-./data/kavita/books}:/books:ro"
+    environment:
+      - "TZ=${TZ:-UTC}"
+      # Cap the .NET heap at 512M. Without this Kavita can grow into this
+      # host's free RAM and get the OOM killer pointed at a more important
+      # container.
+      - "DOTNET_GCHeapHardLimit=40000000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  kavita-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: kavita-proxy
+    restart: unless-stopped
+    depends_on:
+      - kavita
+    ports:
+      - "${KAVITA_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9006:9006}"
+    volumes:
+      - ./data:/app/state
+    environment:
+      HELM_TLS_CERT: "/app/state/cert.pem"
+      HELM_TLS_KEY: "/app/state/key.pem"
+      # Must EXACTLY match the scheme+host+port the browser used to load Helm,
+      # or CSP frame-ancestors won't include it and the iframe stays blocked.
+      HELM_FRAME_ORIGINS: "${KAVITA_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9006", "5000", "kavita"]
+
 # ── Network: all containers on an isolated bridge so they can reach each other
 # by service name. The host (and LAN browsers) reach helm on published ports.
 networks:
