@@ -819,7 +819,37 @@ def _get_docker_status(container):
         except Exception as e:
             logs_str = f"(log fetch error: {e})"
 
-    return {"running": is_running, "status": status_str, "uptime": uptime_str, "logs": logs_str}
+    # Memory + restart count. RestartCount comes from the inspect payload we
+    # already fetched; memory does NOT — Docker only populates MemoryStats on
+    # the separate /stats endpoint, and returns an empty dict from /json even
+    # for a running container. So one extra socket call, one per container per
+    # poll. stream=false makes it a single sample rather than a subscription.
+    #
+    # Worth surfacing on a box this size: with 8 containers and a few hundred
+    # MB to spare, "which one is eating the memory" is the question the
+    # Services tab exists to answer, and running/not-running alone can't
+    # answer it. Subtract inactive_file cache — that memory is reclaimable
+    # under pressure, so it isn't what competes for RAM.
+    memory_mb = None
+    stats_data, stats_err = _docker_api(
+        f"/containers/{container}/stats?stream=false&one-shot=true"
+    )
+    if not stats_err and stats_data:
+        try:
+            ms = stats_data.get("memory_stats") or {}
+            raw_bytes = ms.get("usage") or 0
+            if isinstance(raw_bytes, str):
+                raw_bytes = int(raw_bytes, 0)
+            inactive = (ms.get("stats") or {}).get("inactive_file") or 0
+            if isinstance(inactive, str):
+                inactive = int(inactive, 0)
+            memory_mb = round(max(raw_bytes - inactive, 0) / (1024 * 1024), 1)
+        except Exception:
+            pass
+
+    return {"running": is_running, "status": status_str, "uptime": uptime_str,
+            "logs": logs_str, "memory_mb": memory_mb,
+            "restarts": data.get("RestartCount", 0)}
 
 
 def _get_timer_status(timer_unit, service_unit):

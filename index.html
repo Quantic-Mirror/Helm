@@ -2201,6 +2201,10 @@ body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red);
   padding: 0 16px 4px;
   font-size: 11px; color: var(--text-dim);
 }
+/* ≥400MB is worth noticing on a box this size — see the 400 threshold in
+   buildServiceCardHTML. */
+.svc-mem-hot { color: var(--amber); font-weight: 600; }
+.svc-restarts { color: var(--amber); }
 
 .svc-controls {
   display: flex; gap: 6px; padding: 8px 16px 10px;
@@ -4022,7 +4026,7 @@ function renderDashboard() {
     randomwiki: renderRandomWikiWidget,
     quoteoftheday: renderQuoteWidget,
     sunmoon: renderSunMoonWidget,
-  tailscale: renderTailscaleWidget,
+    tailscale: renderTailscaleWidget,
     comics: renderComicsWidget,
     somafm: renderSomaFMWidget,
     lyrics: renderLyricsWidget,
@@ -10207,6 +10211,21 @@ function buildServiceCardHTML(svc) {
   if (svc.type === 'systemd-timer') {
     if (svc.last_run) extraInfo += `<div class="svc-meta">Last run: ${escHtml(svc.last_run)}</div>`;
     if (svc.next_run) extraInfo += `<div class="svc-meta">Next run: ${escHtml(svc.next_run)}</div>`;
+  }
+
+  // Memory + restart count (docker only — the systemd/timer branches of
+  // _get_docker_status's siblings don't report either). memory_mb excludes
+  // the container's reclaimable cache, so it reflects what actually competes
+  // for RAM. A non-zero restart count is the signal for "this is up but has
+  // been crash-looping", which a green dot hides.
+  if (svc.type === 'docker') {
+    if (svc.memory_mb !== null && svc.memory_mb !== undefined) {
+      const hot = svc.memory_mb >= 400;
+      extraInfo += `<div class="svc-meta">Memory: <span class="${hot ? 'svc-mem-hot' : ''}">${escHtml(svc.memory_mb)} MB</span></div>`;
+    }
+    if (svc.restarts > 0) {
+      extraInfo += `<div class="svc-meta svc-restarts">Restarted ${escHtml(svc.restarts)}×</div>`;
+    }
   }
 
   // Control buttons
