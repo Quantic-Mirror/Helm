@@ -2370,6 +2370,24 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 }
 .release-link:hover { border-color: var(--text-dim); }
 .release-nolink { font-size: 11px; color: var(--text-dim); opacity: 0.6; font-style: italic; }
+.release-actions { margin-top: 8px; display: flex; gap: 6px; }
+.release-act {
+  font-size: 11px; padding: 3px 10px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg); color: var(--text); font-family: inherit;
+}
+.release-act:hover { border-color: var(--text-dim); }
+.release-act-dismiss:hover { border-color: #d9534f; color: #d9534f; }
+.release-group {
+  grid-column: 1 / -1; margin: 6px 0 0;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-dim);
+}
+.release-group:first-child { margin-top: 0; }
+.release-exhausted {
+  grid-column: 1 / -1; font-size: 13px; color: var(--text-dim);
+  padding: 18px 4px; line-height: 1.5;
+}
 #music-topbar {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 16px;
@@ -10547,6 +10565,70 @@ async function fetchAudioData() {
 let RELEASES_CACHE_DATA = null;
 let RELEASES_LOADING = false;
 
+// Stable key for a release across refreshes. artist_id + title is what
+// identifies the release-group; the date is deliberately excluded because a
+// release can have its date corrected after publication, which would otherwise
+// resurrect a card the user already dismissed. artist_id is always present
+// (the backend requires it to resolve links), so this is safe to key on.
+function releaseKey(r) {
+  return `${r.artist_id || ''}|${(r.title || '').toLowerCase()}`;
+}
+
+// Dismissed + saved releases live in synced state, not in RELEASES_CACHE_DATA.
+// The cache is rebuilt from MusicBrainz every 6h and re-pulls cards the user has
+// already dealt with, so "don't show me this again" cannot be stored there.
+function dismissedReleaseKeys() {
+  if (!Array.isArray(state.releasesDismissed)) state.releasesDismissed = [];
+  return state.releasesDismissed;
+}
+function savedReleases() {
+  if (!Array.isArray(state.releasesSaved)) state.releasesSaved = [];
+  return state.releasesSaved;
+}
+
+function dismissRelease(key) {
+  const list = dismissedReleaseKeys();
+  if (list.includes(key)) return;
+  list.push(key);
+  save();
+}
+function undismissRelease(key) {
+  state.releasesDismissed = dismissedReleaseKeys().filter(k => k !== key);
+  save();
+}
+function isReleaseSaved(key) {
+  return savedReleases().some(s => s && s.key === key);
+}
+
+// Saving also dismisses: a saved card has been dealt with, so leaving it in
+// the feed just means dismissing it twice. Undo-capable via undoSaveRelease().
+function saveRelease(r) {
+  const key = releaseKey(r);
+  if (isReleaseSaved(key)) return;
+  savedReleases().unshift({
+    key,
+    title: r.title || '',
+    artist: r.artist || '',
+    date: r.date || '',
+    type: r.type || '',
+    tags: r.tags || [],
+    cover: r.cover || null,
+    youtube: r.youtube || null,
+    bandcamp: r.bandcamp || null,
+    homepage: r.homepage || null,
+    soundcloud: r.soundcloud || null,
+    discogs: r.discogs || null,
+    savedAt: Date.now(),
+  });
+  if (!dismissedReleaseKeys().includes(key)) state.releasesDismissed.push(key);
+  save();
+}
+function undoSaveRelease(key) {
+  state.releasesSaved = savedReleases().filter(s => s && s.key !== key);
+  undismissRelease(key);   // back into the feed where it came from
+  save();
+}
+
 // Bandcamp is a listen link like YouTube; homepage is not. Both get shown, but
 // with different affordance so "go hear something" is one click for either.
 const RELEASE_LINK_ORDER = [
@@ -10574,6 +10656,69 @@ function releaseDateLabel(date) {
   return date;
 }
 
+function releaseLinksHTML(r) {
+  return RELEASE_LINK_ORDER
+    .filter(([key]) => r[key])
+    .map(([key, label, title]) =>
+      `<a class="release-link" href="${escHtml(r[key])}" target="_blank" rel="noopener noreferrer" title="${escHtml(title)}">${label}</a>`)
+    .join('');
+}
+
+// Shared card markup for both the feed and the saved list. `actions` differs:
+// the feed offers Save + Dismiss, the saved list offers Undo. Built as a
+// function (not two template literals) so a saved card can never drift out of
+// sync with the live one it was made from.
+function releaseCardHTML(r, actions) {
+  const links = releaseLinksHTML(r);
+  const cover = r.cover
+    ? `<img class="release-cover" src="${escHtml(r.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    : '<div class="release-cover release-cover-none">♪</div>';
+  const tags = (r.tags || []).map(t => `<span class="release-tag">${escHtml(t)}</span>`).join('');
+  return `<div class="release-card" data-release-key="${escHtml(releaseKey(r))}">
+    ${cover}
+    <div class="release-info">
+      <div class="release-artist">${escHtml(r.artist)}</div>
+      <div class="release-title">${escHtml(r.title)}</div>
+      <div class="release-sub">${escHtml(releaseDateLabel(r.date))}${r.type ? ' · ' + escHtml(r.type) : ''}</div>
+      ${tags ? `<div class="release-tags">${tags}</div>` : ''}
+      <div class="release-links">${links || '<span class="release-nolink">no public link</span>'}</div>
+      ${actions || ''}
+    </div>
+  </div>`;
+}
+
+// Bind the per-card buttons. Delegated from #releases-list rather than bound
+// per card, so re-rendering never leaves handlers pointing at detached nodes.
+function bindReleaseActions(listEl) {
+  listEl.querySelectorAll('[data-release-save]').forEach(btn => {
+    btn.onclick = () => {
+      const card = btn.closest('.release-card');
+      const r = (RELEASES_CACHE_DATA.releases || []).find(x => releaseKey(x) === card.dataset.releaseKey);
+      if (!r) return;
+      saveRelease(r);
+      renderReleases();
+      toast(`Saved "${r.artist} — ${r.title}"`);
+    };
+  });
+  listEl.querySelectorAll('[data-release-dismiss]').forEach(btn => {
+    btn.onclick = () => {
+      const card = btn.closest('.release-card');
+      const r = (RELEASES_CACHE_DATA.releases || []).find(x => releaseKey(x) === card.dataset.releaseKey);
+      dismissRelease(card.dataset.releaseKey);
+      renderReleases();
+      if (r) toast(`Dismissed "${r.artist} — ${r.title}"`);
+    };
+  });
+  listEl.querySelectorAll('[data-release-undo]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.closest('.release-card').dataset.releaseKey;
+      undoSaveRelease(key);
+      renderReleases();
+      toast('Moved back to releases');
+    };
+  });
+}
+
 function renderReleases() {
   const listEl = document.getElementById('releases-list');
   const statusEl = document.getElementById('releases-status');
@@ -10587,6 +10732,17 @@ function renderReleases() {
     return;
   }
 
+  // Saved items live in synced state, so render them even when the fetch
+  // failed -- a card you deliberately saved shouldn't vanish because
+  // MusicBrainz is briefly unreachable (or this browser has no token).
+  const saved = savedReleases();
+  const savedHtml = () => saved.length
+    ? '<div class="release-group">Saved</div>' + saved.map(s =>
+        releaseCardHTML(s, `<div class="release-actions">
+          <button class="release-act" data-release-undo="${escHtml(s.key)}" title="Remove from saved and put back in the releases list">↩ Undo</button>
+        </div>`)).join('')
+    : '';
+
   // An error is NOT an empty list. Rendering "no releases found" for a 401 or
   // a failed fetch reads as "indie pop is dead" and hides the real fault —
   // the usual cause is this browser having no Helm access token set.
@@ -10596,48 +10752,54 @@ function renderReleases() {
       + (String(data.status) === '401'
           ? ' — this browser may need the Helm access token (Profile menu → Access token).'
           : '');
-    listEl.innerHTML = '';
+    listEl.innerHTML = savedHtml();
+    bindReleaseActions(listEl);
     return;
   }
 
-  const rels = data.releases || [];
-  if (!rels.length) {
+  const allRels = data.releases || [];
+  if (!allRels.length) {
     statusEl.textContent = 'No releases found in the last 120 days. MusicBrainz only lists what has been tagged, so quiet months are normal.';
     statusEl.className = 'svc-loading';
     listEl.innerHTML = '';
     return;
   }
 
+  // Dismissed cards are filtered out of the FEED but kept in state, so the
+  // 6-hourly cache rebuild can't resurrect them.
+  const dismissed = dismissedReleaseKeys();
+  const rels = allRels.filter(r => !dismissed.includes(releaseKey(r)));
   const withLinks = rels.filter(r => RELEASE_LINK_ORDER.some(([k]) => r[k])).length;
+
   // 'stale' means the server served cached data and is refreshing behind it --
   // say so rather than implying the data is freshly fetched.
   statusEl.className = 'releases-meta';
-  statusEl.innerHTML = `${rels.length} albums/EPs from the last 120 days &middot; ` +
-    `${withLinks} with a listen link &middot; updated ${escHtml(data.updated || '?')}` +
+  const hidden = dismissed.length;
+  statusEl.innerHTML = `${rels.length} shown of ${allRels.length} in the last 120 days &middot; ` +
+    `${withLinks} with a listen link &middot; ` +
+    (hidden ? `${hidden} dismissed &middot; ` : '') +
+    `${saved.length} saved &middot; updated ${escHtml(data.updated || '?')}` +
     (data.stale ? ' <span class="releases-stale">(refreshing…)</span>' : '') +
     ` &middot; via <a href="https://musicbrainz.org/" target="_blank" rel="noopener">MusicBrainz</a>`;
 
-  listEl.innerHTML = rels.map(r => {
-    const links = RELEASE_LINK_ORDER
-      .filter(([key]) => r[key])
-      .map(([key, label, title]) =>
-        `<a class="release-link" href="${escHtml(r[key])}" target="_blank" rel="noopener noreferrer" title="${escHtml(title)}">${label}</a>`)
-      .join('');
-    const cover = r.cover
-      ? `<img class="release-cover" src="${escHtml(r.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
-      : '<div class="release-cover release-cover-none">♪</div>';
-    const tags = (r.tags || []).map(t => `<span class="release-tag">${escHtml(t)}</span>`).join('');
-    return `<div class="release-card">
-      ${cover}
-      <div class="release-info">
-        <div class="release-artist">${escHtml(r.artist)}</div>
-        <div class="release-title">${escHtml(r.title)}</div>
-        <div class="release-sub">${escHtml(releaseDateLabel(r.date))}${r.type ? ' · ' + escHtml(r.type) : ''}</div>
-        ${tags ? `<div class="release-tags">${tags}</div>` : ''}
-        <div class="release-links">${links || '<span class="release-nolink">no public link</span>'}</div>
-      </div>
+  const feedActions = key => `
+    <div class="release-actions">
+      <button class="release-act" data-release-save="${escHtml(key)}" title="Save to your saved releases and remove from this list">★ Save</button>
+      <button class="release-act release-act-dismiss" data-release-dismiss="${escHtml(key)}" title="Remove; won't come back">✕ Dismiss</button>
     </div>`;
-  }).join('');
+
+  let html = '';
+  if (saved.length) html += savedHtml();
+  if (rels.length) {
+    html += '<div class="release-group">Recent</div>';
+    html += rels.map(r => releaseCardHTML(r, feedActions(releaseKey(r)))).join('');
+  }
+  if (!rels.length && !saved.length) {
+    html = '<div class="release-exhausted">That\'s everything from the last 120 days — you\'ve cleared the list. '
+         + 'New releases appear here as they get tagged on MusicBrainz, typically one or two a week.</div>';
+  }
+  listEl.innerHTML = html;
+  bindReleaseActions(listEl);
 }
 
 async function fetchReleases(force) {
