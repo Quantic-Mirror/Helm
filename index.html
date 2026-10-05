@@ -189,6 +189,49 @@ body.theme-terminal #terminal-login-banner.visible {
   font-size: 12px; line-height: 1;
 }
 
+/* ── Unread mail indicator on the logo + document title ─────────────────────
+   Mail arrives on hyperion and is reported to /api/notifications; this is the
+   only surface that flags it, so it has to read at a glance from any tab.
+
+   Every colour here is an EXPLICIT literal, never var(--accent) or another
+   theme token. The three themes (default/light/terminal) each redefine the
+   accent, and theme-terminal in particular is a pale phosphor palette where a
+   theme-derived "alert" colour would be nearly invisible. Same reasoning as
+   the work-profile topbar tint above: a cue that must survive every theme
+   cannot be built out of theme variables. */
+#topbar h1.has-unread-mail { color: #ff3b30; }
+#topbar h1.has-unread-mail span { background: #ff3b30; }
+#topbar h1.has-unread-mail:hover { color: #ff5a50; }
+
+/* Unread count pill. Sits after the word "Helm" inside the h1. */
+#topbar h1 .mail-badge {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 7px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ff3b30;
+  color: #ffffff;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+  /* theme-terminal adds a text-shadow to #topbar h1 which would smear the
+     pill's own text; reset it locally. */
+  text-shadow: none;
+}
+#topbar h1.has-unread-mail .mail-badge { display: inline-flex; }
+
+/* Note: there is no light theme class in this codebase — applyTheme() only
+   toggles theme-terminal and theme-color-{green,amber,white}, and all of them
+   keep a dark background. So one fixed red is legible everywhere and no
+   per-theme override is needed. If a light theme is ever added, this red will
+   need a darker variant (#d70015) to keep the white pill text readable. */
+
 /* Work profile — warm-tinted topbar so the active (per-device) profile is
    obvious at a glance without opening the switcher. Explicit colours, not
    var(--accent), so the cue survives every theme. Toggled by
@@ -2991,6 +3034,10 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <h1 id="helm-logo" title="Dashboard" style="cursor:pointer">
     <span>⚑</span>
     Helm
+    <!-- Unread mail count. Populated by updateMailIndicator(); hidden when 0.
+         Not a button: the mail itself is read in mutt, not here, so clicking
+         through to a Helm tab would be a dead end. -->
+    <span class="mail-badge" id="mail-badge" aria-live="polite"></span>
   </h1>
   <nav id="tab-nav">
     <a class="tab-btn" href="#bookmarks" data-tab="bookmarks">🔖 Bookmarks</a>
@@ -8925,6 +8972,12 @@ applyTheme();
 render();
 updateInvidiousButton();
 
+// Mail indicator polls for the whole session, independent of the open tab —
+// the point of a title/favicon badge is that it catches you while you are
+// looking at something else. Deferred to a timeout so the first paint is not
+// competing with a /api/notifications round-trip on load.
+setTimeout(startMailPolling, 1500);
+
 // If a new tab/window was opened via middle-click (or the page was just
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
@@ -9148,7 +9201,7 @@ function switchTab(tab) {
   show('btn-add-bm-top', tab === 'bookmarks');
 
   const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal', books: 'Helm — Books' };
-  document.title = titles[tab] || 'Helm';
+  setDocumentTitle(titles[tab] || 'Helm');
 
   if (tab === 'feeds')     renderFeeds();
   if (tab === 'news')      renderNews();
@@ -10564,6 +10617,102 @@ function startBackupsPolling() {
 function stopBackupsPolling() {
   clearInterval(backupsPollTimer);
   backupsPollTimer = null;
+}
+
+// ── UNREAD MAIL INDICATOR ────────────────────────────────────────────────────
+// Mail is delivered by postfix on hyperion and read there in mutt; this only
+// signals that something arrived. Three surfaces, all driven from one count:
+//   1. #helm-logo turns red and grows a count pill
+//   2. document.title gets a (N) prefix, so it shows in the tab strip
+//   3. the favicon is swapped for a red variant, so it shows on the pinned tab
+//
+// Polls on the same 30s cadence as the backups tab, and runs regardless of
+// which tab is open — that is the entire point, since the indicator is only
+// useful when you are somewhere else.
+
+const MAIL_POLL_MS = 30 * 1000;
+let mailPollTimer = null;
+let mailUnreadCount = 0;
+// Last tab name passed to setDocumentTitle(), so updateMailIndicator() can
+// rebuild the title with the unread prefix without switchTab() running again.
+let MAIL_TITLE_BASE = 'Helm';
+
+// Single owner of document.title. switchTab() sets the per-tab name; the mail
+// indicator prefixes an unread count on top of it. Centralised here because
+// two independent writers to document.title is how the prefix gets wiped on
+// the next tab switch.
+function setDocumentTitle(base) {
+  if (base !== undefined) MAIL_TITLE_BASE = base || 'Helm';
+  document.title = mailUnreadCount > 0
+    ? `(${mailUnreadCount}) ${MAIL_TITLE_BASE}`
+    : MAIL_TITLE_BASE;
+}
+
+// The favicon is inlined as a data URI in the <head>, so the "unread" variant
+// is built here by string-substituting the accent colour rather than shipping a
+// second image file. Keeps it to one request and one source of truth.
+const HELM_FAVICON_BASE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230D1117'/%3E%3Cpath d='M9 6h14a2 2 0 0 1 2 2v18l-9-5-9 5V8a2 2 0 0 1 2-2z' fill='%2358A6FF'/%3E%3C/svg%3E";
+const HELM_FAVICON_MAIL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230D1117'/%3E%3Cpath d='M9 6h14a2 2 0 0 1 2 2v18l-9-5-9 5V8a2 2 0 0 1 2-2z' fill='%23ff3b30'/%3E%3Ccircle cx='24' cy='9' r='6' fill='%23ff3b30'/%3E%3C/svg%3E";
+
+function setFavicon(href) {
+  let link = document.querySelector("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/svg+xml';
+    document.head.appendChild(link);
+  }
+  // Avoid a redundant write: assigning the same href re-triggers a repaint and
+  // some browsers refetch the favicon on every set, which flickers the tab.
+  if (link.href !== href) link.href = href;
+}
+
+function updateMailIndicator(count) {
+  mailUnreadCount = count;
+  const logo = document.getElementById('helm-logo');
+  const badge = document.getElementById('mail-badge');
+
+  if (logo) logo.classList.toggle('has-unread-mail', count > 0);
+  if (badge) {
+    // Cap the displayed number: "99+" stays legible in the pill, and a
+    // four-digit count would blow out the topbar layout.
+    badge.textContent = count > 99 ? '99+' : String(count);
+  }
+  setFavicon(count > 0 ? HELM_FAVICON_MAIL : HELM_FAVICON_BASE);
+
+  // Re-apply the tab title with the new count. switchTab() owns document.title,
+  // so store the count in a variable that setDocumentTitle() reads rather than
+  // writing document.title directly here — otherwise the next tab switch wipes
+  // the prefix.
+  if (typeof setDocumentTitle === 'function') setDocumentTitle();
+}
+
+async function fetchMailCount() {
+  try {
+    const resp = await fetch('/api/notifications', { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const items = Array.isArray(data.notifications) ? data.notifications : [];
+    // "Unread" = anything not explicitly marked read. The backend currently
+    // stores everything unread and nothing marks it read, so this counts all of
+    // them — which is correct for a notification signal, since the real read
+    // state lives in the mailbox on hyperion, not here.
+    const unread = items.filter(n => !n.read).length;
+    if (unread !== mailUnreadCount) updateMailIndicator(unread);
+  } catch (e) {
+    // Silent by design: the backend is local and a transient failure must not
+    // clear an indicator that is still accurate. Leave the last known count.
+  }
+}
+
+function startMailPolling() {
+  fetchMailCount();
+  if (!mailPollTimer) mailPollTimer = setInterval(fetchMailCount, MAIL_POLL_MS);
+}
+
+function stopMailPolling() {
+  clearInterval(mailPollTimer);
+  mailPollTimer = null;
 }
 
 // ── AUDIO GRABBER PAGE ────────────────────────────────────────────────────────
