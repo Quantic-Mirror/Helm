@@ -120,7 +120,7 @@ def render_query_block(query, result):
         # so a whole album can be taken from one source.
         groups = {}
         for f in (raw.get("files") or []):
-            ext = (f.get("extension") or "").lower().lstrip(".")
+            ext = S.file_ext(f)
             if ext not in S.AUDIO_EXT:
                 continue
             _artist, album = S.guess_artist_album(f.get("filename"))
@@ -147,8 +147,9 @@ def build_offers(query, result):
     """
     entries = []
     for i, (_score, info, raw) in enumerate(result["ranked"], 1):
-        audio = [f for f in (raw.get("files") or [])
-                 if (f.get("extension") or "").lower().lstrip(".") in S.AUDIO_EXT]
+        # Copy with the extension filled in: enqueue sends this field back to slskd.
+        audio = [dict(f, extension=S.file_ext(f)) for f in (raw.get("files") or [])
+                 if S.file_ext(f) in S.AUDIO_EXT]
         if not audio:
             continue
         entries.append({

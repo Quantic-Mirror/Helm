@@ -1933,7 +1933,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 import slskd_search as S
                 groups = {}
                 for f in o.get("files") or []:
-                    ext = (f.get("extension") or "").lower().lstrip(".")
+                    ext = S.file_ext(f)
                     if ext not in S.AUDIO_EXT:
                         continue
                     _artist, album = S.guess_artist_album(f.get("filename"))

@@ -323,6 +323,21 @@ def guess_artist_album(path):
 
 
 
+def file_ext(f):
+    """Lower-case extension without the dot. Falls back to the filename.
+
+    slskd sometimes sends an empty `extension` for files that are plainly
+    .flac/.mp3 (seen on a live 0.26.0.0 search: a peer with 12 FLAC tracks
+    reported extension "" for all of them). Trusting the field alone threw
+    those peers out as having no audio at all.
+    """
+    ext = (f.get("extension") or "").strip()
+    if not ext:
+        name = f.get("filename") or ""
+        ext = name.rsplit(".", 1)[-1] if "." in name else ""
+    return ext.lower().lstrip(".")
+
+
 def score_response(query, resp):
     """Rank one peer's response. Higher is better; None-able fields.
 
@@ -337,7 +352,7 @@ def score_response(query, resp):
 
     audio = []
     for f in files:
-        ext = (f.get("extension") or "").lower().lstrip(".")
+        ext = file_ext(f)
         if ext in AUDIO_EXT:
             audio.append(f)
     if not audio:
@@ -376,7 +391,7 @@ def score_response(query, resp):
     lossless_flags = []
     approx_kbps = []
     for f in audio:
-        ext = (f.get("extension") or "").lower().lstrip(".")
+        ext = file_ext(f)
         is_ll = ext in LOSSLESS_EXT
         sr = f.get("sampleRate")
         bd = f.get("bitDepth")
