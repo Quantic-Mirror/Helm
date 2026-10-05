@@ -1596,6 +1596,20 @@ class HelmHandler(SimpleHTTPRequestHandler):
         elif parsed.path.startswith("/api/") and not self._require_auth():
             return
 
+        if parsed.path.startswith("/api/slskd/search/"):
+            # Poll a live search started by POST /api/slskd/search.
+            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            import slskd_live as LIVE
+            result = LIVE.get_search(parsed.path[len("/api/slskd/search/"):])
+            if result is None:
+                self.send_json(404, {"error": "unknown search id"})
+            else:
+                self.send_json(200, result)
+            return
+
         if parsed.path == "/api/proxy":
             self.handle_proxy(parsed)
             return
@@ -1847,6 +1861,41 @@ class HelmHandler(SimpleHTTPRequestHandler):
             event.setdefault("message", "")
             event.setdefault("data", {})
             self.send_json(200, {"ok": True, "stored": store_backup_event(event)})
+            return
+
+        if parsed.path in ("/api/slskd/search", "/api/slskd/download"):
+            # Live Soulseek search and download, run in this process. Needs the
+            # slskd config mounted into the container (see docker-compose.yml).
+            # The older /api/slskd/offers and /api/slskd/pick paths are the
+            # mail-driven flow on the VPS drainer, and are left alone.
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            import slskd_live as LIVE
+            if parsed.path == "/api/slskd/search":
+                query = body.get("query")
+                if not isinstance(query, str) or not query.strip():
+                    self.send_json(400, {"error": "body must include a query"})
+                    return
+                sid = LIVE.start_search(query.strip())
+                self.send_json(202, {"searchId": sid, "status": "searching"})
+                return
+            try:
+                index = int(body.get("index") or 0)
+            except (TypeError, ValueError):
+                index = 0
+            album = body.get("album") or None
+            ok, err = LIVE.start_pick(str(body.get("searchId") or ""), index, album)
+            if not ok:
+                self.send_json(400, {"error": err})
+                return
+            self.send_json(202, {"ok": True, "started": True})
             return
 
         if parsed.path == "/api/slskd/offers":

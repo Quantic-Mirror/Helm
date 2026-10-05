@@ -3329,7 +3329,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
       </div>
       <button class="btn" id="btn-slskd-search" style="align-self: flex-end;">Search</button>
     </div>
-    <p class="slskd-hint">Results are mailed to you within ~5 minutes, and saved here for later. Reply to the mail with <code>slskd-get: [N] <query></code> — or click "Download this source" below.</p>
+    <p class="slskd-hint">Results appear here as the search finishes. Click “Download this source” to fetch one; finished files land in the music Inbox.</p>
     <div id="slskd-search-status" class="svc-loading" style="display:none;"></div>
     <div id="slskd-results" style="display:none;"></div>
   </div>
@@ -9383,33 +9383,46 @@ document.querySelectorAll('.music-tab-btn').forEach(btn => {
 
 // Soulseek search: POST to the queue endpoint, which triggers the drainer.
 // Results arrive by mail ~5 minutes later. The UI just confirms the queue.
+// Live Soulseek search. POST starts a search in the Helm server, which runs it
+// on slskd and ranks the sources. The panel polls until it finishes, then shows
+// one card per source with a Download button. Downloads queue in slskd on the
+// VPS, and hyperion's Inbox sync copies them over once they finish.
+let SLSKD_SEARCH_ID = null;
+let SLSKD_POLL_TIMER = null;
+
+function setSlskdStatus(text, cls) {
+  const status = document.getElementById('slskd-search-status');
+  status.style.display = 'block';
+  status.textContent = text;
+  status.className = cls;
+}
+
+async function slskdApi(path, opts = {}) {
+  const token = localStorage.getItem('helm_token');
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
 document.getElementById('btn-slskd-search').onclick = async () => {
   const q = document.getElementById('slskd-search-input').value.trim();
   if (!q) { toast('Enter a search query'); return; }
-  const status = document.getElementById('slskd-search-status');
-  status.style.display = 'block';
-  status.textContent = 'Queuing search…';
-  document.getElementById('slskd-results').style.display = 'none';
-
+  clearTimeout(SLSKD_POLL_TIMER);
+  const resultsEl = document.getElementById('slskd-results');
+  resultsEl.style.display = 'none';
+  resultsEl.innerHTML = '';
+  delete resultsEl.dataset.searchId;
+  setSlskdStatus('Searching Soulseek… this usually takes 30–90 seconds.', 'svc-loading');
   try {
-    const token = localStorage.getItem('helm_token');
-    const res = await fetch('/api/slskd/queue', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json',
-                 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ queries: [q], source: 'helm' })
-    });
-    const data = await res.json();
-    if (res.ok && data.added?.includes(q)) {
-      status.textContent = `Queued. Results will arrive by mail in ~5 min.`;
-      status.className = 'svc-ok';
-    } else {
-      status.textContent = `Failed: ${data.error || res.status}`;
-      status.className = 'svc-error';
-    }
+    const data = await slskdApi('/api/slskd/search', { method: 'POST', body: JSON.stringify({ query: q }) });
+    SLSKD_SEARCH_ID = data.searchId;
+    pollSlskdSearch();
   } catch (e) {
-    status.textContent = `Error: ${e.message}`;
-    status.className = 'svc-error';
+    setSlskdStatus(`Search failed: ${e.message}`, 'svc-error');
   }
 };
 
@@ -9417,104 +9430,103 @@ document.getElementById('slskd-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-slskd-search').onclick();
 });
 
-// Fetch and render persisted offers for a query, with Download buttons.
-async function fetchSlskdOffers(query) {
+async function pollSlskdSearch() {
+  const sid = SLSKD_SEARCH_ID;
+  if (!sid) return;
   const resultsEl = document.getElementById('slskd-results');
-  const status = document.getElementById('slskd-search-status');
-  resultsEl.style.display = 'none';
-  resultsEl.innerHTML = '';
-
   try {
-    const token = localStorage.getItem('helm_token');
-    const res = await fetch('/api/slskd/offers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json',
-                 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ query })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      status.textContent = `Failed to load offers: ${data.error || res.status}`;
-      status.className = 'svc-error';
+    const data = await slskdApi(`/api/slskd/search/${encodeURIComponent(sid)}`);
+    if (sid !== SLSKD_SEARCH_ID) return; // a newer search has replaced this one
+    if (data.status === 'searching') {
+      SLSKD_POLL_TIMER = setTimeout(pollSlskdSearch, 3000);
       return;
     }
-    if (!data.offers?.length) {
-      status.textContent = 'No offers stored yet. The drainer runs every 5 minutes.';
-      status.className = 'svc-warning';
+    if (data.status === 'error') {
+      setSlskdStatus(`Search failed: ${data.error}`, 'svc-error');
       return;
     }
-
-    // Render each source as a card with Download button
-    const frag = document.createDocumentFragment();
-    data.offers.forEach(o => {
-      const card = document.createElement('div');
-      card.className = 'slskd-offer-card';
-      const albumsHtml = o.albums.map(a =>
-        `<div class="slskd-album">💿 ${a.name} — ${a.tracks} tracks, ${a.size_mb} MB</div>`
-      ).join('');
-      card.innerHTML = `
-        <div class="slskd-offer-header">
-          <strong>Source [${o.index}]</strong> ${o.username}
-          ${o.score !== undefined ? `<span class="slskd-score">score ${Math.round(o.score)}</span>` : ''}
-        </div>
-        <div class="slskd-offer-albums">${albumsHtml}</div>
-        <button class="btn slskd-download-btn" data-query="${query}" data-index="${o.index}">Download this source</button>
-      `;
-      frag.appendChild(card);
-    });
-    resultsEl.appendChild(frag);
-    resultsEl.style.display = 'block';
-    status.textContent = `Showing ${data.offers.length} source(s) from the last search.`;
-    status.className = 'svc-ok';
+    if (resultsEl.dataset.searchId !== sid) renderSlskdSearch(data);
+    applySlskdPicks(data.picks);
+    if (resultsEl.querySelector('.slskd-download-btn[data-pending]')) {
+      SLSKD_POLL_TIMER = setTimeout(pollSlskdSearch, 2000);
+    }
   } catch (e) {
-    status.textContent = `Error loading offers: ${e.message}`;
-    status.className = 'svc-error';
+    setSlskdStatus(`Error loading results: ${e.message}`, 'svc-error');
   }
 }
 
-// Download button handler: POST to /api/slskd/pick
-document.getElementById('slskd-results').addEventListener('click', async (e) => {
-  const btn = e.target.closest('.slskd-download-btn');
-  if (!btn) return;
-  const query = btn.dataset.query;
-  const index = parseInt(btn.dataset.index, 10);
-  btn.disabled = true;
-  btn.textContent = 'Queued…';
+function renderSlskdSearch(data) {
+  const resultsEl = document.getElementById('slskd-results');
+  if (!data.offers.length) {
+    setSlskdStatus(`No sources found for “${data.query}”.`, 'svc-warning');
+    return;
+  }
+  resultsEl.innerHTML = '';
+  resultsEl.dataset.searchId = data.searchId;
+  const frag = document.createDocumentFragment();
+  data.offers.forEach(o => {
+    const card = document.createElement('div');
+    card.className = 'slskd-offer-card';
+    const albumsHtml = o.albums.map(a =>
+      `<div class="slskd-album">💿 ${escHtml(a.name)} — ${a.tracks} tracks, ${a.size_mb} MB</div>`
+    ).join('');
+    const score = o.score !== undefined && o.score !== null
+      ? `<span class="slskd-score">score ${Math.round(o.score)}</span>` : '';
+    card.innerHTML = `
+      <div class="slskd-offer-header">
+        <strong>Source [${o.index}]</strong> ${escHtml(o.username)}
+        ${score}
+      </div>
+      <div class="slskd-offer-albums">${albumsHtml}</div>
+      <button class="btn slskd-download-btn" data-index="${o.index}">Download this source</button>
+    `;
+    frag.appendChild(card);
+  });
+  resultsEl.appendChild(frag);
+  resultsEl.style.display = 'block';
+  setSlskdStatus(`${data.offers.length} source(s) for “${data.query}”. Downloads go to the Inbox when they finish.`, 'svc-ok');
+}
 
-  try {
-    const token = localStorage.getItem('helm_token');
-    const res = await fetch('/api/slskd/pick', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json',
-                 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ query, index })
-    });
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      btn.textContent = 'Download started (check mail for status)';
+// Show each pick's outcome on its button. A button stays marked pending until
+// the server has a result for it, and pollSlskdSearch keeps polling while any
+// button is pending.
+function applySlskdPicks(picks) {
+  document.querySelectorAll('#slskd-results .slskd-download-btn').forEach(btn => {
+    const p = picks[btn.dataset.index];
+    if (!p || p.state === 'starting') return;
+    delete btn.dataset.pending;
+    if (p.state === 'queued') {
+      btn.disabled = true;
       btn.className = 'btn slskd-download-btn done';
+      btn.textContent = `Queued from ${p.username} (${p.files} files)`;
     } else {
       btn.disabled = false;
-      btn.textContent = 'Download';
-      alert(`Failed: ${data.error || res.status}`);
-    }
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = 'Download';
-    alert(`Error: ${e.message}`);
-  }
-});
-
-// Auto-fetch offers when entering the Soulseek tab if we have a recent query
-const SOULSEEK_TAB_BTN = document.querySelector('.music-tab-btn[data-music-section="soulseek"]');
-if (SOULSEEK_TAB_BTN) {
-  SOULSEEK_TAB_BTN.addEventListener('click', () => {
-    const input = document.getElementById('slskd-search-input');
-    if (input.value.trim()) {
-      fetchSlskdOffers(input.value.trim());
+      btn.textContent = 'Download this source';
+      setSlskdStatus(`Download failed: ${(p.notes || []).join('; ') || 'no source could be queued'}`, 'svc-error');
     }
   });
 }
+
+document.getElementById('slskd-results').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.slskd-download-btn');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.dataset.pending = '1';
+  btn.textContent = 'Starting…';
+  try {
+    await slskdApi('/api/slskd/download', {
+      method: 'POST',
+      body: JSON.stringify({ searchId: SLSKD_SEARCH_ID, index: parseInt(btn.dataset.index, 10) })
+    });
+    clearTimeout(SLSKD_POLL_TIMER);
+    pollSlskdSearch();
+  } catch (err) {
+    delete btn.dataset.pending;
+    btn.disabled = false;
+    btn.textContent = 'Download this source';
+    setSlskdStatus(`Download failed: ${err.message}`, 'svc-error');
+  }
+});
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
 document.getElementById('logs-search-clear').onclick = () => {

@@ -80,6 +80,12 @@ services:
       # is already gated on file perms. Safe to remove if you don't run the
       # Tailscale widget.
       - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
+      # slskd config, read-only, for the Soulseek tab's live search and download
+      # (scripts/slskd_live.py reads the API key from it). It also holds slskd's
+      # other settings, so this gives the container more than the key alone.
+      # Point SLSKD_CONFIG_PATH at the file on the host; without it the Soulseek
+      # search returns an error instead of results.
+      - ${SLSKD_CONFIG_PATH:-/home/isaboo/soulseek/data/slskd.yml}:/app/secrets/slskd.yml:ro
       # OPTIONAL — only for monitoring the *host's* systemd-user services from
       # the Services/Logs tabs. Requires a running user session + journal on
       # the host (`loginctl enable-linger <user>`), otherwise `docker compose
@@ -91,6 +97,8 @@ services:
     environment:
       # Mutable state / secrets / certs dir (the ./data bind mount above).
       HELM_STATE_DIR: "/app/state"
+      # Where scripts/slskd_live.py finds the slskd API key (mounted above).
+      SLSKD_CONFIG: "/app/secrets/slskd.yml"
       # SERVER_HOST must match the hostname browsers will use to reach this
       # container. The frontend uses it to construct URLs for /api/config.
       # For Tailscale: set to your Tailscale IP (e.g. 100.x.x.x)
