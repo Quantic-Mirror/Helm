@@ -965,6 +965,13 @@ MONITORED_SERVICES = [
         "container": "dailytxt-proxy",
         "controllable": True,
     },
+    {
+        "id":        "slskd",
+        "label":     "Soulseek (slskd)",
+        "type":      "docker",
+        "container": "slskd",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
