@@ -136,6 +136,13 @@ def try_sources(offers, key, wanted_index, query, album_hint=None, log=print):
             order.append(o)
 
     notes = []
+    # Soulseek peers can require a share ratio — they refuse to upload to users
+    # who share nothing. slskd on the VPS has no shared directory (the user's
+    # music library lives on hyperion and is not mounted in), so a peer that
+    # enforces this answers "User enqueue appears to be offline" even though it
+    # is actually present and free. A peer that does NOT enforce it downloads
+    # immediately — this was the earlier manual success. The honest failure mode
+    # is therefore "peer requires sharing", not "peer is offline".
     for attempt, offer in enumerate(order, 1):
         album, files = whole_album_of(offer, album_hint)
         if not files:
@@ -160,7 +167,6 @@ def try_sources(offers, key, wanted_index, query, album_hint=None, log=print):
             notes.append(f"{offer['username']}: timed out ({PEER_TIMEOUT_NOTE})")
         else:
             notes.append(f"{offer['username']}: {msg}")
-        log(f"pick:   failed: {msg}")
     return None, None, None, notes
 
 
@@ -195,12 +201,24 @@ def main():
         log=lambda m: print(m, file=sys.stderr))
 
     if not files:
-        body = [f"Could not reach any source for {args.query!r}.",
-                "", "Attempts:"] + [f"  - {n}" for n in notes]
-        body += ["", "Peer presence is not recorded with a search, so a source "
-                "shown in the results mail may be gone by the time you reply. "
-                "Re-running the search usually finds live peers:"]
-        body += ["", f"  slskd: {args.query}"]
+        attempted = len(notes)
+        body = [
+            f"Could not download {args.query!r} from any source.",
+            "",
+            f"All {attempted} sources in the results were tried and none "
+            "accepted transfers. The most common cause: Soulseek peers can "
+            "require a share ratio, and slskd on the VPS shares no directories. "
+            "The music library is on hyperion and is not mounted into the "
+            "container, so peers that enforce sharing answer "
+            '"User enqueue appears to be offline" even when present and free.',
+            "",
+            "Retry options:",
+            "  - reply slskd-get: [N] <query> for a different listed source",
+            "  - or re-run the search; some peers enforce sharing and some do not",
+            "",
+            "Attempted sources:",
+        ] + [f"  - {n}" for n in notes]
+        body += ["", "Re-run with:  slskd: " + args.query]
         mail(f"Soulseek: no source available for {args.query}", "\n".join(body))
         print("pick: every source failed", file=sys.stderr)
         return 1
