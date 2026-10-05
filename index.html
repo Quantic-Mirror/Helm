@@ -2452,6 +2452,9 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .audio-form-row .field.audio-field-narrow { flex: 0 0 80px; min-width: 0; }
 .audio-form-row .btn { flex-shrink: 0; }
 
+.slskd-hint { margin: 8px 0; color: var(--text-muted); font-size: 12px; }
+.slskd-hint code { background: var(--surface-2); padding: 1px 4px; border-radius: 3px; }
+
 #audio-search-results:not(:empty) { margin-top: 14px; }
 .audio-pick-btn { flex-shrink: 0; padding: 4px 10px; font-size: 11px; }
 
@@ -3239,6 +3242,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div class="music-tabs">
     <button class="music-tab-btn" data-music-section="releases">Releases</button>
     <button class="music-tab-btn" data-music-section="download">Download</button>
+    <button class="music-tab-btn" data-music-section="soulseek">Soulseek</button>
     <button class="music-tab-btn" data-music-section="jobs">Downloads<span class="music-tab-count"></span></button>
     <button class="music-tab-btn" data-music-section="files">Files<span class="music-tab-count"></span></button>
     <button class="music-tab-btn" data-music-section="favorites">Favorites</button>
@@ -3286,6 +3290,20 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
       <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
       <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
     </details>
+  </div>
+
+  <!-- SOULSEEK: queue a search via mail, then pick from the ranked results -->
+  <div class="music-tab-panel" id="music-soulseek-body">
+    <div class="audio-form-row">
+      <div class="field" style="flex: 1;">
+        <label for="slskd-search-input">Search Soulseek</label>
+        <input id="slskd-search-input" type="text" placeholder="Artist, album, or track..." autocomplete="off">
+      </div>
+      <button class="btn" id="btn-slskd-search" style="align-self: flex-end;">Search</button>
+    </div>
+    <p class="slskd-hint">Results are mailed to you within ~5 minutes. Reply with <code>slskd-get: [N] <query></code> to download.</p>
+    <div id="slskd-search-status" class="svc-loading" style="display:none;"></div>
+    <div id="slskd-results" style="display:none;"></div>
   </div>
 
   <div class="music-tab-panel" id="audio-jobs"></div>
@@ -9333,6 +9351,42 @@ document.querySelectorAll('.music-tab-btn').forEach(btn => {
     // /api/releases can take ~80s the very first time (see helm_server.py).
     if (MUSIC_ACTIVE_TAB === 'releases') fetchReleases();
   };
+});
+
+// Soulseek search: POST to the queue endpoint, which triggers the drainer.
+// Results arrive by mail ~5 minutes later. The UI just confirms the queue.
+document.getElementById('btn-slskd-search').onclick = async () => {
+  const q = document.getElementById('slskd-search-input').value.trim();
+  if (!q) { toast('Enter a search query'); return; }
+  const status = document.getElementById('slskd-search-status');
+  status.style.display = 'block';
+  status.textContent = 'Queuing search…';
+  document.getElementById('slskd-results').style.display = 'none';
+
+  try {
+    const token = localStorage.getItem('helm_token');
+    const res = await fetch('/api/slskd/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ queries: [q], source: 'helm' })
+    });
+    const data = await res.json();
+    if (res.ok && data.added?.includes(q)) {
+      status.textContent = `Queued. Results will arrive by mail in ~5 min.`;
+      status.className = 'svc-ok';
+    } else {
+      status.textContent = `Failed: ${data.error || res.status}`;
+      status.className = 'svc-error';
+    }
+  } catch (e) {
+    status.textContent = `Error: ${e.message}`;
+    status.className = 'svc-error';
+  }
+};
+
+document.getElementById('slskd-search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-slskd-search').onclick();
 });
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
