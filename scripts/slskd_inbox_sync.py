@@ -86,14 +86,17 @@ def report_synced(rels):
 
 
 def copy_new():
-    """Copy the VPS downloads/ tree into the Inbox with rsync.
+    """Move the VPS downloads/ tree into the Inbox with rsync.
 
-    rsync only moves what is new or changed, writes each file to a temporary
-    name and renames it when complete, and never deletes on the receiving side.
-    The ssh options are the same shared connection the listing uses.
+    The VPS copy is a holding area, so rsync removes each source file once it
+    has been copied. rsync checks each transferred file's checksum before it
+    removes the source, and writes to a temporary name until complete. Nothing
+    is removed on the Inbox side. Files already in the Inbox are not copied again,
+    so a file deleted from the Inbox stays deleted.
     """
     rsh = "ssh " + " ".join(SSH_OPTS)
-    cmd = ["rsync", "-a", "--timeout=120", "--out-format=sync: copied %n",
+    cmd = ["rsync", "-a", "--remove-source-files", "--timeout=120",
+           "--out-format=sync: moved %n",
            "-e", rsh, f"{REMOTE}:{REMOTE_DIR}/", INBOX.rstrip("/") + "/"]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=SSH_TIMEOUT * 60)
     for line in r.stdout.splitlines():
@@ -104,17 +107,24 @@ def copy_new():
     return r.returncode
 
 
+def prune_remote_dirs():
+    """Remove folders left empty on the VPS once their files have moved."""
+    cmd = ["ssh", *SSH_OPTS, REMOTE,
+           f"find {shell_quote(REMOTE_DIR)} -mindepth 1 -type d -empty -delete"]
+    subprocess.run(cmd, capture_output=True, timeout=SSH_TIMEOUT)
+
+
 def main():
     os.makedirs(INBOX, exist_ok=True)
-    rc = copy_new()
+    # List before copying: rsync removes the VPS files, so they can't be listed after.
     try:
         files = list(remote_files())
     except (subprocess.SubprocessError, OSError) as e:
         print(f"sync: cannot list {REMOTE}:{REMOTE_DIR}: {e}", file=sys.stderr)
         return 1
+    rc = copy_new()
 
-    # Report what is in the Inbox now, whatever this run copied, so Helm's
-    # synced view catches up even after an earlier failed report.
+    # Report only what is confirmed in the Inbox with the expected size.
     present = []
     for rel, size in files:
         dest = os.path.join(INBOX, rel)
@@ -122,7 +132,8 @@ def main():
             present.append(_report_key(rel))
     if present:
         report_synced(present)
-    print(f"sync: {len(present)} of {len(files)} VPS file(s) present in the Inbox")
+    prune_remote_dirs()
+    print(f"sync: {len(present)} of {len(files)} file(s) confirmed in the Inbox")
     return 1 if rc else 0
 
 
