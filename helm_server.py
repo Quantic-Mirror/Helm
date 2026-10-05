@@ -1872,26 +1872,29 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 index = 1
             album = body.get("album") or None
 
-            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                       "scripts")
-            if scripts_dir not in sys.path:
-                sys.path.insert(0, scripts_dir)
-            pick_script = os.path.join(scripts_dir, "slskd_pick.py")
-            if not os.path.exists(pick_script):
-                self.send_json(500, {"error": "slskd_pick.py not found"})
-                return
+            # Helm runs in a container and the pick must run on the HOST, so it
+            # cannot spawn the process itself. It also cannot be given the key:
+            # /home/isaboo/soulseek/data/slskd.yml is not mounted into the
+            # container, so a pick started there fails with "Could not read the
+            # slskd API key" — the path does not exist inside.
+            #
+            # Instead, record the request in the bind-mounted state dir and let
+            # the host-side drainer (already running every 5 min with the right
+            # environment) pick it up. The key therefore never leaves the host.
             try:
-                import subprocess
-                cmd = [sys.executable, pick_script, query.strip(), str(index)]
-                if album:
-                    cmd += ["--album", str(album)]
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL,
-                                 start_new_session=True,
-                                 env={**os.environ,
-                                      "SLSKD_SCRIPTS": scripts_dir})
+                # `time` is shadowed by a local elsewhere in this method, so
+                # reach the module explicitly rather than importing it here
+                # (a local `import time` would itself raise UnboundLocalError).
+                import time as _time_mod
+                picks_path = os.path.join(
+                    os.environ.get("HELM_STATE_DIR", "/app/state"),
+                    "slskd_picks.jsonl")
+                rec = {"query": query.strip(), "index": index, "album": album,
+                       "at": _time_mod.time()}
+                with open(picks_path, "a") as fh:
+                    fh.write(json.dumps(rec) + "\n")
             except Exception as e:  # noqa: BLE001
-                self.send_json(500, {"error": f"could not start pick: {e}"})
+                self.send_json(500, {"error": f"could not record pick: {e}"})
                 return
             self.send_json(202, {"ok": True, "started": True,
                                  "query": query.strip(), "index": index})

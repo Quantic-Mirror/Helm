@@ -242,5 +242,72 @@ def main():
     return 1
 
 
+def process_picks():
+    """Run picks recorded by Helm's /api/slskd/pick.
+
+    Helm runs in a container and cannot read the slskd API key
+    (/home/isaboo/soulseek/data/slskd.yml is not mounted there), so it appends
+    the request to a file in the bind-mounted state dir instead of running the
+    pick itself. This is the host side of that handover, and it already has the
+    credentials and the offer store.
+
+    Each line is removed once attempted, so a pick is never run twice, and a
+    crash mid-pick cannot silently retry forever.
+    """
+    picks_path = os.path.join(Q.STATE, "slskd_picks.jsonl")
+    if not os.path.exists(picks_path):
+        return
+    try:
+        with open(picks_path) as fh:
+            lines = [ln for ln in fh.read().splitlines() if ln.strip()]
+    except OSError as e:
+        print(f"drain: cannot read picks: {e}", file=sys.stderr)
+        return
+    if not lines:
+        return
+
+    # Truncate first: a pick that dies mid-run should not be replayed.
+    try:
+        with open(picks_path, "w"):
+            pass
+    except OSError as e:
+        print(f"drain: cannot clear picks: {e}", file=sys.stderr)
+        return
+
+    # The pick script lives beside this one. Resolved from __file__ because the
+    # service runs from a different cwd than the repo.
+    pick_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "slskd_pick.py")
+    if not os.path.exists(pick_script):
+        print(f"drain: {pick_script} missing; cannot run picks", file=sys.stderr)
+        return
+
+    for ln in lines:
+        try:
+            rec = json.loads(ln)
+        except Exception:
+            print("drain: skipping malformed pick record", file=sys.stderr)
+            continue
+        query = (rec.get("query") or "").strip()
+        if not query:
+            continue
+        try:
+            index = int(rec.get("index") or 1)
+        except (TypeError, ValueError):
+            index = 1
+        album = rec.get("album") or None
+        print(f"drain: running pick [{index}] {query!r}"
+              + (f" album={album!r}" if album else ""), file=sys.stderr)
+        cmd = [sys.executable, pick_script, query, str(index)]
+        if album:
+            cmd += ["--album", str(album)]
+        r = subprocess.run(cmd, timeout=900)
+        if r.returncode != 0:
+            # The pick handler mails its own explanation (including "no source
+            # available"), so nothing more to do here beyond the log line.
+            print(f"drain:   pick exited {r.returncode}", file=sys.stderr)
+
+
 if __name__ == "__main__":
+    process_picks()
     sys.exit(main())
