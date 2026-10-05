@@ -3260,30 +3260,19 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 <!-- MUSIC PAGE (Audio Grabber + musicXplorer merged) — a full-width tab bar
      (Download / Downloads-in-progress / Files / Favorites) at the top of
      the page; one panel visible at a time — see MUSIC_ACTIVE_TAB and
-     updateMusicSectionChrome(). Download/Downloads/Files each get the
-     entire page width to themselves. Favorites is the only tab that
+     updateMusicSectionChrome(). The Soulseek tab gets the
+     entire page width to itself. Favorites is the only tab that
      inherently needs a list+detail split (favorited-track list next to its
      video/explorer pane), so that split lives inside its own tab panel
      (#music-favorites-panel) instead of being forced on the other three
      tabs, which under the old single-sidebar layout always rendered a
      mostly-empty detail pane next to them regardless of which tab was
-     active. The Downloads tab auto-activates the first time there's
-     something to show there (a queued job, a fetch error), but only until
-     the user manually picks a tab (MUSIC_TAB_TOUCHED) — after that, an
-     in-progress download no longer yanks them away from whatever tab
-     they're looking at. -->
+     active. -->
 <div id="music-page" style="display:none">
-  <div id="music-topbar">
-    <span id="audio-last-updated"></span>
-    <button class="btn" id="btn-refresh-audio">↺ Refresh</button>
-  </div>
-
+  
   <div class="music-tabs">
     <button class="music-tab-btn" data-music-section="releases">Releases</button>
-    <button class="music-tab-btn" data-music-section="download">Download</button>
     <button class="music-tab-btn" data-music-section="soulseek">Soulseek</button>
-    <button class="music-tab-btn" data-music-section="jobs">Downloads<span class="music-tab-count"></span></button>
-    <button class="music-tab-btn" data-music-section="files">Files<span class="music-tab-count"></span></button>
     <button class="music-tab-btn" data-music-section="favorites">Favorites</button>
   </div>
 
@@ -3294,41 +3283,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div class="music-tab-panel" id="music-releases-body">
     <div id="releases-status" class="svc-loading">Loading recent releases…</div>
     <div id="releases-list"></div>
-  </div>
-
-  <div class="music-tab-panel" id="music-download-body">
-    <div class="audio-form-row">
-      <div class="field">
-        <label for="audio-artist-input">Artist</label>
-        <input id="audio-artist-input" type="text" placeholder="Artist name" autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="audio-song-input">Song</label>
-        <input id="audio-song-input" type="text" placeholder="Song title" autocomplete="off">
-      </div>
-      <div class="field audio-field-narrow">
-        <label for="audio-format-select">Format</label>
-        <select id="audio-format-select">
-          <option value="mp3">mp3</option>
-          <option value="m4a">m4a</option>
-          <option value="flac">flac</option>
-          <option value="wav">wav</option>
-          <option value="opus">opus</option>
-        </select>
-      </div>
-      <div class="field audio-field-narrow">
-        <label for="audio-quality-input">Quality</label>
-        <input id="audio-quality-input" type="text" value="192" placeholder="192" autocomplete="off">
-      </div>
-      <button class="btn" id="btn-audio-search" title="Show candidate matches to pick from">Search</button>
-      <button class="btn" id="btn-audio-download" title="Skip picking — download yt-dlp's top search hit">Quick download</button>
-    </div>
-    <div id="audio-search-results"></div>
-    <details id="audio-batch-details">
-      <summary>Batch (multiple tracks)</summary>
-      <textarea id="audio-batch-input" placeholder="Artist | Song Title&#10;One per line. Lines starting with # are ignored."></textarea>
-      <button class="btn" id="btn-audio-batch-download">Download batch (auto top match)</button>
-    </details>
   </div>
 
   <!-- SOULSEEK: queue a search via mail, then pick from the ranked results -->
@@ -3350,9 +3304,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <div class="slskd-staged-head">Downloads</div>
     <div id="slskd-staged"></div>
   </div>
-
-  <div class="music-tab-panel" id="audio-jobs"></div>
-  <div class="music-tab-panel" id="audio-files"></div>
 
   <div class="music-tab-panel" id="music-favorites-panel">
     <div id="music-layout">
@@ -3705,11 +3656,6 @@ const LOGS_POLL_MS = 15 * 1000;
 let mailPollTimer = null;
 let mailUnreadCount = 0;
 let MAIL_TITLE_BASE = 'Helm';
-let audioJobs = [];
-let audioFiles = [];
-let audioSearchResults = [];
-let audioPollTimer = null;
-const AUDIO_POLL_MS = 5 * 1000;
 // Declared here (not near renderMusicXplorerPage() itself, further down the
 // file) for the same TDZ reason as currentTab/calPageView/newsViewMode above —
 // switchTab() can run renderMusicXplorerPage() early via the startup hash
@@ -3724,14 +3670,8 @@ let MUSICX_EXPLORE_REQ = 0;         // bumped on every explorer render; guards a
 // Music page's sidebar tabs (Download / Downloads / Files / Favorites) —
 // same TDZ reason as the MUSICX_* state above.
 let MUSIC_ACTIVE_TAB = 'favorites'; // which page-level tab is currently shown
-// Set once the user manually clicks a tab — after that, an in-progress
-// download no longer auto-switches them to the Downloads tab (see
-// updateMusicSectionChrome()).
-let MUSIC_TAB_TOUCHED = false;
 // Maps each page-level tab's key to the id of the div its content lives in.
-// For download/jobs/files these ids double as the exact innerHTML target
-// renderAudioPage() already writes into, so toggling the 'active' class
-// here never fights its re-renders. favorites points at the wrapping
+// favorites points at the wrapping
 // #music-favorites-panel (the list+detail split), not at #musicx-list
 // directly — that wrapper is never itself overwritten by innerHTML (only
 // its #musicx-list/#musicx-detail-panel children are, by
@@ -3742,7 +3682,7 @@ let MUSIC_TAB_TOUCHED = false;
 // later const there threw "Cannot access before initialization", which
 // aborted the rest of this top-level script — silently breaking every
 // .onclick wiring after that point, page-wide, not just on the Music tab).
-const MUSIC_SECTION_BODY_IDS = { releases: 'music-releases-body', download: 'music-download-body', soulseek: 'music-soulseek-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'music-favorites-panel' };
+const MUSIC_SECTION_BODY_IDS = { releases: 'music-releases-body', soulseek: 'music-soulseek-body', favorites: 'music-favorites-panel' };
 // Moved up from next to fetchMusicBrainz() further down the file, same TDZ
 // reason — see the comment left at that call site.
 let MUSICX_MB_LAST_CALL = 0;
@@ -7819,10 +7759,8 @@ function renderComicsManage(widgetId) {
 // needed (current track + recent history) in a small, stable table. Fetched
 // through fetchViaProxy() (same helper News/Feeds/the article reader use)
 // since somafm.com doesn't send CORS headers. Each track's grab button
-// reuses submitAudioDownload() from the Audio Grabber page verbatim — same
-// "search yt-dlp's top hit and queue it" flow as that page's own "Quick
-// download" button — so there's no second download code path to maintain.
-// Station registry — add a station here (id, display name, songhistory page,
+// sends the track to Soulseek with sendMusicxToSoulseek(), the same path the
+// favorites use, so there's one download code path to maintain.
 // stream mount) to make it selectable from the widget. streamUrl is File1
 // from https://somafm.com/<id>.pls (SomaFM publishes these precisely so
 // third-party apps can play the live stream directly — no station-side API
@@ -8172,7 +8110,7 @@ function renderSomaFMBody(widgetId, tracks, station) {
   }
 
   const grabBtn = (t, cls) => `
-    <button class="${cls}" data-somafm-grab title="Send &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to Audio Grabber"
+    <button class="${cls}" data-somafm-grab title="Send &quot;${escHtml(t.artist)} — ${escHtml(t.song)}&quot; to Soulseek"
       data-artist="${escHtml(t.artist)}" data-song="${escHtml(t.song)}">⬇</button>`;
 
   // Only offered on the currently-playing track (not history rows) — see
@@ -8223,7 +8161,7 @@ function renderSomaFMBody(widgetId, tracks, station) {
   `;
 
   body.querySelectorAll('[data-somafm-grab]').forEach(btn => {
-    btn.onclick = () => submitAudioDownload(btn.dataset.artist, btn.dataset.song, '');
+    btn.onclick = () => sendMusicxToSoulseek({ artist: btn.dataset.artist, song: btn.dataset.song, album: '' }, 'track');
   });
   body.querySelectorAll('[data-somafm-musicx]').forEach(btn => {
     btn.onclick = () => addToMusicXplorer(btn.dataset.artist, btn.dataset.song, btn.dataset.album);
@@ -8303,8 +8241,8 @@ function updateSomaFMPlayIcons(forceIcon, forceStation) {
 
 // Controls the always-on background player on the audio host (soma-radio.service,
 // mpv) via audio_grabber_server.py's new radio/status + radio/control
-// routes, proxied through the same /api/audio/* tunnel submitAudioDownload()
-// already uses. Deliberately a separate control from toggleSomaFMPlayback()
+// routes, proxied through the same /api/audio/* tunnel the radio uses.
+// Deliberately a separate control from toggleSomaFMPlayback()
 // above -- that one plays through *this browser tab*; this one plays
 // through the host's own speakers regardless of whether any browser is open.
 let AUDIO_HOST_LABEL = 'audio host';
@@ -9309,8 +9247,7 @@ function switchTab(tab) {
   else stopServicesPolling();
   if (tab === 'backups')   { fetchBackupEvents(); startBackupsPolling(); }
   else stopBackupsPolling();
-  if (tab === 'music')     { fetchAudioData(); startAudioPolling(); renderMusicXplorerPage(); }
-  else stopAudioPolling();
+  if (tab === 'music')     { renderMusicXplorerPage(); }
   if (tab === 'logs')      {
     fetchLogs(); startLogsPolling();
     // Populate the service filter from /api/services if we haven't already
@@ -9355,28 +9292,6 @@ document.getElementById('btn-add-news-source').onclick = addNewsSource;
 document.getElementById('btn-refresh-services').onclick = fetchServices;
 document.getElementById('btn-refresh-backups').onclick = fetchBackupEvents;
 document.getElementById('btn-refresh-logs').onclick = fetchLogs;
-document.getElementById('btn-refresh-audio').onclick = fetchAudioData;
-document.getElementById('btn-audio-search').onclick = () => {
-  const artist = document.getElementById('audio-artist-input').value.trim();
-  const song = document.getElementById('audio-song-input').value.trim();
-  searchAudioMatches(artist, song);
-};
-document.getElementById('btn-audio-download').onclick = () => {
-  const artistEl = document.getElementById('audio-artist-input');
-  const songEl = document.getElementById('audio-song-input');
-  const artist = artistEl.value.trim();
-  const song = songEl.value.trim();
-  if (!artist || !song) { toast('Enter both artist and song'); return; }
-  submitAudioDownload(artist, song, '');
-  artistEl.value = '';
-  songEl.value = '';
-};
-document.getElementById('btn-audio-batch-download').onclick = () => {
-  const batchEl = document.getElementById('audio-batch-input');
-  if (!batchEl.value.trim()) { toast('Enter at least one "Artist | Song Title" line'); return; }
-  submitAudioDownload('', '', batchEl.value);
-  batchEl.value = '';
-};
 document.getElementById('musicx-yt-form').onsubmit = (e) => {
   e.preventDefault();
   addMusicxFromYoutubeLink(document.getElementById('musicx-yt-input').value);
@@ -9388,7 +9303,6 @@ document.getElementById('musicx-artist-search-form').onsubmit = (e) => {
 document.getElementById('musicx-artist-search-clear').onclick = clearMusicxArtistSearch;
 document.querySelectorAll('.music-tab-btn').forEach(btn => {
   btn.onclick = () => {
-    MUSIC_TAB_TOUCHED = true;
     MUSIC_ACTIVE_TAB = btn.dataset.musicSection;
     updateMusicSectionChrome();
     // Releases data is only pulled when the section is actually opened -- it's
@@ -11093,45 +11007,6 @@ function stopMailPolling() {
   mailPollTimer = null;
 }
 
-// ── AUDIO GRABBER PAGE ────────────────────────────────────────────────────────
-// Talks to helm_server.py's /api/audio/* endpoints, which shell out to the
-// yt-dlp CLI on a background worker thread queue (downloads can take a
-// while, and the local server handles one request at a time, so a download
-// must never run inline in a request handler). Polls jobs+files every 5s
-// while the tab is open so an in-progress download's status updates live.
-
-async function fetchAudioData() {
-  const hasBackend = await checkLocalBackend();
-  if (!hasBackend) {
-    document.getElementById('audio-jobs').innerHTML =
-      '<div class="svc-error">Audio Grabber requires the local backend (helm_server.py). Not reachable.</div>';
-    document.getElementById('audio-files').innerHTML = '';
-    // Force the Downloads tab active (even if the user already touched
-    // tabs) — otherwise this error could land on a hidden, non-active panel.
-    MUSIC_ACTIVE_TAB = 'jobs';
-    updateMusicSectionChrome();
-    return;
-  }
-  try {
-    const [jobsResp, filesResp] = await Promise.all([
-      fetch('/api/audio/jobs', { signal: AbortSignal.timeout(15000) }),
-      fetch('/api/audio/files', { signal: AbortSignal.timeout(15000) }),
-    ]);
-    if (!jobsResp.ok) throw new Error('HTTP ' + jobsResp.status);
-    if (!filesResp.ok) throw new Error('HTTP ' + filesResp.status);
-    audioJobs = (await jobsResp.json()).jobs || [];
-    audioFiles = (await filesResp.json()).files || [];
-    renderAudioPage();
-    const el = document.getElementById('audio-last-updated');
-    if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch(e) {
-    document.getElementById('audio-jobs').innerHTML =
-      `<div class="svc-error">Could not fetch audio data: ${escHtml(e.message)}</div>`;
-    MUSIC_ACTIVE_TAB = 'jobs';
-    updateMusicSectionChrome();
-  }
-}
-
 // ── RELEASES (Music tab) ───────────────────────────────────────────────────
 // Recent indie-pop albums, fetched from /api/releases (MusicBrainz, cached
 // server-side). One fetch per Music tab visit, cached in-page so re-switching
@@ -11410,11 +11285,7 @@ async function fetchReleases(force) {
 // state above).
 
 function updateMusicSectionChrome() {
-  const counts = { jobs: audioJobs.length, files: audioFiles.length, favorites: (state.musicXplorer || []).length };
-  // Jump to the Downloads tab the first time there's a job to show —
-  // mirrors the old accordion's auto-expand-on-count, but only until the
-  // user manually picks a tab (MUSIC_TAB_TOUCHED).
-  if (!MUSIC_TAB_TOUCHED && counts.jobs > 0) MUSIC_ACTIVE_TAB = 'jobs';
+  const counts = { favorites: (state.musicXplorer || []).length };
   Object.keys(MUSIC_SECTION_BODY_IDS).forEach(key => {
     const active = key === MUSIC_ACTIVE_TAB;
     const btn = document.querySelector(`.music-tab-btn[data-music-section="${key}"]`);
@@ -11428,85 +11299,6 @@ function updateMusicSectionChrome() {
   });
 }
 
-function renderAudioPage() {
-  const jobsEl = document.getElementById('audio-jobs');
-  const filesEl = document.getElementById('audio-files');
-  if (!jobsEl || !filesEl) return;
-
-  jobsEl.innerHTML = audioJobs.length
-    ? `<div class="bp-events-list">${audioJobs.map(buildAudioJobRowHTML).join('')}</div>`
-    : '<div class="svc-loading">No downloads queued yet.</div>';
-
-  if (!audioFiles.length) {
-    filesEl.innerHTML = '<div class="svc-loading">No downloaded files yet.</div>';
-  } else {
-    filesEl.innerHTML = `<div class="bp-events-list">${audioFiles.map(buildAudioFileRowHTML).join('')}</div>`;
-
-    filesEl.querySelectorAll('.audio-delete-btn').forEach(btn => {
-      btn.onclick = () => deleteAudioFile(btn.dataset.filename);
-    });
-  }
-  updateMusicSectionChrome();
-}
-
-function buildAudioJobRowHTML(job) {
-  const dotClass = job.status === 'done' ? 'bp-dot-ok'
-    : job.status === 'error' ? 'bp-dot-err'
-    : job.status === 'running' ? 'bp-dot-warn'
-    : 'bp-dot-none';
-  const statusText = job.status === 'done' ? 'Done'
-    : job.status === 'error' ? 'Failed'
-    : job.status === 'running' ? 'Downloading…'
-    : 'Queued';
-  return `
-    <div class="bp-event-row">
-      <span class="bp-dot ${dotClass}"></span>
-      <span class="bp-event-stage">${escHtml(statusText)}</span>
-      <span class="bp-event-name">${escHtml(job.label)}</span>
-      <span class="bp-event-message">${escHtml(job.message || job.filename || '')}</span>
-    </div>`;
-}
-
-function buildAudioFileRowHTML(f) {
-  const date = new Date(f.createdAt * 1000);
-  const label = date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const size = f.size > 1024 * 1024 ? (f.size / (1024 * 1024)).toFixed(1) + ' MB' : (f.size / 1024).toFixed(1) + ' KB';
-  // yt-dlp only reports the final on-disk path after extraction (see
-  // _run_audio_download in audio_grabber_server.py), not the source video id,
-  // so there's no real video to link straight to — this links to a YouTube
-  // search for the title instead. Best-effort, but needs no backend change.
-  const ytSearchUrl = 'https://www.youtube.com/results?search_query=' +
-    encodeURIComponent(f.filename.replace(/\.[^.]+$/, ''));
-  return `
-    <div class="backup-row">
-      <div class="backup-info">
-        <a class="backup-label" href="${ytSearchUrl}" target="_blank" rel="noopener" title="Search YouTube for this track">${escHtml(f.filename)}</a>
-        <span class="backup-size">${escHtml(label)} · ${escHtml(size)}</span>
-      </div>
-      <div class="backup-actions">
-        <button class="btn audio-delete-btn" data-filename="${escHtml(f.filename)}" title="Delete">✕</button>
-      </div>
-    </div>`;
-}
-
-async function submitAudioDownload(artist, song, batchText) {
-  const format = document.getElementById('audio-format-select').value;
-  const quality = document.getElementById('audio-quality-input').value.trim() || '192';
-  try {
-    const resp = await fetch('/api/audio/download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ artist, song, batchText, format, quality }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-    toast(`Queued ${data.jobs.length} download${data.jobs.length === 1 ? '' : 's'}`);
-    fetchAudioData();
-  } catch(e) {
-    toast('Could not queue download: ' + e.message);
-  }
-}
-
 function formatAudioDuration(secs) {
   if (secs === null || secs === undefined) return '';
   secs = Math.round(secs);
@@ -11515,92 +11307,6 @@ function formatAudioDuration(secs) {
   const s = secs % 60;
   const ss = String(s).padStart(2, '0');
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
-}
-
-async function searchAudioMatches(artist, song) {
-  const resultsEl = document.getElementById('audio-search-results');
-  const q = `${artist} ${song}`.trim();
-  if (!q) { toast('Enter an artist and/or song to search'); return; }
-  resultsEl.innerHTML = '<div class="svc-loading">Searching…</div>';
-  try {
-    const resp = await fetch('/api/audio/search?q=' + encodeURIComponent(q), { signal: AbortSignal.timeout(30000) });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-    audioSearchResults = data.results || [];
-    renderAudioSearchResults();
-  } catch(e) {
-    resultsEl.innerHTML = `<div class="svc-error">Search failed: ${escHtml(e.message)}</div>`;
-  }
-}
-
-function renderAudioSearchResults() {
-  const resultsEl = document.getElementById('audio-search-results');
-  if (!audioSearchResults.length) {
-    resultsEl.innerHTML = '<div class="svc-loading">No matches found.</div>';
-    return;
-  }
-  resultsEl.innerHTML = `<div class="bp-events-list">${audioSearchResults.map(buildAudioSearchRowHTML).join('')}</div>`;
-  resultsEl.querySelectorAll('.audio-pick-btn').forEach(btn => {
-    btn.onclick = () => pickAudioSearchResult(btn.dataset.id, btn.dataset.title);
-  });
-}
-
-function buildAudioSearchRowHTML(r) {
-  const dur = formatAudioDuration(r.duration);
-  return `
-    <div class="bp-event-row">
-      <span class="bp-event-name">${escHtml(r.title)}</span>
-      <span class="bp-event-message">${escHtml(r.uploader || '')}${dur ? ' · ' + escHtml(dur) : ''}</span>
-      <button class="btn audio-pick-btn" data-id="${escHtml(r.id)}" data-title="${escHtml(r.title)}">Download this</button>
-    </div>`;
-}
-
-async function pickAudioSearchResult(videoId, title) {
-  const format = document.getElementById('audio-format-select').value;
-  const quality = document.getElementById('audio-quality-input').value.trim() || '192';
-  try {
-    const resp = await fetch('/api/audio/download-pick', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId, title, format, quality }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
-    toast('Queued: ' + title);
-    audioSearchResults = [];
-    document.getElementById('audio-search-results').innerHTML = '';
-    fetchAudioData();
-  } catch(e) {
-    toast('Could not queue download: ' + e.message);
-  }
-}
-
-async function deleteAudioFile(filename) {
-  if (!confirm(`Delete "${filename}"?`)) return;
-  try {
-    const resp = await fetch('/api/audio/files/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename }),
-    });
-    const data = await resp.json();
-    if (!resp.ok || !data.ok) throw new Error(data.message || ('HTTP ' + resp.status));
-    toast('Deleted');
-    fetchAudioData();
-  } catch(e) {
-    toast('Could not delete: ' + e.message);
-  }
-}
-
-function startAudioPolling() {
-  if (!audioPollTimer) {
-    audioPollTimer = setInterval(fetchAudioData, AUDIO_POLL_MS);
-  }
-}
-
-function stopAudioPolling() {
-  clearInterval(audioPollTimer);
-  audioPollTimer = null;
 }
 
 // ── MUSICXPLORER PAGE ────────────────────────────────────────────────────────
@@ -11812,8 +11518,7 @@ function renderMusicxVideo(entry) {
 
 // Shared by the video embed search, the "pick a different video" flow, and
 // "add a track by this artist" in the explorer — all three just need a
-// yt-dlp search result list, same as searchAudioMatches() on the Audio
-// Grabber page, but without touching that page's own audioSearchResults state.
+// yt-dlp search result list.
 async function searchMusicxVideo(query) {
   const hasBackend = await checkLocalBackend();
   if (!hasBackend) throw new Error('Local backend not reachable');
