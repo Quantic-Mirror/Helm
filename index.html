@@ -3618,6 +3618,20 @@ const BACKUPS_POLL_MS = 30 * 1000;
 let logsData = [];
 let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
+
+// Unread-mail indicator state. Declared HERE, with the other early globals,
+// because switchTab() calls setDocumentTitle() and switchTab(initialTab) runs
+// at line ~8992 — long before the mail-indicator block further down this file.
+// Leaving these `let`s down there put setDocumentTitle() into the temporal dead
+// zone at startup: the ReferenceError thrown from switchTab aborted the rest of
+// the script and every tab rendered blank. Same hazard as MUSICX_MB_LAST_CALL
+// and renderMusicXplorerPage above, which are hoisted here for the same reason.
+//
+// setDocumentTitle() itself is a hoisted function declaration, so it is safe to
+// call early; only these bindings had to move.
+let mailPollTimer = null;
+let mailUnreadCount = 0;
+let MAIL_TITLE_BASE = 'Helm';
 let audioJobs = [];
 let audioFiles = [];
 let audioSearchResults = [];
@@ -10631,11 +10645,10 @@ function stopBackupsPolling() {
 // useful when you are somewhere else.
 
 const MAIL_POLL_MS = 30 * 1000;
-let mailPollTimer = null;
-let mailUnreadCount = 0;
-// Last tab name passed to setDocumentTitle(), so updateMailIndicator() can
-// rebuild the title with the unread prefix without switchTab() running again.
-let MAIL_TITLE_BASE = 'Helm';
+
+// mailPollTimer / mailUnreadCount / MAIL_TITLE_BASE are declared up in the
+// early-globals block near the other poll state — switchTab(initialTab) runs
+// before this point and reaches setDocumentTitle(). See the comment there.
 
 // Single owner of document.title. switchTab() sets the per-tab name; the mail
 // indicator prefixes an unread count on top of it. Centralised here because
