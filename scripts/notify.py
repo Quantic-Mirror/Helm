@@ -60,7 +60,7 @@ def main():
     p.add_argument("subject", help="Subject line")
     p.add_argument("body", nargs="?", default="", help="Message body (plain text)")
     p.add_argument("--from", dest="sender",
-                   default=os.environ.get("HELM_NOTIFY_FROM", "helm@vps"))
+                   default=os.environ.get("HELM_NOTIFY_FROM", "helm@hyperion"))
     p.add_argument("--to", dest="recipient",
                    default=os.environ.get("HELM_NOTIFY_TO", "isaboo@hyperion"))
     p.add_argument("--host", default=os.environ.get("HELM_NOTIFY_HOST", HYPERION_TAILNET_IP))
