@@ -1864,6 +1864,12 @@ class HelmHandler(SimpleHTTPRequestHandler):
 
             import slskd_offers as OFF
             import slskd_search as S
+            # scripts/ is on the same level as this file but not on sys.path for
+            # the container process — add it so imports work.
+            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
             state_dir = os.environ.get("HELM_STATE_DIR", "/app/state")
             offers = OFF.get_offers(state_dir, query=query)
             if not offers:
