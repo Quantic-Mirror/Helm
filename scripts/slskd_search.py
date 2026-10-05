@@ -193,23 +193,134 @@ def _tokens(s):
     return {t for t in re.split(r"[^a-z0-9]+", (s or "").lower()) if t and t not in _STOPWORDS}
 
 
+# Path components that are structural noise rather than artist/album names.
+# "shared\_TAGGED\..." and "@@mfapl\Music (320)\..." both appear constantly.
+_NOISE_SEGMENTS = {
+    "shared", "_tagged", "music", "downloads", "incomplete", "complete",
+    "albums", "album", "artists", "artist", "songs", "song", "tracks", "track",
+    "lossless", "flac", "mp3", "cd", "dvd", "disc", "discography",
+    # "Music (320)", "Music (lossless)", "MP3 320" — quality-labelled parents.
+    "music (320)", "music (lossless)", "music (flac)", "music (ape)",
+    "mp3 320", "flac 320", "new music",
+}
+
+
+def _clean_segment(s):
+    """Trim decoration from a path segment: leading track numbers, years."""
+    s = s.strip()
+    # "01 - Myth" -> "Myth"; "01. Dark Spring" -> "Dark Spring"
+    s = re.sub(r"^\d{1,3}\s*[-._)\]]\s*", "", s)
+    # A trailing or leading year in brackets/parens.
+    s = re.sub(r"^[\(\[]\d{4}[\)\]]\s*", "", s)
+    s = re.sub(r"\s*[\(\[]\d{4}[\)\]]$", "", s)
+    return s.strip()
+
+
+def _looks_like_filename(seg):
+    """True if this segment is really a file name, not a folder."""
+    return bool(re.search(r"\.[A-Za-z0-9]{2,4}$", seg.strip()))
+
+
+def _is_disc_folder(seg):
+    """True if this directory names a disc/CD, not an album.
+
+    Multi-disc releases put a sub-folder between the album and its tracks
+    ("Up in Flames (2003)/Digital Media 02/01 - Cherrybomb.flac"). Treating that
+    as the album splits one release across several groups.
+    """
+    s = (seg or "").strip().lower()
+    patterns = (
+        r"^(cd|disc|disk|dvd|part|vol|volume)\s*[-_. ]*\d+$",
+        r"^digital\s+media\s*\d+$",
+        r"^\d+$",                      # bare "1", "2" as a disc folder
+    )
+    return any(re.match(p, s) for p in patterns)
+
+
 def guess_artist_album(path):
     """Best-effort (artist, album) from a Soulseek share path.
 
-    Share layouts are inconsistent — "Artist/Album/track.flac",
-    "Music (320)/Artist/7/track.mp3", "_TAGGED/Artist [year]/Album/track.flac",
-    and scene-style "@@user\\music\\Artist - Album\\01 track.flac". Take the
-    first two meaningful path components, skipping known noise segments.
+    Share layouts are inconsistent, and the observed shapes are:
+      music\\Caribou\\Andorra (2007)\\01 - Melody Day.flac
+          -> ("Caribou", "Andorra")            depth 4, album is a real folder
+      shared\\Caribou - Suddenly\\Caribou - Suddenly - 01 Sister.flac
+          -> ("Caribou - Suddenly", "Suddenly") depth 3, album in the FOLDER
+      Caribou - Suddenly - 01 Sister.flac
+          -> ("Caribou - Suddenly", "Suddenly") flat, album in the FILENAME
+      @@mfapl\\Music (320)\\Beach House\\7\\01 Dark Spring.mp3
+          -> ("Beach House", "7")            noise stripped, disc folder kept
+
+    Taking a fixed component index split the "Caribou - Suddenly" case into
+    one "album" per track, because the filename repeats the album title. So:
+    drop noise and track-numbered segments, then treat the last remaining
+    directory as the album — and if there is no directory at all, recover the
+    album from the filename pattern "Artist - Album - NN Track".
     """
     parts = [p for p in re.split(r"[\\/]+", path or "") if p.strip()]
-    parts = [p for p in parts if p.lower() not in
-             ("shared", "_tagged", "music", "downloads", "@@ageol", "@@mfapl")]
-    parts = [re.sub(r"^\[[^\]]*\]", "", p).strip() or p for p in parts]
-    artist = parts[0] if parts else ""
-    album = parts[1] if len(parts) > 1 else ""
-    # A trailing "(2012)" / "[2012]" is a year, not the album name.
-    album = re.sub(r"[\(\[]\d{4}[\)\]]\s*$", "", album).strip()
+    if not parts:
+        return "", ""
+
+    parts = [p for p in parts if p.lower() not in _NOISE_SEGMENTS
+             and not p.lower().startswith("@@")]
+
+    # Drop the filename; we want the directories that precede it.
+    dirs = parts[:-1] if len(parts) > 1 else []
+    dirs = [_clean_segment(d) for d in dirs]
+    dirs = [d for d in dirs if d and not _looks_like_filename(d)]
+
+    filename = parts[-1] if parts else ""
+    stem = re.sub(r"\.[A-Za-z0-9]{2,4}$", "", filename).strip()
+
+    # A disc sub-folder ("Digital Media 02", "CD1", "Disc 2") sits between the
+    # album and the tracks and is not itself the album. Detect and drop it so
+    # "music\Caribou\Up in Flames (2003)\Digital Media 02\track.flac" groups as
+    # one album rather than per-disc.
+    if len(dirs) >= 2 and _is_disc_folder(dirs[-1]):
+        dirs = dirs[:-1]
+
+    if dirs:
+        # The deepest directory is the album; the one above it is the artist.
+        album = dirs[-1]
+        artist = dirs[-2] if len(dirs) >= 2 else ""
+
+        # A single-folder share with an unnumbered track title
+        # ("_TAGGED\Beach House\Equal Mind.mp3") has only the artist as a
+        # directory; the album is the track title. Without this, every
+        # single-file share collapsed into one album bucket. This is checked
+        # BEFORE the "Artist - Album" handling below, which needs the folder to
+        # still be treated as the album.
+        if len(dirs) == 1 and not re.match(r"^\d{1,3}\s*[-._)\]]", stem):
+            artist, album = dirs[-1], stem
+        elif len(dirs) == 1:
+            artist, album = dirs[-1], ""
+
+        # A folder named "Artist - Album" whose tracks repeat the same prefix
+        # ("Caribou - Suddenly\Caribou - Suddenly - 01 Sister.flac") is one
+        # album, not one album per track. Split the folder once so every track
+        # in it lands in the same group.
+        if " - " in album:
+            head, _, tail = album.partition(" - ")
+            if stem.lower().startswith(head.strip().lower()):
+                m = re.match(r"^.+?\s+-\s+(?P<alb>.+?)\s+-\s+\d{1,3}\b", stem)
+                artist = head.strip()
+                album = m.group("alb").strip() if m else (tail.strip() or album)
+    else:
+        # Flat share: "Artist - Album - 01 Track" or "Artist - Album - 01 - Track".
+        m = re.match(r"^(?P<art>.+?)\s+-\s+(?P<alb>.+?)\s+-\s+\d{1,3}\b", stem)
+        if m:
+            artist, album = m.group("art").strip(), m.group("alb").strip()
+        else:
+            # No separator to split on: treat the whole stem as the album and
+            # leave the artist for the caller's own matching to infer.
+            artist, album = "", stem
+
+    # No post-hoc " - " splitting here. The cases above already assign artist
+    # and album from the structure of the path; re-splitting them afterwards
+    # re-broke correct results (a parsed "Discos - Proto House - NuDisco"
+    # album became artist="Discos", album="Proto House - NuDisco").
+
     return artist, album
+
 
 
 def score_response(query, resp):
