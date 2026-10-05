@@ -242,4 +242,4 @@ The server holds the canonical state in `marks_state.json` (in the state dir). E
 
 ## License
 
-MIT
+AGPL-3.0
