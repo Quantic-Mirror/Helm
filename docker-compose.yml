@@ -261,6 +261,57 @@ services:
       HELM_FRAME_ORIGINS: "${DAILYTXT_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
     command: ["python3", "helm_tls_proxy.py", "9005", "80", "dailytxt"]
 
+  # ── FreshRSS (self-hosted RSS reader, iframed into the Reader tab) ─────────
+  # Runs on FreshRSS's built-in SQLite database, so there is no separate DB
+  # container. The admin account and install are created on first boot from
+  # FRESHRSS_INSTALL / FRESHRSS_USER, the same no-setup-wizard posture as
+  # LeafWiki and DailyTxT. Both run only on the very first boot, so changing
+  # them later means removing ./freshrss-data first.
+  freshrss:
+    image: freshrss/freshrss:latest
+    container_name: freshrss
+    restart: unless-stopped
+    environment:
+      TZ: "${TZ:-UTC}"
+      # Refresh every 15 minutes, offset from the top of the hour.
+      CRON_MIN: "7,22,37,52"
+      FRESHRSS_INSTALL: |-
+        --api-enabled
+        --base-url ${FRESHRSS_BASE_URL:-https://${SERVER_HOST:-localhost}:9007}
+        --db-type sqlite
+        --default-user admin
+        --language en
+      FRESHRSS_USER: |-
+        --user admin
+        --password ${FRESHRSS_ADMIN_PASSWORD:?set an initial admin password in .env, e.g. openssl rand -hex 24}
+        --email ${FRESHRSS_ADMIN_EMAIL:-admin@helm.local}
+        --language en
+        --no-default-feeds
+    volumes:
+      - ./freshrss-data:/var/www/FreshRSS/data
+
+  # helm_tls_proxy.py in front of freshrss: strips X-Frame-Options / rewrites
+  # CSP frame-ancestors and Set-Cookie SameSite/Secure so the FreshRSS UI can
+  # be iframed from Helm's origin and keep its session cookie. Same pattern as
+  # dailytxt-proxy above.
+  freshrss-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: freshrss-proxy
+    restart: unless-stopped
+    depends_on:
+      - freshrss
+    ports:
+      - "${FRESHRSS_PROXY_PORT:-${HELM_BIND:-127.0.0.1}:9007:9007}"
+    volumes:
+      - ./data:/app/state
+    environment:
+      HELM_TLS_CERT: "/app/state/cert.pem"
+      HELM_TLS_KEY: "/app/state/key.pem"
+      HELM_FRAME_ORIGINS: "${FRESHRSS_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9007", "80", "freshrss"]
+
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,
   # which pulls SEARXNG_URL from the helm service's environment (set above).

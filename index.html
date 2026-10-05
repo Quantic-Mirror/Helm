@@ -2873,6 +2873,16 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   border: none;
   display: block;
 }
+#freshrss-page {
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+#freshrss-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
 
 /* ── READER PANE ────────────────────────────────────────────────────────────── */
 #reader-overlay {
@@ -3002,6 +3012,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#music" data-tab="music">🎵 Music</a>
     <a class="tab-btn" href="#leafwiki" data-tab="leafwiki">📓 Wiki</a>
     <a class="tab-btn" href="#journal" data-tab="journal">📔 Journal</a>
+    <a class="tab-btn" href="#reader" data-tab="reader">📡 Reader</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
@@ -3263,6 +3274,13 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
      history) with a dedicated encrypted-diary app instead. -->
 <div id="dailytxt-page" style="display:none">
   <iframe id="dailytxt-frame" src="" allow="clipboard-write"></iframe>
+</div>
+
+<!-- READER (FreshRSS) PAGE -->
+<!-- FreshRSS is embedded via freshrss-proxy, same pattern as the Journal
+     iframe above. src is set from /api/config's freshrss_url in initConfig(). -->
+<div id="freshrss-page" style="display:none">
+  <iframe id="freshrss-frame" src="" allow="clipboard-write"></iframe>
 </div>
 
 <!-- MODAL -->
@@ -8881,7 +8899,7 @@ setTimeout(startMailPolling, 1500);
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'music', 'logs', 'leafwiki', 'journal'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'music', 'logs', 'leafwiki', 'journal', 'reader'];
 // Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
 // Music tab — redirect anyone with an old bookmarked/shared hash instead of
 // falling through to Dashboard.
@@ -8988,13 +9006,15 @@ async function initConfig() {
       if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
       if (cfg.leafwiki_url) document.getElementById('leafwiki-frame').src = cfg.leafwiki_url;
       if (cfg.dailytxt_url) document.getElementById('dailytxt-frame').src = cfg.dailytxt_url;
+      if (cfg.freshrss_url) document.getElementById('freshrss-frame').src = cfg.freshrss_url;
     }
   } catch (e) {
     // Config endpoint not available (e.g. running via python3 directly).
-    // Fall back to localhost for SearxNG, LeafWiki, and DailyTxT.
+    // Fall back to localhost for SearxNG, LeafWiki, DailyTxT, and FreshRSS.
     ENGINES.searx.url = 'http://localhost:8080/search?q=';
     document.getElementById('leafwiki-frame').src = 'https://localhost:9004';
     document.getElementById('dailytxt-frame').src = 'https://localhost:9005';
+    document.getElementById('freshrss-frame').src = 'https://localhost:9007';
   }
 }
 
@@ -9101,6 +9121,7 @@ function switchTab(tab) {
   show('music-page',     tab === 'music');
   show('leafwiki-page',  tab === 'leafwiki');
   show('dailytxt-page',  tab === 'journal');
+  show('freshrss-page',  tab === 'reader');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');

@@ -973,6 +973,20 @@ MONITORED_SERVICES = [
         "controllable": True,
     },
     {
+        "id":        "freshrss",
+        "label":     "FreshRSS",
+        "type":      "docker",
+        "container": "freshrss",
+        "controllable": True,
+    },
+    {
+        "id":        "freshrss-proxy",
+        "label":     "FreshRSS Proxy",
+        "type":      "docker",
+        "container": "freshrss-proxy",
+        "controllable": True,
+    },
+    {
         "id":        "forgejo",
         "label":     "Forgejo",
         "type":      "docker",
@@ -1718,6 +1732,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "audio_url": AUDIO_BACKEND,
                 "leafwiki_url": os.environ.get("LEAFWIKI_URL", f"https://{SERVER_HOST}:9004"),
                 "dailytxt_url": os.environ.get("DAILYTXT_URL", f"https://{SERVER_HOST}:9005"),
+                "freshrss_url": os.environ.get("FRESHRSS_URL", f"https://{SERVER_HOST}:9007"),
             })
             return
 
