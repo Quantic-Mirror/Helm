@@ -251,6 +251,11 @@ body.profile-work #topbar {
   border-bottom: 2px solid #d9822b;
 }
 body.profile-work #topbar h1 span { background: #d9822b; }
+/* The wheel is drawn bare, no accent square behind it. Overrides the
+   span rules above (including the work-profile one) for this span only,
+   so the mail badge keeps its background. */
+#topbar h1 span.logo-mark,
+body.profile-work #topbar h1 span.logo-mark { background: none; }
 body.profile-work #profile-switcher {
   border-color: #d9822b;
   color: #f0a860;
@@ -3056,7 +3061,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <h1 id="helm-logo" title="Dashboard" style="cursor:pointer">
     <!-- Ship's wheel. stroke/fill use currentColor, same as the ⚑ glyph this
          replaced, so it inherits the h1 colour under every theme. -->
-    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+    <span class="logo-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9"/>
       <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
       <path d="M14.6 12H21M13.84 13.84L18.36 18.36M12 14.6V21M10.16 13.84L5.64 18.36M9.4 12H3M10.16 10.16L5.64 5.64M12 9.4V3M13.84 10.16L18.36 5.64"/>
