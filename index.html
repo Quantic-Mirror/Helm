@@ -2446,15 +2446,8 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
   grid-column: 1 / -1; font-size: 13px; color: var(--text-dim);
   padding: 18px 4px; line-height: 1.5;
 }
-#music-topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 16px;
-}
-#audio-last-updated { font-size: 11px; color: var(--text-dim); }
-
 .audio-form-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .audio-form-row .field { flex: 1; min-width: 140px; margin-bottom: 0; }
-.audio-form-row .field.audio-field-narrow { flex: 0 0 80px; min-width: 0; }
 .audio-form-row .btn { flex-shrink: 0; }
 
 .slskd-hint { margin: 8px 0; color: var(--text-muted); font-size: 12px; }
@@ -2480,27 +2473,6 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .musicx-soulseek-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .slskd-download-btn.done { background: var(--green-dim); border-color: var(--green); color: var(--green); cursor: default; }
 
-#audio-search-results:not(:empty) { margin-top: 14px; }
-.audio-pick-btn { flex-shrink: 0; padding: 4px 10px; font-size: 11px; }
-
-#audio-batch-details { margin-top: 14px; }
-#audio-batch-details summary {
-  cursor: pointer; font-size: 12px; color: var(--text-muted); font-weight: 500;
-}
-#audio-batch-input {
-  width: 100%; min-height: 90px; margin-top: 10px; margin-bottom: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-family: monospace;
-  font-size: 12px;
-  padding: 8px 11px;
-  outline: none;
-  resize: vertical;
-}
-#audio-batch-input:focus { border-color: var(--accent); }
-
 /* Downloaded-file title doubles as a link to search YouTube for the track
    (no real video id is retained for a completed download — see
    buildAudioFileRowHTML) — style it like a link, not the plain span
@@ -2508,12 +2480,9 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 a.backup-label { text-decoration: none; }
 a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 
-/* Page-level tabs — Download / Downloads / Files / Favorites — a full-width
+/* Page-level tabs — Releases / Soulseek / Favorites — a full-width
    bar above the page content, not squeezed into a sidebar column. Only one
-   panel is visible at a time (see updateMusicSectionChrome()); Download,
-   Downloads and Files each get the entire page width, so a long track
-   title in Files no longer has to share its row's width with a persistent
-   detail pane it has nothing to do with. Visual style mirrors
+   panel is visible at a time (see updateMusicSectionChrome()). Visual style mirrors
    #news-view-toggle/.news-view-btn elsewhere in this file: a pill strip
    with an active segment, just sized to its content instead of stretched. */
 .music-tabs {

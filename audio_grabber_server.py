@@ -23,18 +23,12 @@ import sys
 import os
 import hmac
 import json
-import mimetypes
-import queue as _queue
 import re
 import shlex
 import shutil
 import subprocess
-import threading
-import time
-import unicodedata
-from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8091
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -148,26 +142,11 @@ AUDIO_COOKIES_ARGS = ["--cookies", AUDIO_COOKIES_FILE] if os.path.isfile(AUDIO_C
 # it still returns 0 items with or without it): the interstitial requires an
 # actually-authenticated, age-verified session, which only a real cookies
 # file provides. See AUDIO_COOKIES_FILE above for how to set one up.
-SEARCH_NO_RESULTS_HINT = (
-    "no downloadable result for this search -- if this keeps happening for "
-    "songs that clearly exist on YouTube, it's likely the age/sign-in "
-    "interstitial described above; adding a real cookies file "
-    f"({AUDIO_COOKIES_FILE}) usually fixes it"
-)
 
 # Defaults to a folder next to this script, but override with
 # AUDIO_DOWNLOAD_DIR to land downloads somewhere else entirely, e.g. a
 # shared media mount (see AUDIO_DOWNLOAD_DIR= in audio-grabber.service).
-AUDIO_DIR = os.environ.get("AUDIO_DOWNLOAD_DIR") or os.path.join(SCRIPT_DIR, "audio-downloads")
-AUDIO_FORMATS = ("mp3", "m4a", "flac", "wav", "opus")
-AUDIO_MAX_BATCH = 50  # guard against an accidental huge paste queuing hundreds of jobs
 AUDIO_SEARCH_LIMIT = 8
-AUDIO_MATCH_THRESHOLD = 0.55  # below this, still download the best guess but flag the job
-
-_audio_lock = threading.Lock()
-_audio_jobs = {}      # job_id (int) -> job dict
-_audio_job_seq = 0
-_audio_queue = _queue.Queue()
 
 
 # ── MATCH CONFIDENCE SCORING ─────────────────────────────────────────────────
@@ -180,265 +159,9 @@ _audio_queue = _queue.Queue()
 # scoring path (compute_match_confidence there) is kept -- MusicGrabber's
 # other scorer is for Soulseek's path-shaped filenames, which don't apply
 # here since this service only ever deals with YouTube search hits.
-_FEAT_PATTERNS = (
-    re.compile(r'\s*\(feat\.?[^)]*\)', re.IGNORECASE),
-    re.compile(r'\s*\(ft\.?[^)]*\)', re.IGNORECASE),
-    re.compile(r'\s*\(featuring[^)]*\)', re.IGNORECASE),
-    re.compile(r'\s+feat\.?\s.*$', re.IGNORECASE),
-    re.compile(r'\s+ft\.?\s.*$', re.IGNORECASE),
-    re.compile(r'\s+featuring\s.*$', re.IGNORECASE),
-)
-_TITLE_NOISE = (
-    re.compile(r'\s*\(explicit\)', re.IGNORECASE),
-    re.compile(r'\s*\(clean\)', re.IGNORECASE),
-)
-_ARTIST_FEAT = (
-    re.compile(r'\s*\bfeat\.?.*$', re.IGNORECASE),
-    re.compile(r'\s*\bft\.?\s.*$', re.IGNORECASE),
-    re.compile(r'\s*\bfeaturing\b.*$', re.IGNORECASE),
-)
-_HEAVY_VERSION_KEYWORDS = (
-    "remix", "rmx", "club mix", "vip mix", "extended mix",
-    "live", "live at", "live from", "concert", "in concert",
-    "acoustic", "unplugged", "stripped",
-    "slowed", "reverb", "sped up", "speed up",
-    "instrumental", "karaoke",
-    "demo", "rough cut",
-    "radio edit", "radio version", "single edit",
-    "8d audio", "bass boosted", "nightcore",
-)
-_LIGHT_VERSION_KEYWORDS = ("remaster", "remastered")
-_JUNK_ARTIST_TOKENS = frozenset({
-    "various artists", "various artist", "va",
-    "unknown artist", "unknown album", "unknown",
-    "compilation",
-})
-_TYPO_RATIO_FLOOR = 0.85
-_TITLE_GATE_THRESHOLD = 0.4
-_WRONG_VERSION_PENALTY = 0.4
 
 # NFKD doesn't decompose these because the diacritic is part of the glyph
 # itself, not a combining mark (e.g. "Motley Crue" for metal bands).
-_LATIN_EXTENDED_MAP = str.maketrans({
-    'Ø': 'O', 'ø': 'o', 'Æ': 'AE', 'æ': 'ae', 'Œ': 'OE', 'œ': 'oe',
-    'Þ': 'Th', 'þ': 'th', 'Ð': 'D', 'ð': 'd', 'ß': 'ss', 'Ł': 'L', 'ł': 'l',
-})
-
-
-def _has_cjk(text):
-    for c in text:
-        cp = ord(c)
-        if (0x2E80 <= cp <= 0x9FFF or 0x3040 <= cp <= 0x30FF
-                or 0xFF00 <= cp <= 0xFFEF or 0xAC00 <= cp <= 0xD7AF):
-            return True
-    return False
-
-
-def _strip_diacritics(text):
-    if not text:
-        return ""
-    if _has_cjk(text):
-        return text
-    text = text.translate(_LATIN_EXTENDED_MAP)
-    decomposed = unicodedata.normalize('NFKD', text)
-    return ''.join(c for c in decomposed if not unicodedata.combining(c))
-
-
-def _normalise_string(text):
-    if not text:
-        return ""
-    cjk = _has_cjk(text)
-    text = _strip_diacritics(text).lower()
-    text = re.sub(r'[._/&\-]+', ' ', text)
-    if cjk:
-        text = re.sub(r'[!-/:-@\[-`{-~]', '', text)
-    else:
-        text = re.sub(r'[^a-z0-9\s$]', '', text)
-    return re.sub(r'\s+', ' ', text).strip()
-
-
-def _core_string(text):
-    """Alphanumeric-only representation, for an exact-match shortcut where
-    punctuation and spacing cannot be trusted."""
-    return re.sub(r'[^a-z0-9]', '', _normalise_string(text))
-
-
-def _clean_title(title):
-    """Drop feat./ft. clauses and explicit/clean tags. Deliberately leaves
-    remix/live/acoustic annotations alone -- the version-aware penalty in
-    _similarity() below depends on them surviving."""
-    if not title:
-        return ""
-    cleaned = title
-    for pat in _FEAT_PATTERNS:
-        cleaned = pat.sub('', cleaned)
-    for pat in _TITLE_NOISE:
-        cleaned = pat.sub('', cleaned)
-    return _normalise_string(cleaned)
-
-
-def _clean_artist(artist):
-    if not artist:
-        return ""
-    cleaned = artist
-    for pat in _ARTIST_FEAT:
-        cleaned = pat.sub('', cleaned)
-    return _normalise_string(cleaned)
-
-
-def _is_junk_artist(text):
-    if not text:
-        return False
-    norm = _normalise_string(text)
-    return bool(norm) and norm in _JUNK_ARTIST_TOKENS
-
-
-def _similarity(a, b):
-    """Fuzzy similarity 0.0-1.0 with a version-aware penalty, so "Stay" never
-    matches "Stay (Live in Tokyo)" above the confidence floor."""
-    if not a or not b:
-        return 0.0
-    if a == b:
-        return 1.0
-    base = SequenceMatcher(None, a, b).ratio()
-
-    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
-    if longer.startswith(shorter):
-        extra = longer[len(shorter):].strip(' -()[]')
-        for kw in _HEAVY_VERSION_KEYWORDS:
-            if kw in extra:
-                return min(base, 0.30)
-        for kw in _LIGHT_VERSION_KEYWORDS:
-            if kw in extra:
-                return max(base, 0.75)
-
-    a_tokens = {t for t in a.split() if t}
-    b_tokens = {t for t in b.split() if t}
-    if a_tokens and b_tokens and not (a_tokens & b_tokens) and base < _TYPO_RATIO_FLOOR:
-        return min(base, 0.25)
-    return base
-
-
-def _duration_similarity(a_secs, b_secs):
-    """Closeness of two durations on 0.0-1.0. Neutral 0.5 when either is
-    unknown -- yt-dlp's flat-playlist search results always have one, but
-    there's nothing to compare it against here since the request only ever
-    carries an artist/song, never an expected duration."""
-    if not a_secs or not b_secs or a_secs <= 0 or b_secs <= 0:
-        return 0.5
-    if abs(a_secs - b_secs) <= 5:
-        return 1.0
-    diff_ratio = abs(a_secs - b_secs) / max(a_secs, b_secs)
-    return max(0.0, 1.0 - diff_ratio * 5)
-
-
-def _query_requests_variant(query):
-    """True if the search query itself asked for a remix/live/acoustic, so
-    that version isn't penalised as an unwanted wrong-version match."""
-    if not query:
-        return False
-    q = query.lower()
-    return any(kw in q for kw in _HEAVY_VERSION_KEYWORDS)
-
-
-def _compute_match_confidence(expected_artist, expected_title, candidate_title,
-                               candidate_artist=None, candidate_duration_s=None,
-                               expected_duration_s=None, query=None):
-    """Score a YouTube search candidate (title + uploader) against the
-    artist/song actually requested. Returns (confidence 0.0-1.0, breakdown
-    list for logging/debugging)."""
-    breakdown = []
-    if not (expected_title or expected_artist):
-        return 0.5, ["no_query_info"]
-    if candidate_artist and _is_junk_artist(candidate_artist):
-        return 0.0, ["junk_artist"]
-
-    expected_title_clean = _clean_title(expected_title or "")
-    candidate_title_clean = _clean_title(candidate_title or "")
-    expected_artist_norm = _clean_artist(expected_artist or "")
-
-    # YouTube titles routinely look like "Artist - Title (Official Video)";
-    # strip the leading artist clause so the title comparison below actually
-    # compares titles rather than artist-vs-title-with-artist-prefix.
-    candidate_for_title_compare = candidate_title_clean
-    if expected_artist_norm and candidate_title_clean:
-        prefix = f"{expected_artist_norm} "
-        if candidate_title_clean.startswith(prefix):
-            stripped = candidate_title_clean[len(prefix):].strip()
-            if stripped:
-                candidate_for_title_compare = stripped
-
-    expected_core = _core_string(expected_title or "")
-    candidate_core = _core_string(candidate_for_title_compare)
-    full_candidate_core = _core_string(candidate_title_clean)
-    if expected_core and expected_core == candidate_core:
-        title_score = 1.0
-    elif expected_core and expected_core == full_candidate_core:
-        title_score = 1.0
-    elif expected_core and len(expected_core) >= 4 and expected_core in full_candidate_core:
-        title_score = 0.92
-    else:
-        title_score = max(
-            _similarity(expected_title_clean, candidate_for_title_compare),
-            _similarity(expected_title_clean, candidate_title_clean),
-        )
-    breakdown.append(f"title={title_score:.2f}")
-
-    if expected_artist_norm:
-        candidate_artist_norm = _clean_artist(candidate_artist or "")
-        # "Topic"/"VEVO" channel suffixes are YouTube branding, not part of
-        # the artist name.
-        if candidate_artist_norm.endswith(" topic"):
-            candidate_artist_norm = candidate_artist_norm[:-len(" topic")].strip()
-        if candidate_artist_norm.endswith("vevo"):
-            candidate_artist_norm = candidate_artist_norm[:-4].strip()
-
-        expected_squashed = expected_artist_norm.replace(" ", "")
-        candidate_squashed = candidate_artist_norm.replace(" ", "")
-        if not candidate_artist_norm:
-            artist_score = 0.0
-        elif candidate_artist_norm == expected_artist_norm:
-            artist_score = 1.0
-        elif expected_squashed and expected_squashed == candidate_squashed:
-            artist_score = 1.0
-        elif (expected_artist_norm in candidate_artist_norm
-                or candidate_artist_norm in expected_artist_norm
-                or expected_squashed in candidate_squashed
-                or candidate_squashed in expected_squashed):
-            artist_score = 0.95
-        else:
-            sim = _similarity(expected_artist_norm, candidate_artist_norm)
-            # Some uploaders park the artist name in the title instead of
-            # the channel ("Various - Artist - Title") -- credit that too.
-            if expected_artist_norm in candidate_title_clean:
-                artist_score = max(sim, 0.95)
-            else:
-                artist_score = sim
-        breakdown.append(f"artist={artist_score:.2f}")
-    else:
-        artist_score = 0.5
-
-    duration_score = _duration_similarity(expected_duration_s, candidate_duration_s)
-    confidence = title_score * 0.55 + artist_score * 0.30 + duration_score * 0.15
-
-    # Title hard gate: a strong artist match should not prop up a candidate
-    # for a different song -- wrong title is the loudest "not the song you
-    # wanted" signal there is.
-    if title_score < _TITLE_GATE_THRESHOLD:
-        confidence *= (title_score / _TITLE_GATE_THRESHOLD) if _TITLE_GATE_THRESHOLD else 0.0
-        breakdown.append(f"title_gate×{title_score / _TITLE_GATE_THRESHOLD:.2f}")
-
-    # Wrong-version demotion: only when the query itself didn't ask for a
-    # remix/live/acoustic take but the candidate clearly is one.
-    plain_query = not _query_requests_variant(query or expected_title or "")
-    if plain_query and title_score >= 0.6:
-        if any(kw in candidate_title_clean for kw in _HEAVY_VERSION_KEYWORDS):
-            if not any(kw in expected_title_clean for kw in _HEAVY_VERSION_KEYWORDS):
-                confidence *= _WRONG_VERSION_PENALTY
-                breakdown.append(f"wrong_version×{_WRONG_VERSION_PENALTY}")
-
-    breakdown.append(f"final={confidence:.3f}")
-    return confidence, breakdown
 
 
 def search_audio_candidates(query, limit=AUDIO_SEARCH_LIMIT):
@@ -500,218 +223,6 @@ def get_video_info(video_id):
         "uploader": obj.get("uploader") or obj.get("channel") or "",
         "duration": obj.get("duration"),
     }, None
-
-
-def _new_audio_job(label):
-    global _audio_job_seq
-    with _audio_lock:
-        _audio_job_seq += 1
-        job = {
-            "id": _audio_job_seq,
-            "label": label,
-            "status": "queued",
-            "message": "",
-            "filename": None,
-            "queuedAt": time.time(),
-            "startedAt": None,
-            "finishedAt": None,
-        }
-        _audio_jobs[job["id"]] = job
-    return job
-
-
-def _run_audio_download(job_id, target, is_url, audio_format, quality):
-    with _audio_lock:
-        job = _audio_jobs.get(job_id)
-        if not job:
-            return
-        job["status"] = "running"
-        job["startedAt"] = time.time()
-
-    match_note = None
-    if not is_url:
-        # Free-text (artist, song) request: search candidates ourselves and
-        # score them against what was actually asked for (see MATCH
-        # CONFIDENCE SCORING above), rather than handing the query straight
-        # to yt-dlp's own --default-search ytsearch1 and trusting whatever
-        # it ranks first. Falls back to that old blind-search behavior only
-        # if our own search comes up empty/errors -- better to still attempt
-        # a download than fail the job over a search hiccup.
-        artist, song = target
-        query = f"{artist} {song} audio"
-        candidates, _search_err = search_audio_candidates(query, limit=AUDIO_SEARCH_LIMIT)
-        best, best_score = None, -1.0
-        for c in candidates or []:
-            score, _breakdown = _compute_match_confidence(
-                artist, song, c.get("title") or "", c.get("uploader") or "",
-                candidate_duration_s=c.get("duration"), query=query,
-            )
-            if score > best_score:
-                best, best_score = c, score
-        if best and best.get("id"):
-            target = f"https://www.youtube.com/watch?v={best['id']}"
-            is_url = True
-            if best_score < AUDIO_MATCH_THRESHOLD:
-                match_note = (
-                    f"low-confidence match ({best_score:.0%}) — downloaded "
-                    f"\"{best.get('title')}\" by {best.get('uploader') or 'unknown uploader'}, double-check it"
-                )
-        else:
-            target = query  # no usable candidates -- fall back to yt-dlp's own search+download
-
-    os.makedirs(AUDIO_DIR, exist_ok=True)
-    cmd = [YT_DLP_BIN, "--no-playlist"]
-    if not is_url:
-        # Reaches here only when our own search above found no candidates at
-        # all -- let yt-dlp search and take its own best guess as a last
-        # resort. For a guaranteed-correct match, the caller should search
-        # via search_audio_candidates() and pass an exact video URL
-        # (is_url=True) instead.
-        cmd += ["--default-search", "ytsearch1"]
-    cmd += [
-        "-f", "bestaudio/best",
-        "-x", "--audio-format", audio_format,
-        "--audio-quality", quality,
-        # Without this, the extracted file carries no ID3 tags at all (only
-        # ffmpeg's own "encoder" tag) -- the title only ever lived in the
-        # filename. That's invisible to anything that searches by tag
-        # rather than filename (e.g. myMPD/MPD's search only looks at
-        # Title/Artist/Album/Genre). Embeds yt-dlp's own metadata (title,
-        # uploader as artist, etc.) into the file at extraction time.
-        "--embed-metadata",
-        "-o", os.path.join(AUDIO_DIR, "%(title)s.%(ext)s"),
-        # Prints the final on-disk path after extraction/move, so we don't
-        # have to diff a directory listing to learn the resulting filename.
-        "--print", "after_move:filepath",
-    ] + AUDIO_COOKIES_ARGS + YTDLP_EXTRA_ARGS + [target]
-    # Search + download + audio extraction for one track comfortably fits in
-    # 10 minutes even on a slow connection; if it hangs longer than that,
-    # something's wrong and the job should surface as failed rather than
-    # blocking the worker thread (and every queued job behind it) forever.
-    stdout, stderr, rc = _run(cmd, timeout=600, env=AUDIO_ENV)
-
-    with _audio_lock:
-        job["finishedAt"] = time.time()
-        if rc == 0:
-            filepath = next((l for l in reversed(stdout.splitlines()) if l.strip()), None)
-            job["filename"] = os.path.basename(filepath) if filepath else None
-            job["status"] = "done" if filepath else "error"
-            job["message"] = (match_note or "") if filepath else (
-                f"yt-dlp finished but did not report an output file -- {SEARCH_NO_RESULTS_HINT}"
-                if not is_url else
-                "yt-dlp finished but did not report an output file (the file may already exist in "
-                "AUDIO_DIR from an earlier download of the same title)"
-            )
-        else:
-            # Keep the last few lines, not just one -- a bare "HTTP Error
-            # 403: Forbidden" is usually preceded by which format/client
-            # yt-dlp was trying, which matters for diagnosing YouTube's
-            # anti-bot blocks (see YTDLP_EXTRA_ARGS above).
-            tail = [l for l in (stderr or stdout or "").strip().splitlines() if l.strip()]
-            job["status"] = "error"
-            job["message"] = " / ".join(tail[-3:]) if tail else f"yt-dlp exited with code {rc}"
-
-
-def _audio_worker():
-    while True:
-        job_id, target, is_url, audio_format, quality = _audio_queue.get()
-        try:
-            _run_audio_download(job_id, target, is_url, audio_format, quality)
-        except Exception as e:
-            with _audio_lock:
-                job = _audio_jobs.get(job_id)
-                if job:
-                    job["status"] = "error"
-                    job["message"] = str(e)
-                    job["finishedAt"] = time.time()
-        finally:
-            _audio_queue.task_done()
-
-
-threading.Thread(target=_audio_worker, daemon=True).start()
-
-
-def _parse_audio_batch(text):
-    """Same 'Artist | Song Title' line format as yt_audio_grabber.py's --file mode."""
-    tracks = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "|" not in line:
-            continue
-        artist, _, song = line.partition("|")
-        artist, song = artist.strip()[:200], song.strip()[:200]
-        if artist and song:
-            tracks.append((artist, song))
-    return tracks
-
-
-def _normalize_format_quality(audio_format, quality):
-    if audio_format not in AUDIO_FORMATS:
-        audio_format = "mp3"
-    quality = quality.strip() if isinstance(quality, str) else ""
-    if not quality.isdigit():
-        quality = "192"
-    return audio_format, quality
-
-
-def queue_audio_downloads(tracks, audio_format, quality):
-    """tracks: (artist, song) pairs, downloaded via a confidence-scored
-    auto-pick (see MATCH CONFIDENCE SCORING / _run_audio_download) rather
-    than yt-dlp's raw top hit. Used by the quick single-track field and by
-    batch mode, where picking each match individually would defeat the point
-    of pasting a whole list. For a candidate list to pick from yourself
-    instead, search via /api/audio/search and queue the exact video with
-    queue_audio_pick()."""
-    audio_format, quality = _normalize_format_quality(audio_format, quality)
-    jobs = []
-    for artist, song in tracks[:AUDIO_MAX_BATCH]:
-        job = _new_audio_job(f"{artist} — {song}")
-        _audio_queue.put((job["id"], (artist, song), False, audio_format, quality))
-        jobs.append(job)
-    return jobs
-
-
-def queue_audio_pick(video_id, title, audio_format, quality):
-    audio_format, quality = _normalize_format_quality(audio_format, quality)
-    job = _new_audio_job(title or video_id)
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    _audio_queue.put((job["id"], url, True, audio_format, quality))
-    return job
-
-
-def get_audio_jobs():
-    with _audio_lock:
-        jobs = sorted(_audio_jobs.values(), key=lambda j: j["id"], reverse=True)
-    return jobs[:100]
-
-
-def get_audio_files():
-    if not os.path.isdir(AUDIO_DIR):
-        return []
-    files = []
-    for name in os.listdir(AUDIO_DIR):
-        path = os.path.join(AUDIO_DIR, name)
-        if not os.path.isfile(path):
-            continue
-        try:
-            files.append({"filename": name, "size": os.path.getsize(path), "createdAt": os.path.getmtime(path)})
-        except OSError:
-            continue
-    files.sort(key=lambda f: f["createdAt"], reverse=True)
-    return files
-
-
-def delete_audio_file(filename):
-    if not filename or "/" in filename or "\\" in filename or filename in (".", ".."):
-        return False, "Invalid filename"
-    path = os.path.join(AUDIO_DIR, filename)
-    if not os.path.isfile(path):
-        return False, "File not found"
-    try:
-        os.remove(path)
-        return True, "Deleted"
-    except OSError as e:
-        return False, str(e)
 
 
 # ── SOMAFM RADIO PLAYER CONTROL ──────────────────────────────────────────────
@@ -850,40 +361,11 @@ class AudioHandler(BaseHTTPRequestHandler):
             self.send_json(200, info)
             return
 
-        if parsed.path == "/api/audio/jobs":
-            self.send_json(200, {"jobs": get_audio_jobs()})
-            return
-
-        if parsed.path == "/api/audio/files":
-            self.send_json(200, {"files": get_audio_files()})
-            return
 
         if parsed.path == "/api/audio/radio/status":
             self.send_json(200, get_soma_radio_status())
             return
 
-        if parsed.path.startswith("/api/audio/files/"):
-            filename = unquote(parsed.path[len("/api/audio/files/"):])
-            # Safety: reject any path traversal attempts (same pattern as
-            # helm_server.py's /api/backups/<file>); unlike backups these
-            # filenames come from arbitrary video titles so they need
-            # unquoting first.
-            if "/" in filename or "\\" in filename or filename in ("", ".", ".."):
-                self.send_json(400, {"error": "Invalid filename"})
-                return
-            path = os.path.join(AUDIO_DIR, filename)
-            if not os.path.isfile(path):
-                self.send_json(404, {"error": "File not found"})
-                return
-            ctype, _ = mimetypes.guess_type(path)
-            with open(path, "rb") as f:
-                data = f.read()
-            self.send_response(200)
-            self.send_header("Content-Type", ctype or "application/octet-stream")
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-            self.end_headers()
-            self.wfile.write(data)
-            return
 
         self.send_json(404, {"error": "Not found"})
 
@@ -892,47 +374,6 @@ class AudioHandler(BaseHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
 
-        if parsed.path == "/api/audio/download":
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except Exception:
-                body = {}
-            artist = (body.get("artist") or "").strip()[:200]
-            song = (body.get("song") or "").strip()[:200]
-            tracks = [(artist, song)] if artist and song else []
-            tracks.extend(_parse_audio_batch(body.get("batchText") or ""))
-            if not tracks:
-                self.send_json(400, {"error": "Provide artist+song and/or batchText"})
-                return
-            jobs = queue_audio_downloads(tracks, body.get("format", "mp3"), str(body.get("quality", "192")))
-            self.send_json(200, {"jobs": jobs})
-            return
-
-        if parsed.path == "/api/audio/download-pick":
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except Exception:
-                body = {}
-            video_id = (body.get("videoId") or "").strip()
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", video_id or ""):
-                self.send_json(400, {"error": "Invalid or missing videoId"})
-                return
-            title = (body.get("title") or "").strip()[:200]
-            job = queue_audio_pick(video_id, title, body.get("format", "mp3"), str(body.get("quality", "192")))
-            self.send_json(200, {"jobs": [job]})
-            return
-
-        if parsed.path == "/api/audio/files/delete":
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                body = json.loads(self.rfile.read(length)) if length else {}
-            except Exception:
-                body = {}
-            ok, msg = delete_audio_file(body.get("filename", ""))
-            self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
-            return
 
         if parsed.path == "/api/audio/radio/control":
             length = int(self.headers.get("Content-Length", 0))
@@ -970,7 +411,7 @@ def main():
 
     server = ThreadingHTTPServer(("0.0.0.0", PORT), AudioHandler)
     print(f"Audio Grabber server running at http://0.0.0.0:{PORT}")
-    print(f"Downloads saved to {AUDIO_DIR} (using {YT_DLP_BIN})")
+    print(f"Using yt-dlp at {YT_DLP_BIN}")
     print(f"Subprocess PATH: {AUDIO_ENV['PATH']}")
     print(f"Cookies: {'using ' + AUDIO_COOKIES_FILE if AUDIO_COOKIES_ARGS else 'none found at ' + AUDIO_COOKIES_FILE + ' (unauthenticated requests -- more likely to hit 403s)'}")
     if AUDIO_TOKEN is None:
