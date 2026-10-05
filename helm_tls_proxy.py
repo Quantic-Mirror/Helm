@@ -35,6 +35,21 @@ LISTEN_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 9001
 BACKEND_PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8083
 BACKEND_HOST = sys.argv[3] if len(sys.argv) > 3 else "127.0.0.1"
 BACKEND_BASE = f"http://{BACKEND_HOST}:{BACKEND_PORT}"
+# Opt-in (4th argument "keep-redirects"): hand 3xx responses to the browser
+# instead of following them server-side. Needed by apps whose login answers
+# with a redirect that also sets the session cookie — urllib follows the
+# redirect and drops that Set-Cookie, so the browser never gets the session.
+# Off by default because other apps behind this proxy use absolute redirect
+# targets that would need rewriting.
+KEEP_REDIRECTS = len(sys.argv) > 4 and sys.argv[4] == "keep-redirects"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect) if KEEP_REDIRECTS else None
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Defaults look for cert.pem/key.pem next to this script (the layout the
@@ -195,7 +210,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             # warmed up in memory). A longer timeout costs nothing in the
             # normal case; it only matters when something would otherwise
             # be wrongly cut off mid-computation.
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            open_url = _OPENER.open if _OPENER else urllib.request.urlopen
+            with open_url(req, timeout=120) as resp:
                 self.send_response(resp.status)
                 self._send_headers(resp.getheaders())
                 self.end_headers()

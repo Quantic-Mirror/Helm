@@ -310,7 +310,7 @@ services:
       HELM_TLS_CERT: "/app/state/cert.pem"
       HELM_TLS_KEY: "/app/state/key.pem"
       HELM_FRAME_ORIGINS: "${FRESHRSS_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
-    command: ["python3", "helm_tls_proxy.py", "9007", "80", "freshrss"]
+    command: ["python3", "helm_tls_proxy.py", "9007", "80", "freshrss", "keep-redirects"]
 
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,
