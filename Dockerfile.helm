@@ -19,6 +19,14 @@ WORKDIR /app
 # so they survive image rebuilds and stay editable from the host.
 COPY . .
 
+# helm_server.py imports slskd_queue from scripts/ (for POST /api/slskd/queue).
+# COPY preserves the permissions git checked out, and a plain `scripts/` in the
+# repo is mode 0755 but the files land 0600-ish for a non-root reader in some
+# checkout states — the container runs as uid 1000 and got "Permission denied"
+# traversing into scripts/. Make the directory and its .py files explicitly
+# readable so the import works regardless of how the host's files were cloned.
+RUN chmod -R a+rX /app/scripts
+
 EXPOSE 8443
 
 # helm_server.py binds this one port and TLS-wraps it when cert.pem/key.pem are
