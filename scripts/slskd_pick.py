@@ -24,6 +24,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.environ.get(
@@ -39,7 +40,6 @@ NOTIFY = os.environ.get("NOTIFY", os.path.join(
 RECIPIENT = os.environ.get("DIGEST_TO", "isaboo@hyperion")
 
 SLSKD = os.environ.get("SLSKD_URL", "http://100.77.126.57:5030")
-ENQUEUE_PATH = "/api/v0/transfers/downloads/enqueue"
 # slskd's own internal peer timeout is ~5s; give it a little more so a slow but
 # live peer is not written off.
 PEER_TIMEOUT_NOTE = "slskd times out on an unresponsive peer after ~5s"
@@ -56,27 +56,34 @@ def read_token():
 
 
 def enqueue(username, files, key, timeout=45):
-    """POST to the enqueue endpoint. Returns (ok, message).
+    """Queue files from one peer. Returns (ok, message).
 
-    The body is a TOP-LEVEL ARRAY of {username, filename} — not an object.
-    POSTing to the collection route (/transfers/downloads) returns 405; the
-    working route is /transfers/downloads/enqueue. Both were confirmed against
-    a live instance.
+    Uses the per-user route, POST /transfers/downloads/{username}, with a
+    top-level array of {filename, size}. The size matters: sent as 0, slskd
+    accepts the request and then aborts the transfer ("remote size ... does not
+    match expected size 0"). The older /transfers/downloads/enqueue route
+    answers "User enqueue appears to be offline" for peers that are online and
+    downloadable, so it is not used.
     """
-    payload = [{"username": username, "filename": f.get("filename")} for f in files]
+    payload = [{"filename": f.get("filename"), "size": f.get("size") or 0} for f in files]
+    url = f"{SLSKD}/api/v0/transfers/downloads/{urllib.parse.quote(username, safe='')}"
     req = urllib.request.Request(
-        SLSKD + ENQUEUE_PATH,
+        url,
         data=json.dumps(payload).encode(),
         headers={"X-API-Key": key, "Content-Type": "application/json"},
         method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             raw = r.read().decode()
-            return True, (json.loads(raw) if raw.strip() else "ok")
+            data = json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as e:
         return False, f"HTTP {e.code}: {e.read().decode()[:160]}"
     except Exception as e:  # noqa: BLE001
         return False, str(e)[:160]
+    # A 200 can still enqueue nothing; the reason is in `failed`.
+    if isinstance(data, dict) and not data.get("enqueued") and data.get("failed"):
+        return False, json.dumps(data["failed"][0])[:160]
+    return True, data
 
 
 def mail(subject, body):
