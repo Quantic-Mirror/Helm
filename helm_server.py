@@ -965,20 +965,6 @@ MONITORED_SERVICES = [
         "container": "dailytxt-proxy",
         "controllable": True,
     },
-    {
-        "id":        "kavita",
-        "label":     "Kavita",
-        "type":      "docker",
-        "container": "kavita",
-        "controllable": True,
-    },
-    {
-        "id":        "kavita-proxy",
-        "label":     "Kavita Proxy",
-        "type":      "docker",
-        "container": "kavita-proxy",
-        "controllable": True,
-    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
@@ -1711,7 +1697,6 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "audio_url": AUDIO_BACKEND,
                 "leafwiki_url": os.environ.get("LEAFWIKI_URL", f"https://{SERVER_HOST}:9004"),
                 "dailytxt_url": os.environ.get("DAILYTXT_URL", f"https://{SERVER_HOST}:9005"),
-                "kavita_url": os.environ.get("KAVITA_URL", f"https://{SERVER_HOST}:9006"),
             })
             return
 
