@@ -23,6 +23,7 @@ import time
 sys.path.insert(0, os.environ.get(
     "SLSKD_SCRIPTS", os.path.dirname(os.path.abspath(__file__))))
 
+import slskd_offers as OFF
 import slskd_queue as Q
 import slskd_search as S
 
@@ -31,6 +32,20 @@ NOTIFY = os.environ.get("NOTIFY", os.path.join(
 RECIPIENT = os.environ.get("DIGEST_TO", "isaboo@hyperion")
 MAX_QUERIES = int(os.environ.get("SLSKD_MAX_PER_PASS", "5"))
 MAX_SOURCES = int(os.environ.get("SLSKD_MAX_SOURCES", "6"))
+
+# Where ranked candidates are persisted so a later `slskd-get:` pick has
+# something to work from.
+#
+# This is not optional bookkeeping. slskd discards completed searches far sooner
+# than its documented 7-day retention — measured: a search ~15 minutes old
+# still fetched 200, while two from a few hours earlier were 404. So by the time
+# you read the results mail, the search it refers to is usually already gone and
+# a pick handler would have nothing to download from. Saving the file list at
+# drain time is what makes the pick possible at all, and it also guarantees the
+# files you were shown are the files you get.
+OFFERS = os.path.join(Q.STATE, "slskd_offers.json")
+OFFER_TTL_HOURS = float(os.environ.get("SLSKD_OFFER_TTL_HOURS", "72"))
+OFFER_MAX = 40
 
 # Per-source summary length in the mail.
 MAX_FILES_LISTED = 8
@@ -123,6 +138,32 @@ def render_query_block(query, result):
     return "\n".join(lines)
 
 
+def build_offers(query, result):
+    """Flatten a search result into persistable per-source offers.
+
+    The whole audio set of a peer is stored, not just the albums shown in the
+    mail, so a pick can request any album from that source — the mail only
+    displays the top three.
+    """
+    entries = []
+    for i, (_score, info, raw) in enumerate(result["ranked"], 1):
+        audio = [f for f in (raw.get("files") or [])
+                 if (f.get("extension") or "").lower().lstrip(".") in S.AUDIO_EXT]
+        if not audio:
+            continue
+        entries.append({
+            "id": f"{query}:{i - 1}",
+            "query": query,
+            "username": info["username"],
+            "score": info["score"],
+            "searchId": result["id"],
+            "artist": info["artist"],
+            "files": audio,
+        })
+    return entries
+
+
+
 def main():
     pending = Q.read_pending(limit=MAX_QUERIES)
     if not pending:
@@ -135,6 +176,7 @@ def main():
           f"privileged={st.get('privileged')}", file=sys.stderr)
 
     blocks, done, failed = [], [], []
+    all_offers = []
 
     for item in pending:
         query = item["query"]
@@ -148,6 +190,7 @@ def main():
             failed.append((query, err))
             continue
         blocks.append(render_query_block(query, result))
+        all_offers.extend(build_offers(query, result))
         done.append(query)
 
     if not blocks:
@@ -155,12 +198,32 @@ def main():
         # Deliberately do NOT mark anything drained.
         return 1 if failed else 0
 
+    # Persist candidates BEFORE mailing, so the pick mail refers to stored
+    # offers even if the user replies within seconds. slskd will not keep the
+    # search itself, so this file is the only durable record of what was offered.
+    saved = 0
+    if all_offers:
+        try:
+            saved = OFF.save_offers(Q.STATE, all_offers,
+                                    ttl_hours=OFFER_TTL_HOURS,
+                                    max_offers=OFFER_MAX)
+            print(f"drain: persisted {saved} source offer(s)", file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            # Losing the offers is not fatal to the mail, but a pick will then
+            # not work — say so rather than shipping a mail that cannot be acted
+            # on without explanation.
+            print(f"drain: could not persist offers: {e}", file=sys.stderr)
+
     n = len(blocks)
     head = "Soulseek search results" if n == 1 else f"Soulseek: {n} search results"
     body = "\n".join(blocks)
-    body += ("\nTo download, reply with the source number and query, e.g.\n"
-             "  slskd-get: [1] aphex twin\n"
-             "(or open the slskd web UI to browse and pick manually)\n")
+    body += ("\nTo download, reply to this message with:\n"
+             "  slskd-get: [N] <query>\n"
+             "where N is the source number above. Default is the whole album from\n"
+             "that source.\n")
+    if not saved and all_offers:
+        body += ("\nNOTE: sources could not be saved, so a pick may not work.\n"
+                 "Ask me to re-run the search if so.\n")
 
     if failed:
         body += ("\nNot searched this pass (will retry):\n"
