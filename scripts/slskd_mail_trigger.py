@@ -42,6 +42,12 @@ MAGIC = "slskd:"
 PICK_MAGIC = "slskd-get:"
 ALIASES = {"slskd@hyperion", "search@hyperion", "slskd-search@hyperion"}
 
+# Senders whose mail this pipe must never act on. notify.py sends as
+# `helm@vps`, and system mail on hyperion arrives from root@localhost. Without
+# this, the system reads its own failure reports as new requests.
+_OWN_SENDERS = ("helm@vps", "root@localhost", "root@hyperion",
+                "isaboo@localhost")
+
 # Captures an optional [N] and the query. The --album suffix is stripped off
 # BEFORE this runs (see parse_pick), because a lazy query group swallows the
 # whole rest of the line including "--album=..." — so a single combined regex
@@ -138,6 +144,18 @@ def main():
 
     subject = header("Subject")
     to = header("To").lower()
+
+    # Ignore our own mail.
+    #
+    # Not optional, and this bug happened live: the "no source available" report
+    # ends with "re-run the search with:  slskd: <query>", and the pipe sees
+    # EVERY incoming message. So one failure mail queued five fresh searches
+    # ("xan: offline", "Attempts:", a sentence fragment, ...), which mailed
+    # their own results, which can fail and mail another hint.
+    sender = header("From").lower()
+    if any(s in sender for s in _OWN_SENDERS):
+        print(f"slskd pipe: ignoring own mail from {sender!r}", file=sys.stderr)
+        return 0
 
     body = ""
     if msg.is_multipart():
