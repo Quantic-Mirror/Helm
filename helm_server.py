@@ -1732,7 +1732,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "audio_url": AUDIO_BACKEND,
                 "leafwiki_url": os.environ.get("LEAFWIKI_URL", f"https://{SERVER_HOST}:9004"),
                 "dailytxt_url": os.environ.get("DAILYTXT_URL", f"https://{SERVER_HOST}:9005"),
-                "freshrss_url": os.environ.get("FRESHRSS_URL", f"https://{SERVER_HOST}:9007"),
+                "freshrss_url": os.environ.get("FRESHRSS_URL", f"https://{SERVER_HOST}:9007/i/"),
             })
             return
 
