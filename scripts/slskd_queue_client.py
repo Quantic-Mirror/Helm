@@ -33,26 +33,15 @@ def read_token():
         return None
 
 
-def post_queries(queries, source="mail"):
-    """POST queries to the VPS queue. Returns the list accepted."""
-    if not queries:
-        return []
-    payload = {"queries": queries, "source": source}
-
+def _post(path, payload):
+    """POST JSON to the VPS with the Helm bearer token. Returns (ok, body)."""
     if not QUEUE_URL:
-        # No URL configured: use the local file queue directly.
-        sys.path.insert(0, os.environ.get("SLSKD_SCRIPTS", os.path.dirname(
-            os.path.abspath(__file__))))
-        import slskd_queue
-        return slskd_queue.enqueue(queries, source=source)
-
+        return False, "SLSKD_QUEUE_URL is not set"
     token = read_token()
     if not token:
-        print(f"slskd queue: no token at {TOKEN_FILE}", file=sys.stderr)
-        return []
-
+        return False, f"no token at {TOKEN_FILE}"
     req = urllib.request.Request(
-        QUEUE_URL + "/api/slskd/queue",
+        QUEUE_URL + path,
         data=json.dumps(payload).encode(),
         headers={
             "Content-Type": "application/json",
@@ -67,13 +56,45 @@ def post_queries(queries, source="mail"):
         # path. Same trust model as the rest of Helm.
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
-
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
-            data = json.loads(r.read() or b"{}")
-            return data.get("added") or []
+            raw = r.read().decode()
+            return True, (json.loads(raw) if raw.strip() else {})
     except urllib.error.HTTPError as e:
-        print(f"slskd queue: HTTP {e.code} from {QUEUE_URL}", file=sys.stderr)
+        return False, f"HTTP {e.code}: {e.read().decode()[:200]}"
     except Exception as e:  # noqa: BLE001
-        print(f"slskd queue: could not reach {QUEUE_URL}: {e}", file=sys.stderr)
-    return []
+        return False, str(e)[:200]
+
+
+def post_queries(queries, source="mail"):
+    """POST queries to the VPS queue. Returns the list accepted."""
+    if not queries:
+        return []
+    if not QUEUE_URL:
+        # No URL configured: use the local file queue directly.
+        sys.path.insert(0, os.environ.get("SLSKD_SCRIPTS", os.path.dirname(
+            os.path.abspath(__file__))))
+        import slskd_queue
+        return slskd_queue.enqueue(queries, source=source)
+
+    ok, data = _post("/api/slskd/queue",
+                     {"queries": queries, "source": source})
+    if not ok:
+        print(f"slskd queue: {data}", file=sys.stderr)
+        return []
+    # _post returns a parsed dict on success, but guard anyway: a non-JSON 200
+    # would otherwise raise AttributeError inside the pipe.
+    return (data.get("added") or []) if isinstance(data, dict) else []
+
+
+def post_pick(query, index=1, album=None):
+    """Ask the VPS to download a source from its persisted offers.
+
+    The pick handler runs on the VPS because the offers and slskd live there.
+    Returns (ok, message).
+    """
+    payload = {"query": query, "index": int(index)}
+    if album:
+        payload["album"] = album
+    return _post("/api/slskd/pick", payload)
+

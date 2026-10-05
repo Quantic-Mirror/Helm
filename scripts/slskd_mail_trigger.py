@@ -19,6 +19,7 @@ Always exits 0 even on failure. A non-zero exit makes postfix hold the message
 and retry, which would delay the Helm notification the other pipe sends.
 """
 import os
+import re
 import sys
 
 sys.path.insert(0, os.environ.get(
@@ -34,7 +35,69 @@ except Exception as e:  # noqa: BLE001
     QC = None
 
 MAGIC = "slskd:"
+# Pick syntax: "slskd-get: [2] caribou" or "slskd-get: [2] caribou --album Bloom".
+# Deliberately NOT matched by the MAGIC check above — "slskd-get:" does not
+# start with "slskd:", so a pick reply can never be mistaken for a new search.
+# Verified: re.search(r"(?:^|\s)slskd:", "slskd-get: [1] x") is None.
+PICK_MAGIC = "slskd-get:"
 ALIASES = {"slskd@hyperion", "search@hyperion", "slskd-search@hyperion"}
+
+# Captures an optional [N] and the query. The --album suffix is stripped off
+# BEFORE this runs (see parse_pick), because a lazy query group swallows the
+# whole rest of the line including "--album=..." — so a single combined regex
+# silently treats the flag as part of the query.
+_PICK_RE = re.compile(
+    r"^\[?\s*(?P<index>\d+)?\s*\]?\s*(?P<query>.+?)\s*$")
+
+# --album "X", --album=X, or --album X.
+#
+# Deliberately just locates the flag and takes the remainder, rather than trying
+# to match the value inside one pattern. A single regex failed on
+# `--album=Honey` and `--album "Up in Flames"` because the value may or may not
+# be quoted and the separator may or may not be "=", so every combination needed
+# its own branch.
+_ALBUM_FLAG_RE = re.compile(r"--album(?:[\s=]+|(?=\S))", re.I)
+
+
+def parse_pick(text):
+    """Parse a pick request. Returns dict or None.
+
+    Accepts:
+        slskd-get: [1] caribou
+        slskd-get: 1 caribou
+        slskd-get: caribou            (no number -> the top source)
+        slskd-get: [1] caribou --album Bloom
+        slskd-get: [1] caribou --album "Up in Flames"
+    """
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line.lower().startswith(PICK_MAGIC):
+            continue
+        rest = line[len(PICK_MAGIC):].strip()
+        if not rest:
+            continue
+
+        album = None
+        am = _ALBUM_FLAG_RE.search(rest)
+        if am:
+            album = rest[am.end():].strip().strip("\"'").strip() or None
+            rest = rest[:am.start()].strip()
+
+        m = _PICK_RE.match(rest)
+        if not m:
+            return None
+        query = re.sub(r"\s+", " ", (m.group("query") or "").strip())
+        if not query:
+            return None
+        idx = m.group("index")
+        return {
+            "index": int(idx) if idx else 1,
+            "query": query,
+            "album": album,
+        }
+    return None
+
+
 
 
 def has_marker(text):
@@ -91,6 +154,20 @@ def main():
             body = payload.decode("utf-8", errors="replace") if payload else ""
         except Exception:
             body = ""
+
+    # A pick is handled before anything else, and is a different action from a
+    # search: it must not also queue a query.
+    pick = parse_pick(subject) or parse_pick(body)
+    if pick and QC is not None:
+        # The pick runs on the VPS: the persisted offers and slskd both live
+        # there, and there is no shared filesystem between the two hosts. So it
+        # is posted like a queue entry rather than run locally.
+        print(f"slskd pipe: forwarding pick {pick} to the VPS", file=sys.stderr)
+        try:
+            QC.post_pick(pick["query"], pick["index"], album=pick.get("album"))
+        except Exception as e:  # noqa: BLE001
+            print(f"slskd pipe: could not forward pick: {e}", file=sys.stderr)
+        return 0
 
     # Does this message actually ask for a search?
     addressed_to_alias = any(a in to for a in ALIASES)

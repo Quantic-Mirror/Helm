@@ -1849,6 +1849,54 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"ok": True, "stored": store_backup_event(event)})
             return
 
+        if parsed.path == "/api/slskd/pick":
+            # Download a source from the offers the drainer persisted. Reached
+            # by the mail pipe on hyperion when you reply `slskd-get: [N] query`.
+            #
+            # Runs the pick in the background: enqueueing tries several peers and
+            # each attempt can take slskd's ~5s peer timeout, so a synchronous
+            # handler would hold the HTTP request (and the postfix pipe) open
+            # for a minute or more. The pick handler mails its own outcome.
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            query = body.get("query")
+            if not isinstance(query, str) or not query.strip():
+                self.send_json(400, {"error": "body must include a query"})
+                return
+            try:
+                index = int(body.get("index") or 1)
+            except (TypeError, ValueError):
+                index = 1
+            album = body.get("album") or None
+
+            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            pick_script = os.path.join(scripts_dir, "slskd_pick.py")
+            if not os.path.exists(pick_script):
+                self.send_json(500, {"error": "slskd_pick.py not found"})
+                return
+            try:
+                import subprocess
+                cmd = [sys.executable, pick_script, query.strip(), str(index)]
+                if album:
+                    cmd += ["--album", str(album)]
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
+                                 start_new_session=True,
+                                 env={**os.environ,
+                                      "SLSKD_SCRIPTS": scripts_dir})
+            except Exception as e:  # noqa: BLE001
+                self.send_json(500, {"error": f"could not start pick: {e}"})
+                return
+            self.send_json(202, {"ok": True, "started": True,
+                                 "query": query.strip(), "index": index})
+            return
+
         if parsed.path == "/api/slskd/queue":
             # Append Soulseek search queries to the pending queue. Reached by
             # the mail pipe on hyperion, which has no shared filesystem with
