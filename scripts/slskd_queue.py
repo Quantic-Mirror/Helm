@@ -87,6 +87,9 @@ def extract_queries(text):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        # Strip the marker only when it starts the line. A mid-word occurrence
+        # ("myslskd:plans") is left alone, so it becomes an ordinary query
+        # rather than being mangled into one.
         if line.lower().startswith(MAGIC):
             line = line[len(MAGIC):].strip()
         q = normalise_query(line)
