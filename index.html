@@ -226,6 +226,16 @@ body.theme-terminal #terminal-login-banner.visible {
 }
 #topbar h1.has-unread-mail .mail-badge { display: inline-flex; }
 
+/* The badge is clickable (marks mail read), so it needs a pointer and a
+   hover state — but only while there is actually something to clear. */
+#topbar h1 .mail-badge { cursor: pointer; }
+#topbar h1.has-unread-mail .mail-badge:hover {
+  background: #ff5a50;
+  transform: scale(1.08);
+}
+#topbar h1 .mail-badge:active { transform: scale(0.96); }
+.mail-badge { transition: background 0.15s, transform 0.1s; }
+
 /* Note: there is no light theme class in this codebase — applyTheme() only
    toggles theme-terminal and theme-color-{green,amber,white}, and all of them
    keep a dark background. So one fixed red is legible everywhere and no
@@ -9006,6 +9016,17 @@ const initialTab = VALID_TABS.includes(_hashTab) ? _hashTab : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
 
+// The unread-mail badge lives inside #helm-logo, whose onclick navigates to
+// the dashboard. Without stopPropagation a click meant to clear the badge
+// would also navigate away, which is wrong when you are trying to dismiss a
+// notification from another tab. Delegated rather than bound directly so it
+// survives any re-render of the topbar.
+document.getElementById('mail-badge').onclick = (e) => {
+  e.stopPropagation();
+  e.preventDefault();
+  clearMailIndicator();
+};
+
 const _profSel = document.getElementById('profile-switcher');
 if (_profSel) {
   _profSel.value = ACTIVE_PROFILE;                 // reflect the per-device choice set in load()
@@ -10685,11 +10706,19 @@ function updateMailIndicator(count) {
   const logo = document.getElementById('helm-logo');
   const badge = document.getElementById('mail-badge');
 
-  if (logo) logo.classList.toggle('has-unread-mail', count > 0);
+  if (logo) {
+    logo.classList.toggle('has-unread-mail', count > 0);
+    // The badge is the only clickable part of the logo; the wordmark still
+    // navigates to the dashboard.
+    logo.title = count > 0
+      ? `${count} unread message${count === 1 ? '' : 's'} — click the badge to mark read`
+      : 'Dashboard';
+  }
   if (badge) {
     // Cap the displayed number: "99+" stays legible in the pill, and a
     // four-digit count would blow out the topbar layout.
     badge.textContent = count > 99 ? '99+' : String(count);
+    badge.title = count > 0 ? 'Mark all as read' : '';
   }
   setFavicon(count > 0 ? HELM_FAVICON_MAIL : HELM_FAVICON_BASE);
 
@@ -10698,6 +10727,26 @@ function updateMailIndicator(count) {
   // writing document.title directly here — otherwise the next tab switch wipes
   // the prefix.
   if (typeof setDocumentTitle === 'function') setDocumentTitle();
+}
+
+// Mark everything read, then refresh the indicator immediately rather than
+// waiting up to 30s for the next poll — the click should feel instant.
+async function clearMailIndicator() {
+  if (mailUnreadCount === 0) return;
+  const previous = mailUnreadCount;
+  // Optimistic: drop the badge now, restore it if the request fails.
+  updateMailIndicator(0);
+  try {
+    const resp = await fetch('/api/notifications', {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    await fetchMailCount();
+  } catch (e) {
+    updateMailIndicator(previous);
+    toast('Could not mark mail read: ' + e.message);
+  }
 }
 
 async function fetchMailCount() {

@@ -605,6 +605,32 @@ def store_notification(n):
         return len(items), True
 
 
+def mark_notifications_read():
+    """Mark every notification read and return how many were flipped.
+
+    Reading mail actually happens in mutt on hyperion, so Helm never learns
+    about it. This is the explicit "I have seen it" action from the title-bar
+    badge instead — the user asserting the unread state is now stale.
+
+    Notifications are kept, not deleted: the badge count is what the user wants
+    gone, and keeping the rows means a reload does not resurrect a count the
+    user already dismissed.
+    """
+    with _notifications_lock:
+        items = get_notifications()
+        changed = 0
+        for n in items:
+            if not n.get("read"):
+                n["read"] = True
+                changed += 1
+        if changed:
+            tmp = NOTIFICATIONS_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"notifications": items, "updated_at": time.time()}, f)
+            os.replace(tmp, NOTIFICATIONS_FILE)
+        return changed, len(items)
+
+
 def get_backup_events():
     if not os.path.exists(BACKUP_EVENTS_FILE):
         return {"events": [], "updated_at": None}
@@ -1715,6 +1741,21 @@ class HelmHandler(SimpleHTTPRequestHandler):
             return
 
         super().do_GET()
+
+    # ── DELETE — mark notifications read ─────────────────────────────────────
+    # The action behind clicking the title-bar mail badge. Notifications are
+    # marked read rather than removed, so a page reload cannot resurrect a
+    # count the user already dismissed.
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/notifications":
+            if not self._require_auth():
+                return
+            changed, total = mark_notifications_read()
+            self.send_json(200, {"ok": True, "markedRead": changed, "total": total})
+            return
+
+        self.send_json(404, {"error": "Not found"})
 
     # ── PUT — last-write-wins, no version conflict rejection ──────────────────
     # The server is the single source of truth. Any client can write at any
