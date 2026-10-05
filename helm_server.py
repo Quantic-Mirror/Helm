@@ -1596,6 +1596,15 @@ class HelmHandler(SimpleHTTPRequestHandler):
         elif parsed.path.startswith("/api/") and not self._require_auth():
             return
 
+        if parsed.path == "/api/slskd/staging":
+            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            import slskd_live as LIVE
+            self.send_json(200, {"entries": LIVE.staging_list()})
+            return
+
         if parsed.path.startswith("/api/slskd/search/"):
             # Poll a live search started by POST /api/slskd/search.
             scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -1861,6 +1870,42 @@ class HelmHandler(SimpleHTTPRequestHandler):
             event.setdefault("message", "")
             event.setdefault("data", {})
             self.send_json(200, {"ok": True, "stored": store_backup_event(event)})
+            return
+
+        if parsed.path in ("/api/slskd/staging/remove", "/api/slskd/send", "/api/slskd/synced"):
+            # Staging list, favorites send, and the hyperion Inbox report.
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            import slskd_live as LIVE
+            if parsed.path == "/api/slskd/staging/remove":
+                eid = str(body.get("id") or "")
+                if not LIVE.remove_entry(eid):
+                    self.send_json(404, {"error": "no such staged entry"})
+                    return
+                self.send_json(200, {"ok": True})
+                return
+            if parsed.path == "/api/slskd/synced":
+                paths = body.get("paths")
+                if not isinstance(paths, list):
+                    self.send_json(400, {"error": "body must include a paths list"})
+                    return
+                self.send_json(200, {"ok": True, "total": LIVE.record_synced(paths)})
+                return
+            artist = (body.get("artist") or "").strip()
+            title = (body.get("song") or "").strip()
+            kind = body.get("kind")
+            if not artist or not title or kind not in ("track", "album"):
+                self.send_json(400, {"error": "body must include artist, song and kind (track|album)"})
+                return
+            eid = LIVE.start_send(artist, title, (body.get("album") or "").strip(), kind)
+            self.send_json(202, {"ok": True, "id": eid})
             return
 
         if parsed.path in ("/api/slskd/search", "/api/slskd/download"):

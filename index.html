@@ -2469,6 +2469,15 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .slskd-download-btn { margin-top: 8px; }
 .slskd-filters { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); margin: 8px 0; }
 .slskd-filters label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.slskd-staged-head { font-weight: 600; margin: 14px 0 4px; color: var(--text); }
+.slskd-staged-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.slskd-staged-info { flex: 1; min-width: 0; font-size: 13px; }
+.slskd-status { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-muted); min-width: 84px; text-align: center; }
+.slskd-status-queued { color: var(--accent); border-color: var(--accent); }
+.slskd-status-downloaded { color: #d9822b; border-color: #d9822b; }
+.slskd-status-synced { color: var(--green); border-color: var(--green); }
+.slskd-status-failed { color: #ff3b30; border-color: #ff3b30; }
+.musicx-soulseek-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .slskd-download-btn.done { background: var(--green-dim); border-color: var(--green); color: var(--green); cursor: default; }
 
 #audio-search-results:not(:empty) { margin-top: 14px; }
@@ -3338,6 +3347,8 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <p class="slskd-hint">Results appear here as the search finishes. Click “Download this source” to fetch one; finished files land in the music Inbox.</p>
     <div id="slskd-search-status" class="svc-loading" style="display:none;"></div>
     <div id="slskd-results" style="display:none;"></div>
+    <div class="slskd-staged-head">Downloads</div>
+    <div id="slskd-staged"></div>
   </div>
 
   <div class="music-tab-panel" id="audio-jobs"></div>
@@ -9566,6 +9577,79 @@ document.getElementById('slskd-results').addEventListener('click', async (e) => 
     setSlskdStatus(`Download failed: ${err.message}`, 'svc-error');
   }
 });
+// The staging list: every download started from the panel or from a favorite,
+// with its status. Clearing an entry only removes it from this list; the
+// download itself carries on.
+function renderSlskdStaged(entries) {
+  const el = document.getElementById('slskd-staged');
+  if (!el) return;
+  if (!entries.length) {
+    el.innerHTML = '<div class="svc-loading">Nothing staged yet.</div>';
+    return;
+  }
+  el.innerHTML = entries.map(e => {
+    const what = e.kind === 'track'
+      ? `${e.artist || ''} — ${e.title || ''}`
+      : (e.album || e.query || '');
+    const detail = e.kind === 'track'
+      ? 'track'
+      : `album · ${(e.files || []).length} files`;
+    const counts = e.fileCounts
+      ? Object.entries(e.fileCounts).map(([k, v]) => `${v} ${k}`).join(', ') : '';
+    const err = e.error ? `<div class="slskd-album">${escHtml(e.error)}</div>` : '';
+    return `
+      <div class="slskd-staged-row">
+        <span class="slskd-status slskd-status-${escHtml(e.status)}">${escHtml(e.status)}</span>
+        <div class="slskd-staged-info">
+          <strong>${escHtml(what)}</strong>
+          <span class="slskd-score">from ${escHtml(e.username || '—')} · ${escHtml(detail)}${counts ? ' · ' + escHtml(counts) : ''}</span>
+          ${err}
+        </div>
+        <button class="icon-btn danger" data-staged-remove="${escHtml(e.id)}" title="Clear from list">✕</button>
+      </div>`;
+  }).join('');
+}
+
+async function refreshSlskdStaged() {
+  try {
+    const data = await slskdApi('/api/slskd/staging');
+    renderSlskdStaged(data.entries);
+  } catch (e) {
+    // Leave the last list up; the next tick tries again.
+  }
+}
+
+document.getElementById('slskd-staged').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-staged-remove]');
+  if (!btn) return;
+  try {
+    await slskdApi('/api/slskd/staging/remove', { method: 'POST', body: JSON.stringify({ id: btn.dataset.stagedRemove }) });
+    refreshSlskdStaged();
+  } catch (err) {
+    toast(`Could not clear: ${err.message}`);
+  }
+});
+
+// Only poll while the Soulseek section is on screen.
+setInterval(() => {
+  const body = document.getElementById('music-soulseek-body');
+  if (body && body.classList.contains('active')) refreshSlskdStaged();
+}, 10000);
+
+// Send a favorited track or its album to the Soulseek queue.
+async function sendMusicxToSoulseek(entry, kind) {
+  try {
+    await slskdApi('/api/slskd/send', {
+      method: 'POST',
+      body: JSON.stringify({ artist: entry.artist, song: entry.song, album: entry.album || '', kind })
+    });
+    toast(`Sent to Soulseek: ${kind === 'album' ? (entry.album || entry.song) : entry.song}. See Downloads in the Soulseek tab.`);
+    refreshSlskdStaged();
+  } catch (err) {
+    toast(`Soulseek: ${err.message}`);
+  }
+}
+
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
 document.getElementById('logs-search-clear').onclick = () => {
@@ -11674,6 +11758,10 @@ function renderMusicXplorerPage() {
     <div class="musicx-detail-header">
       <div class="musicx-detail-song">${escHtml(selected.song)}</div>
       <div class="musicx-detail-artist">${escHtml(selected.artist)}</div>
+      <div class="musicx-soulseek-actions">
+        <button class="btn" id="musicx-sls-track" title="Queue the matching track from the best Soulseek source">⬇ Track on Soulseek</button>
+        <button class="btn" id="musicx-sls-album" title="Queue the whole album from the best Soulseek source${selected.album ? '' : ' (no album saved for this favorite, so the album is guessed from the search)'}">⬇ Whole album</button>
+      </div>
     </div>
     <div class="musicx-video-row">
       <div class="musicx-video-col">
@@ -11687,6 +11775,8 @@ function renderMusicXplorerPage() {
     </div>
   `;
   document.getElementById('musicx-repick-btn').onclick = () => openMusicxVideoPicker(selected);
+  document.getElementById('musicx-sls-track').onclick = () => sendMusicxToSoulseek(selected, 'track');
+  document.getElementById('musicx-sls-album').onclick = () => sendMusicxToSoulseek(selected, 'album');
 
   renderMusicxVideo(selected);
   renderMusicxExplorer(selected.artist);
