@@ -124,8 +124,36 @@ def _rewrite_cookie_for_iframe(cookie_value):
     return "; ".join(kept)
 
 
+def _cookie_name(set_cookie_value):
+    return set_cookie_value.split("=", 1)[0].strip()
+
+
+def _is_cookie_deletion(set_cookie_value):
+    low = set_cookie_value.lower()
+    return "max-age=0" in low or "1970" in low
+
+
+def _drop_superseded_cookie_deletions(headers):
+    """Drop a deletion of a cookie that the same response sets again.
+
+    Some apps clean up a legacy cookie by sending a deletion for a name, at a
+    path that happens to match the live cookie's path. When the app is served
+    under a path prefix (FreshRSS at /i/ behind this proxy), that deletion is
+    sent right after the new session cookie with the same name and path, so
+    the browser discards the session and login appears to do nothing. The set
+    wins: a deletion is only dropped when the same response also sets a live
+    cookie with that name. A deletion on its own is passed through unchanged.
+    """
+    live = {_cookie_name(v) for k, v in headers
+            if k.lower() == "set-cookie" and not _is_cookie_deletion(v)}
+    return [(k, v) for k, v in headers
+            if not (k.lower() == "set-cookie" and _is_cookie_deletion(v)
+                    and _cookie_name(v) in live)]
+
+
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def _send_headers(self, raw_headers):
+        raw_headers = _drop_superseded_cookie_deletions(list(raw_headers))
         for k, v in _rewrite_framing_headers(list(raw_headers)):
             if k.lower() in ("transfer-encoding", "connection"):
                 continue
