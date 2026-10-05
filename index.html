@@ -3054,7 +3054,21 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 </div>
 <div id="topbar">
   <h1 id="helm-logo" title="Dashboard" style="cursor:pointer">
-    <span>⚑</span>
+    <!-- Ship's wheel. stroke/fill use currentColor, same as the ⚑ glyph this
+         replaced, so it inherits the h1 colour under every theme. -->
+    <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"/>
+      <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/>
+      <path d="M14.6 12H21M13.84 13.84L18.36 18.36M12 14.6V21M10.16 13.84L5.64 18.36M9.4 12H3M10.16 10.16L5.64 5.64M12 9.4V3M13.84 10.16L18.36 5.64"/>
+      <circle cx="22.4" cy="12" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="19.35" cy="19.35" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="12" cy="22.4" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="4.65" cy="19.35" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="1.6" cy="12" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="4.65" cy="4.65" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="12" cy="1.6" r="1.2" fill="currentColor" stroke="none"/>
+      <circle cx="19.35" cy="4.65" r="1.2" fill="currentColor" stroke="none"/>
+    </svg></span>
     Helm
     <!-- Unread mail count. Populated by updateMailIndicator(); hidden when 0.
          Not a button: the mail itself is read in mutt, not here, so clicking
