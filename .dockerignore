@@ -18,3 +18,8 @@ searxng-data/
 memos-data/
 *.bak
 *.tar.gz
+freshrss-data/
+dailytxt-data/
+leafwiki-data/
+lyftr-data/
+kavita/
