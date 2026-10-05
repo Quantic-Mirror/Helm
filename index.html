@@ -2305,61 +2305,6 @@ body.theme-terminal .svc-dot-err::before { content: '[FAIL]'; color: var(--red);
   font-size: 13px; color: var(--text-dim);
 }
 
-/* Backup Pipeline page */
-#backups-topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 16px;
-}
-#backups-last-updated { font-size: 11px; color: var(--text-dim); }
-
-#backups-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.bp-stage-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px 16px;
-  transition: border-color 0.15s;
-}
-.bp-stage-card-ok   { border-color: rgba(63,185,80,0.3); }
-.bp-stage-card-warn { border-color: rgba(227,179,65,0.3); }
-.bp-stage-card-err  { border-color: rgba(248,81,73,0.3); }
-.bp-stage-card-none { border-color: var(--border); }
-
-.bp-stage-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.bp-stage-name {
-  font-family: var(--font-display);
-  font-size: 14px; font-weight: 600; color: var(--text); flex: 1;
-}
-.bp-dot {
-  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
-  box-shadow: 0 0 6px currentColor;
-}
-.bp-dot-ok   { background: var(--green); color: var(--green); }
-.bp-dot-warn { background: var(--amber); color: var(--amber); animation: bp-pulse 1.4s ease-in-out infinite; }
-.bp-dot-err  { background: var(--red);   color: var(--red); }
-.bp-dot-none { background: var(--text-dim); color: var(--text-dim); }
-@keyframes bp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-
-/* Terminal theme: bracket-text status instead of a colored dot, same
-   precedent as .svc-dot's [OK]/[FAIL] treatment. */
-body.theme-terminal .bp-dot {
-  width: auto; height: auto; border-radius: 0; background: none !important;
-  box-shadow: none; font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
-  animation: none;
-}
-body.theme-terminal .bp-dot-ok::before   { content: '[OK]'; }
-body.theme-terminal .bp-dot-warn::before { content: '[RUN]'; color: var(--amber); }
-body.theme-terminal .bp-dot-err::before  { content: '[FAIL]'; color: var(--red); }
-body.theme-terminal .bp-dot-none::before { content: '[--]'; }
-
-.bp-stage-status { font-size: 12px; color: var(--text-muted); }
-.bp-stage-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-
 .bp-events-list {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -3066,7 +3011,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#news" data-tab="news">📰 News</a>
     <a class="tab-btn" href="#calendar" data-tab="calendar">📅 Calendar</a>
     <a class="tab-btn" href="#services" data-tab="services">🖥 Services</a>
-    <a class="tab-btn" href="#backups" data-tab="backups">💾 Backup Pipeline</a>
     <a class="tab-btn" href="#music" data-tab="music">🎵 Music</a>
     <a class="tab-btn" href="#leafwiki" data-tab="leafwiki">📓 Wiki</a>
     <a class="tab-btn" href="#journal" data-tab="journal">📔 Journal</a>
@@ -3214,16 +3158,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   </div>
   <div id="network-info-section"></div>
   <div id="services-grid"></div>
-</div>
-
-<!-- BACKUP PIPELINE PAGE -->
-<div id="backups-page" style="display:none">
-  <div id="backups-topbar">
-    <span id="backups-last-updated"></span>
-    <button class="btn" id="btn-refresh-backups">↺ Refresh</button>
-  </div>
-  <div id="backups-summary"></div>
-  <div id="backups-events"></div>
 </div>
 
 <!-- MUSIC PAGE (Audio Grabber + musicXplorer merged) — a full-width tab bar
@@ -3605,9 +3539,6 @@ let newsViewMode = 'cards';
 let servicesData = [];
 let servicesPollTimer = null;
 const SERVICES_POLL_MS = 2 * 60 * 1000;
-let backupsData = [];
-let backupsPollTimer = null;
-const BACKUPS_POLL_MS = 30 * 1000;
 let logsData = [];
 let logsPollTimer = null;
 const LOGS_POLL_MS = 15 * 1000;
@@ -8976,7 +8907,7 @@ setTimeout(startMailPolling, 1500);
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'backups', 'music', 'logs', 'leafwiki', 'journal', 'books'];
+const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'music', 'logs', 'leafwiki', 'journal', 'books'];
 // Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
 // Music tab — redirect anyone with an old bookmarked/shared hash instead of
 // falling through to Dashboard.
@@ -9194,7 +9125,6 @@ function switchTab(tab) {
   show('news-page',      tab === 'news');
   show('calendar-page',  tab === 'calendar');
   show('services-page',  tab === 'services');
-  show('backups-page',   tab === 'backups');
   show('music-page',     tab === 'music');
   show('leafwiki-page',  tab === 'leafwiki');
   show('dailytxt-page',  tab === 'journal');
@@ -9214,8 +9144,6 @@ function switchTab(tab) {
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'services')  { renderServicesPage(); startServicesPolling(); }
   else stopServicesPolling();
-  if (tab === 'backups')   { fetchBackupEvents(); startBackupsPolling(); }
-  else stopBackupsPolling();
   if (tab === 'music')     { renderMusicXplorerPage(); }
   if (tab === 'logs')      {
     fetchLogs(); startLogsPolling();
@@ -9259,7 +9187,6 @@ document.getElementById('btn-invidious-toggle').oncontextmenu = (e) => { e.preve
 document.getElementById('btn-invidious-config').onclick = changeInvidiousInstance;
 document.getElementById('btn-add-news-source').onclick = addNewsSource;
 document.getElementById('btn-refresh-services').onclick = fetchServices;
-document.getElementById('btn-refresh-backups').onclick = fetchBackupEvents;
 document.getElementById('btn-refresh-logs').onclick = fetchLogs;
 document.getElementById('musicx-yt-form').onsubmit = (e) => {
   e.preventDefault();
@@ -10730,127 +10657,6 @@ function startServicesPolling() {
 function stopServicesPolling() {
   clearInterval(servicesPollTimer);
   servicesPollTimer = null;
-}
-
-// ── BACKUP PIPELINE PAGE ─────────────────────────────════════════════════════
-// Polls /api/backup-events every 30s while the tab is active. helm_server.py
-// serves this straight off backup_events.json, which it writes on each
-// token-authed POST /api/backup-events from emit_event.py (called by the
-// external backup scripts). Two stage cards (Hyperion → GitHub, popcorn → R2)
-// show the latest status light for each pipeline stage, plus a scrolling list
-// of the most recent raw events. hyperion_backup used to mean "rsync to
-// popcorn's staging dir" under the old two-hop pipeline; the backup overhaul
-// (see helm-and-backup-runbook.md Part 2) replaced that with hyperion pushing
-// chezmoi/gopass straight to GitHub, so the id stayed but the label changed —
-// popcorn now only pulls from GitHub to mirror into R2 (r2_sync), it's no
-// longer a relay hyperion pushes through.
-// ════════════════════════════════════════════════════════════════════════════
-
-const BACKUP_STAGES = [
-  { id: 'hyperion_backup', label: 'Hyperion → GitHub' },
-  { id: 'r2_sync',         label: 'popcorn → R2' },
-];
-
-async function fetchBackupEvents() {
-  const hasBackend = await checkLocalBackend();
-  if (!hasBackend) {
-    document.getElementById('backups-events').innerHTML =
-      '<div class="svc-error">Backup pipeline monitoring requires the local backend (helm_server.py). Not reachable.</div>';
-    return;
-  }
-  try {
-    const resp = await fetch('/api/backup-events', { signal: AbortSignal.timeout(15000) });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    backupsData = data.events || [];
-    renderBackupsPage();
-    const el = document.getElementById('backups-last-updated');
-    if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  } catch(e) {
-    document.getElementById('backups-events').innerHTML =
-      `<div class="svc-error">Could not fetch backup events: ${escHtml(e.message)}</div>`;
-  }
-}
-
-function renderBackupsPage() {
-  const summaryEl = document.getElementById('backups-summary');
-  const eventsEl = document.getElementById('backups-events');
-  if (!summaryEl || !eventsEl) return;
-
-  summaryEl.innerHTML = BACKUP_STAGES.map(stage => buildBackupStageCardHTML(stage)).join('');
-
-  if (!backupsData.length) {
-    eventsEl.innerHTML = '<div class="svc-loading">No backup events recorded yet.</div>';
-    return;
-  }
-
-  // Worker appends newest-last; show newest-first, most recent 100 rows.
-  const recent = backupsData.slice(-100).reverse();
-  eventsEl.innerHTML = `<div class="bp-events-list">${recent.map(buildBackupEventRowHTML).join('')}</div>`;
-}
-
-function buildBackupStageCardHTML(stage) {
-  // Most recent event for this stage, regardless of --name (per-folder vs
-  // overall) -- "the last thing that happened here" is what a status light
-  // should answer.
-  const stageEvents = backupsData.filter(ev => ev.stage === stage.id);
-  const last = stageEvents.length ? stageEvents[stageEvents.length - 1] : null;
-
-  const dotClass = !last ? 'bp-dot-none'
-    : last.status === 'ok'      ? 'bp-dot-ok'
-    : last.status === 'started' ? 'bp-dot-warn'
-    : 'bp-dot-err';
-  const cardClass = !last ? 'bp-stage-card-none'
-    : last.status === 'ok'      ? 'bp-stage-card-ok'
-    : last.status === 'started' ? 'bp-stage-card-warn'
-    : 'bp-stage-card-err';
-
-  const statusText = !last ? 'No events yet'
-    : last.status === 'ok'      ? 'OK'
-    : last.status === 'started' ? 'Running…'
-    : 'Failed';
-
-  const meta = last
-    ? `${new Date(last.ts * 1000).toLocaleString()}${last.name ? ' — ' + escHtml(last.name) : ''}`
-    : '';
-
-  return `
-    <div class="bp-stage-card ${cardClass}">
-      <div class="bp-stage-header">
-        <span class="bp-dot ${dotClass}"></span>
-        <span class="bp-stage-name">${escHtml(stage.label)}</span>
-      </div>
-      <div class="bp-stage-status">${statusText}</div>
-      ${meta ? `<div class="bp-stage-meta">${meta}</div>` : ''}
-      ${last && last.message ? `<div class="bp-stage-meta">${escHtml(last.message)}</div>` : ''}
-    </div>`;
-}
-
-function buildBackupEventRowHTML(ev) {
-  const dotClass = ev.status === 'ok' ? 'bp-dot-ok'
-    : ev.status === 'started' ? 'bp-dot-warn'
-    : 'bp-dot-err';
-  const time = ev.ts ? new Date(ev.ts * 1000).toLocaleString() : '';
-  return `
-    <div class="bp-event-row">
-      <span class="bp-dot ${dotClass}"></span>
-      <span class="bp-event-time">${escHtml(time)}</span>
-      <span class="bp-event-host">${escHtml(ev.host || '')}</span>
-      <span class="bp-event-stage">${escHtml(ev.stage || '')}</span>
-      ${ev.name ? `<span class="bp-event-name">${escHtml(ev.name)}</span>` : ''}
-      <span class="bp-event-message">${escHtml(ev.message || '')}</span>
-    </div>`;
-}
-
-function startBackupsPolling() {
-  if (!backupsPollTimer) {
-    backupsPollTimer = setInterval(fetchBackupEvents, BACKUPS_POLL_MS);
-  }
-}
-
-function stopBackupsPolling() {
-  clearInterval(backupsPollTimer);
-  backupsPollTimer = null;
 }
 
 // ── UNREAD MAIL INDICATOR ────────────────────────────────────────────────────
