@@ -3706,7 +3706,7 @@ let MUSIC_TAB_TOUCHED = false;
 // later const there threw "Cannot access before initialization", which
 // aborted the rest of this top-level script — silently breaking every
 // .onclick wiring after that point, page-wide, not just on the Music tab).
-const MUSIC_SECTION_BODY_IDS = { releases: 'music-releases-body', download: 'music-download-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'music-favorites-panel' };
+const MUSIC_SECTION_BODY_IDS = { releases: 'music-releases-body', download: 'music-download-body', soulseek: 'music-soulseek-body', jobs: 'audio-jobs', files: 'audio-files', favorites: 'music-favorites-panel' };
 // Moved up from next to fetchMusicBrainz() further down the file, same TDZ
 // reason — see the comment left at that call site.
 let MUSICX_MB_LAST_CALL = 0;
