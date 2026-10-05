@@ -972,6 +972,20 @@ MONITORED_SERVICES = [
         "container": "slskd",
         "controllable": True,
     },
+    {
+        "id":        "forgejo",
+        "label":     "Forgejo",
+        "type":      "docker",
+        "container": "forgejo",
+        "controllable": True,
+    },
+    {
+        "id":        "stalwart",
+        "label":     "Stalwart (mail)",
+        "type":      "docker",
+        "container": "stalwart",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
