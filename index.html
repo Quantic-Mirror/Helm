@@ -2455,6 +2455,15 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .slskd-hint { margin: 8px 0; color: var(--text-muted); font-size: 12px; }
 .slskd-hint code { background: var(--surface-2); padding: 1px 4px; border-radius: 3px; }
 
+.slskd-offer-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+.slskd-offer-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.slskd-offer-header strong { color: var(--text); }
+.slskd-score { color: var(--text-muted); font-size: 12px; font-weight: 400; }
+.slskd-offer-albums { margin: 8px 0; }
+.slskd-album { font-size: 12px; color: var(--text-muted); padding-left: 16px; margin: 4px 0; }
+.slskd-download-btn { margin-top: 8px; }
+.slskd-download-btn.done { background: var(--green-dim); border-color: var(--green); color: var(--green); cursor: default; }
+
 #audio-search-results:not(:empty) { margin-top: 14px; }
 .audio-pick-btn { flex-shrink: 0; padding: 4px 10px; font-size: 11px; }
 
@@ -9388,6 +9397,105 @@ document.getElementById('btn-slskd-search').onclick = async () => {
 document.getElementById('slskd-search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-slskd-search').onclick();
 });
+
+// Fetch and render persisted offers for a query, with Download buttons.
+async function fetchSlskdOffers(query) {
+  const resultsEl = document.getElementById('slskd-results');
+  const status = document.getElementById('slskd-search-status');
+  resultsEl.style.display = 'none';
+  resultsEl.innerHTML = '';
+
+  try {
+    const token = localStorage.getItem('helm_token');
+    const res = await fetch('/api/slskd/offers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ query })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = `Failed to load offers: ${data.error || res.status}`;
+      status.className = 'svc-error';
+      return;
+    }
+    if (!data.offers?.length) {
+      status.textContent = 'No offers stored yet. The drainer runs every 5 minutes.';
+      status.className = 'svc-warning';
+      return;
+    }
+
+    // Render each source as a card with Download button
+    const frag = document.createDocumentFragment();
+    data.offers.forEach(o => {
+      const card = document.createElement('div');
+      card.className = 'slskd-offer-card';
+      const albumsHtml = o.albums.map(a =>
+        `<div class="slskd-album">💿 ${a.name} — ${a.tracks} tracks, ${a.size_mb} MB</div>`
+      ).join('');
+      card.innerHTML = `
+        <div class="slskd-offer-header">
+          <strong>Source [${o.index}]</strong> ${o.username}
+          ${o.score !== undefined ? `<span class="slskd-score">score ${Math.round(o.score)}</span>` : ''}
+        </div>
+        <div class="slskd-offer-albums">${albumsHtml}</div>
+        <button class="btn slskd-download-btn" data-query="${query}" data-index="${o.index}">Download this source</button>
+      `;
+      frag.appendChild(card);
+    });
+    resultsEl.appendChild(frag);
+    resultsEl.style.display = 'block';
+    status.textContent = `Showing ${data.offers.length} source(s) from the last search.`;
+    status.className = 'svc-ok';
+  } catch (e) {
+    status.textContent = `Error loading offers: ${e.message}`;
+    status.className = 'svc-error';
+  }
+}
+
+// Download button handler: POST to /api/slskd/pick
+document.getElementById('slskd-results').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.slskd-download-btn');
+  if (!btn) return;
+  const query = btn.dataset.query;
+  const index = parseInt(btn.dataset.index, 10);
+  btn.disabled = true;
+  btn.textContent = 'Queued…';
+
+  try {
+    const token = localStorage.getItem('helm_token');
+    const res = await fetch('/api/slskd/pick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json',
+                 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ query, index })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      btn.textContent = 'Download started (check mail for status)';
+      btn.className = 'btn slskd-download-btn done';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Download';
+      alert(`Failed: ${data.error || res.status}`);
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Download';
+    alert(`Error: ${e.message}`);
+  }
+});
+
+// Auto-fetch offers when entering the Soulseek tab if we have a recent query
+const SOULSEEK_TAB_BTN = document.querySelector('.music-tab-btn[data-music-section="soulseek"]');
+if (SOULSEEK_TAB_BTN) {
+  SOULSEEK_TAB_BTN.addEventListener('click', () => {
+    const input = document.getElementById('slskd-search-input');
+    if (input.value.trim()) {
+      fetchSlskdOffers(input.value.trim());
+    }
+  });
+}
 document.getElementById('logs-service-filter').onchange = fetchLogs;
 document.getElementById('logs-search').oninput = renderLogs;
 document.getElementById('logs-search-clear').onclick = () => {

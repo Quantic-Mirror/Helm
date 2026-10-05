@@ -1849,6 +1849,57 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"ok": True, "stored": store_backup_event(event)})
             return
 
+        if parsed.path == "/api/slskd/offers":
+            # Read persisted offers for a query. Used by the UI to render results
+            # with Download buttons instead of requiring a mail reply.
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            query = (body.get("query") or "").strip()
+            if not query:
+                self.send_json(400, {"error": "body must include a query"})
+                return
+
+            import slskd_offers as OFF
+            import slskd_search as S
+            state_dir = os.environ.get("HELM_STATE_DIR", "/app/state")
+            offers = OFF.get_offers(state_dir, query=query)
+            if not offers:
+                self.send_json(200, {"query": query, "offers": []})
+                return
+
+            # Only the fields needed for UI rendering
+            ui_offers = []
+            for o in offers:
+                # Derive album groups from the file list
+                import slskd_search as S
+                groups = {}
+                for f in o.get("files") or []:
+                    ext = (f.get("extension") or "").lower().lstrip(".")
+                    if ext not in S.AUDIO_EXT:
+                        continue
+                    _artist, album = S.guess_artist_album(f.get("filename"))
+                    groups.setdefault(album or "(unknown)", []).append(f)
+                album_list = []
+                for album, files in sorted(groups.items(),
+                                           key=lambda kv: -len(kv[1]))[:5]:
+                    mb = sum(f.get("size") or 0 for f in files) / 1e6
+                    album_list.append({
+                        "name": album,
+                        "tracks": len(files),
+                        "size_mb": round(mb, 1)
+                    })
+                ui_offers.append({
+                    "index": int(o["id"].split(":")[-1]) + 1,
+                    "username": o["username"],
+                    "score": o.get("score"),
+                    "albums": album_list
+                })
+            self.send_json(200, {"query": query, "offers": ui_offers})
+            return
+
         if parsed.path == "/api/slskd/pick":
             # Download a source from the offers the drainer persisted. Reached
             # by the mail pipe on hyperion when you reply `slskd-get: [N] query`.
