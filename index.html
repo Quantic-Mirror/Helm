@@ -2467,6 +2467,8 @@ body.theme-terminal .bp-dot-none::before { content: '[--]'; }
 .slskd-offer-albums { margin: 8px 0; }
 .slskd-album { font-size: 12px; color: var(--text-muted); padding-left: 16px; margin: 4px 0; }
 .slskd-download-btn { margin-top: 8px; }
+.slskd-filters { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); margin: 8px 0; }
+.slskd-filters label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .slskd-download-btn.done { background: var(--green-dim); border-color: var(--green); color: var(--green); cursor: default; }
 
 #audio-search-results:not(:empty) { margin-top: 14px; }
@@ -3328,6 +3330,10 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
         <input id="slskd-search-input" type="text" placeholder="Artist, album, or track..." autocomplete="off">
       </div>
       <button class="btn" id="btn-slskd-search" style="align-self: flex-end;">Search</button>
+    </div>
+    <div class="slskd-filters">
+      <label><input type="checkbox" id="slskd-hide-busy" checked> Hide sources with no free slot</label>
+      <label><input type="checkbox" id="slskd-hide-locked" checked> Hide locked results</label>
     </div>
     <p class="slskd-hint">Results appear here as the search finishes. Click “Download this source” to fetch one; finished files land in the music Inbox.</p>
     <div id="slskd-search-status" class="svc-loading" style="display:none;"></div>
@@ -9389,6 +9395,7 @@ document.querySelectorAll('.music-tab-btn').forEach(btn => {
 // VPS, and hyperion's Inbox sync copies them over once they finish.
 let SLSKD_SEARCH_ID = null;
 let SLSKD_POLL_TIMER = null;
+let SLSKD_LAST = null;
 
 function setSlskdStatus(text, cls) {
   const status = document.getElementById('slskd-search-status');
@@ -9445,6 +9452,7 @@ async function pollSlskdSearch() {
       setSlskdStatus(`Search failed: ${data.error}`, 'svc-error');
       return;
     }
+    SLSKD_LAST = data;
     if (resultsEl.dataset.searchId !== sid) renderSlskdSearch(data);
     applySlskdPicks(data.picks);
     if (resultsEl.querySelector('.slskd-download-btn[data-pending]')) {
@@ -9455,27 +9463,45 @@ async function pollSlskdSearch() {
   }
 }
 
+// The filters hide results on the client only, so changing them never searches
+// again. A hidden source keeps its real index, so its Download button still
+// refers to the right source on the server.
+function slskdPassesFilters(o) {
+  if (document.getElementById('slskd-hide-busy').checked && !o.hasFreeSlot) return false;
+  if (document.getElementById('slskd-hide-locked').checked && o.locked > 0) return false;
+  return true;
+}
+
 function renderSlskdSearch(data) {
+  SLSKD_LAST = data;
   const resultsEl = document.getElementById('slskd-results');
-  if (!data.offers.length) {
-    setSlskdStatus(`No sources found for “${data.query}”.`, 'svc-warning');
-    return;
-  }
+  const shown = data.offers.filter(slskdPassesFilters);
   resultsEl.innerHTML = '';
   resultsEl.dataset.searchId = data.searchId;
+  if (!shown.length) {
+    resultsEl.style.display = 'none';
+    setSlskdStatus(data.offers.length
+      ? `All ${data.offers.length} source(s) are hidden by the filters above.`
+      : `No sources found for “${data.query}”.`, 'svc-warning');
+    return;
+  }
   const frag = document.createDocumentFragment();
-  data.offers.forEach(o => {
+  shown.forEach(o => {
     const card = document.createElement('div');
     card.className = 'slskd-offer-card';
     const albumsHtml = o.albums.map(a =>
       `<div class="slskd-album">💿 ${escHtml(a.name)} — ${a.tracks} tracks, ${a.size_mb} MB</div>`
     ).join('');
-    const score = o.score !== undefined && o.score !== null
-      ? `<span class="slskd-score">score ${Math.round(o.score)}</span>` : '';
+    const details = [
+      o.score !== undefined && o.score !== null ? `score ${Math.round(o.score)}` : '',
+      o.hasFreeSlot ? 'free slot' : 'no free slot',
+      o.queueLength != null ? `queue ${o.queueLength}` : '',
+      o.locked > 0 ? `${o.locked} locked` : '',
+    ].filter(Boolean).join(' · ');
     card.innerHTML = `
       <div class="slskd-offer-header">
         <strong>Source [${o.index}]</strong> ${escHtml(o.username)}
-        ${score}
+        <span class="slskd-score">${escHtml(details)}</span>
       </div>
       <div class="slskd-offer-albums">${albumsHtml}</div>
       <button class="btn slskd-download-btn" data-index="${o.index}">Download this source</button>
@@ -9483,9 +9509,16 @@ function renderSlskdSearch(data) {
     frag.appendChild(card);
   });
   resultsEl.appendChild(frag);
+  applySlskdPicks(data.picks);
   resultsEl.style.display = 'block';
-  setSlskdStatus(`${data.offers.length} source(s) for “${data.query}”. Downloads go to the Inbox when they finish.`, 'svc-ok');
+  setSlskdStatus(`${shown.length} of ${data.offers.length} source(s) for “${data.query}”. Downloads go to the Inbox when they finish.`, 'svc-ok');
 }
+
+['slskd-hide-busy', 'slskd-hide-locked'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    if (SLSKD_LAST) renderSlskdSearch(SLSKD_LAST);
+  });
+});
 
 // Show each pick's outcome on its button. A button stays marked pending until
 // the server has a result for it, and pollSlskdSearch keeps polling while any
@@ -9493,7 +9526,13 @@ function renderSlskdSearch(data) {
 function applySlskdPicks(picks) {
   document.querySelectorAll('#slskd-results .slskd-download-btn').forEach(btn => {
     const p = picks[btn.dataset.index];
-    if (!p || p.state === 'starting') return;
+    if (p && p.state === 'starting') {
+      btn.disabled = true;
+      btn.dataset.pending = '1';
+      btn.textContent = 'Starting…';
+      return;
+    }
+    if (!p) return;
     delete btn.dataset.pending;
     if (p.state === 'queued') {
       btn.disabled = true;

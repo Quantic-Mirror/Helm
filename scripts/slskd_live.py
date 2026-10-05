@@ -19,6 +19,9 @@ import slskd_pick as P
 import slskd_search as S
 
 MAX_KEPT = 20
+# More than the mail digest shows (D.MAX_SOURCES): the panel hides busy and
+# locked sources by default, so it needs spares to fill the list.
+LIVE_SOURCES = 30
 _LOCK = threading.Lock()
 _SEARCHES = {}
 
@@ -40,6 +43,9 @@ def _ui_offer(offer, index):
         "index": index,
         "username": offer["username"],
         "score": offer.get("score"),
+        "hasFreeSlot": bool(offer.get("has_free_slot")),
+        "queueLength": offer.get("queue_length"),
+        "locked": offer.get("locked") or 0,
         "albums": albums,
     }
 
@@ -57,7 +63,7 @@ def _run_search(sid, query):
         client = S.Client()
         rsid, _rec = client.search(query)
         responses = client.responses(rsid)
-        ranked = S.rank(query, responses, limit=D.MAX_SOURCES)
+        ranked = S.rank(query, responses, limit=LIVE_SOURCES)
         offers = D.build_offers(query, {"id": rsid, "ranked": ranked})
         status, error = "done", None
     except S.SlskdError as e:

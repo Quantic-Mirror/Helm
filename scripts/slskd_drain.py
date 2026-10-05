@@ -159,6 +159,9 @@ def build_offers(query, result):
             "score": info["score"],
             "searchId": result["id"],
             "artist": info["artist"],
+            "has_free_slot": info["has_free_slot"],
+            "queue_length": info["queue_length"],
+            "locked": info["locked"],
             "files": audio,
         })
     return entries
