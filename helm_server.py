@@ -1849,6 +1849,38 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"ok": True, "stored": store_backup_event(event)})
             return
 
+        if parsed.path == "/api/slskd/queue":
+            # Append Soulseek search queries to the pending queue. Reached by
+            # the mail pipe on hyperion, which has no shared filesystem with
+            # this host (/mnt/SharedStuff is a local NTFS mount on hyperion
+            # only), so the queue lives here and the pipe posts to it over the
+            # tailnet.
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            queries = body.get("queries")
+            if not isinstance(queries, list):
+                self.send_json(400, {"error": "body must include a queries list"})
+                return
+            source = str(body.get("source") or "api")[:40]
+            # The queue module lives in scripts/ next to this file, which is not
+            # on sys.path for a container process.
+            scripts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "scripts")
+            if scripts_dir not in sys.path:
+                sys.path.insert(0, scripts_dir)
+            try:
+                import slskd_queue
+            except Exception as e:  # noqa: BLE001
+                self.send_json(500, {"error": f"queue module unavailable: {e}"})
+                return
+            added = slskd_queue.enqueue([q for q in queries if isinstance(q, str)],
+                                        source=source)
+            self.send_json(200, {"ok": True, "added": added})
+            return
+
         if parsed.path == "/api/notifications":
             # A mail arrived on hyperion; its postfix pipe reports the headers
             # here so the Helm widget can show it. Reached over the tailnet

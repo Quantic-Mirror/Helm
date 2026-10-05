@@ -24,14 +24,14 @@ import sys
 sys.path.insert(0, os.environ.get(
     "SLSKD_SCRIPTS", "/home/isaboo/repos/Helm/scripts"))
 
-# Import defensively: a broken queue module must not take the Helm pipe down
-# with it, because both run from the same ~/.forward.
+# Import defensively: a broken module must not take the Helm pipe down with it,
+# because both run from the same ~/.forward.
 try:
-    import slskd_queue as Q
+    import slskd_queue_client as QC
 except Exception as e:  # noqa: BLE001
-    print(f"slskd pipe: queue module unavailable ({e}); skipping",
+    print(f"slskd pipe: queue client unavailable ({e}); skipping",
           file=sys.stderr)
-    Q = None
+    QC = None
 
 MAGIC = "slskd:"
 ALIASES = {"slskd@hyperion", "search@hyperion", "slskd-search@hyperion"}
@@ -75,7 +75,6 @@ def main():
 
     subject = header("Subject")
     to = header("To").lower()
-    sender = header("From")
 
     body = ""
     if msg.is_multipart():
@@ -98,7 +97,7 @@ def main():
     if not (addressed_to_alias or has_marker(subject) or has_marker(body)):
         return 0
 
-    if Q is None:
+    if QC is None:
         return 0
 
     # The subject is searched too: "slskd: aphex twin" as a subject line is the
@@ -109,9 +108,15 @@ def main():
     if addressed_to_alias or has_marker(subject):
         haystack = subject + "\n" + body
 
-    queries = Q.extract_queries(haystack)
-    # Strip the marker from the subject before parsing so "slskd: X" is not
-    # double-counted with an identical body line.
+    try:
+        import slskd_queue
+        queries = slskd_queue.extract_queries(haystack)
+    except Exception as e:  # noqa: BLE001
+        print(f"slskd pipe: could not parse queries: {e}", file=sys.stderr)
+        return 0
+
+    # The same query can arrive as both a marked subject and a body line; keep
+    # one of each.
     seen, uniq = set(), []
     for q in queries:
         k = q.lower()
@@ -123,13 +128,8 @@ def main():
         print("slskd pipe: marker present but no usable query", file=sys.stderr)
         return 0
 
-    source = "mail"
     try:
-        # Prefer a subject-derived source so the notification can say where it
-        # came from without re-parsing the address later.
-        if sender and "root@" not in sender.lower():
-            source = "mail"
-        added = Q.enqueue(uniq, source=source)
+        added = QC.post_queries(uniq, source="mail")
     except Exception as e:  # noqa: BLE001
         print(f"slskd pipe: enqueue failed: {e}", file=sys.stderr)
         return 0
