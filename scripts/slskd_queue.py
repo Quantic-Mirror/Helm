@@ -20,7 +20,32 @@ import os
 import sys
 import time
 
-STATE = os.environ.get("SLSKD_STATE_DIR", "/home/isaboo/helm/data")
+# Where the queue file lives.
+#
+# This module is imported in TWO places with different filesystem views:
+#   - the helm container, where the state dir is /app/state (compose bind mount)
+#   - the VPS host, where it is ./data relative to the checkout
+# So the default cannot be a host path. Prefer the container's own convention
+# when it exists, and let SLSKD_STATE_DIR override either way.
+#
+# Getting this wrong raised PermissionError on /home/isaboo from inside the
+# container (that path does not exist there and /app is not writable outside
+# the state mount), which surfaced as a dropped connection with no response.
+
+
+def _default_state_dir():
+    # Inside the container the state dir is bind-mounted at /app/state.
+    if os.path.isdir("/app/state"):
+        return "/app/state"
+    # On the host, ./data next to this checkout.
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.join(os.path.dirname(here), "data")
+    if os.path.isdir(candidate):
+        return candidate
+    return "/tmp"
+
+
+STATE = os.environ.get("SLSKD_STATE_DIR") or _default_state_dir()
 QUEUE = os.path.join(STATE, "slskd_queue.txt")
 SEEN = os.path.join(STATE, "slskd_seen.json")
 

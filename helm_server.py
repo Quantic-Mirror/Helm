@@ -1876,8 +1876,15 @@ class HelmHandler(SimpleHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 self.send_json(500, {"error": f"queue module unavailable: {e}"})
                 return
-            added = slskd_queue.enqueue([q for q in queries if isinstance(q, str)],
-                                        source=source)
+            try:
+                added = slskd_queue.enqueue([q for q in queries if isinstance(q, str)],
+                                            source=source)
+            except Exception as e:  # noqa: BLE001
+                # An unhandled exception here drops the connection with no
+                # response, which the client sees as a transport error rather
+                # than as a server fault. Return a real status.
+                self.send_json(500, {"error": f"enqueue failed: {e}"})
+                return
             self.send_json(200, {"ok": True, "added": added})
             return
 
