@@ -559,6 +559,51 @@ BACKUP_KEEP_PER_KEY  = 2     # keep this many events per distinct (stage, name)
 BACKUP_MAX_EVENTS    = 500   # flat cap after per-key pruning
 _backup_events_lock  = threading.Lock()
 
+# Mail-arrival notifications for the Helm mail widget.
+#
+# These are deliberately NOT the same store as the app state: mail arrives
+# from a machine that only has the Helm bearer token and cannot PUT state, so
+# a server-side append-only file (like backup_events.json above) is the only
+# shape that works. Bodies are never stored — only who/what/when — because
+# this file is included in state backups and synced between devices.
+NOTIFICATIONS_FILE      = os.path.join(STATE_DIR, "notifications.json")
+NOTIFICATIONS_MAX       = 100     # flat cap, oldest pruned first
+_notifications_lock     = threading.Lock()
+
+
+def get_notifications():
+    """Read the notifications list from disk. Missing/corrupt file => empty."""
+    try:
+        with open(NOTIFICATIONS_FILE) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    items = data.get("notifications")
+    return items if isinstance(items, list) else []
+
+
+def store_notification(n):
+    """Append one notification, cap the list, write atomically (tmp + replace).
+
+    De-duplicates on (subject, from, receivedAt): postfix can invoke the pipe
+    more than once for a single message during a queue flush, and a duplicated
+    row is visible as a duplicated notification in the widget.
+    """
+    with _notifications_lock:
+        items = get_notifications()
+        ident = (n.get("subject"), n.get("from"), n.get("receivedAt"))
+        for existing in items:
+            if (existing.get("subject"), existing.get("from"),
+                    existing.get("receivedAt")) == ident:
+                return len(items), False
+        items.append(n)
+        items = items[-NOTIFICATIONS_MAX:]
+        tmp = NOTIFICATIONS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"notifications": items, "updated_at": time.time()}, f)
+        os.replace(tmp, NOTIFICATIONS_FILE)
+        return len(items), True
+
 
 def get_backup_events():
     if not os.path.exists(BACKUP_EVENTS_FILE):
@@ -1652,6 +1697,13 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_json(200, get_backup_events())
             return
 
+        if parsed.path == "/api/notifications":
+            # Newest first, so the frontend can render without sorting.
+            items = sorted(get_notifications(),
+                           key=lambda n: n.get("receivedAt") or 0, reverse=True)
+            self.send_json(200, {"notifications": items})
+            return
+
         if parsed.path == "/api/vault/status" or parsed.path.startswith("/api/vault/search") \
                 or parsed.path.startswith("/api/vault/entry/") or parsed.path == "/api/vault/health":
             status, data = proxy_to_vault("GET", self.path)
@@ -1754,6 +1806,32 @@ class HelmHandler(SimpleHTTPRequestHandler):
             event.setdefault("message", "")
             event.setdefault("data", {})
             self.send_json(200, {"ok": True, "stored": store_backup_event(event)})
+            return
+
+        if parsed.path == "/api/notifications":
+            # A mail arrived on hyperion; its postfix pipe reports the headers
+            # here so the Helm widget can show it. Reached over the tailnet
+            # with the normal Helm bearer token (the gate at the top of
+            # do_POST already covers it) — no separate secret to provision on a
+            # second host.
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+            except Exception:
+                body = {}
+            if not isinstance(body, dict) or not body.get("subject"):
+                self.send_json(400, {"error": "body must be a JSON object with a subject"})
+                return
+            note = {
+                "subject": str(body.get("subject", ""))[:300],
+                "from": str(body.get("from", ""))[:300],
+                "to": str(body.get("to", ""))[:300],
+                "receivedAt": body.get("receivedAt") or int(time.time() * 1000),
+                "size": int(body.get("size") or 0),
+                "read": False,
+            }
+            count, added = store_notification(note)
+            self.send_json(200, {"ok": True, "count": count, "added": added})
             return
 
         if parsed.path.startswith("/api/audio/"):
