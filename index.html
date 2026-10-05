@@ -11136,6 +11136,25 @@ function bindReleaseActions(listEl) {
       if (r) toast(`Dismissed "${r.artist} — ${r.title}"`);
     };
   });
+  listEl.querySelectorAll('[data-release-soulseek]').forEach(btn => {
+    btn.onclick = async () => {
+      const key = btn.dataset.releaseSoulseek;
+      const pool = [...((RELEASES_CACHE_DATA && RELEASES_CACHE_DATA.releases) || []), ...savedReleases()];
+      const r = pool.find(x => (x.key || releaseKey(x)) === key);
+      if (!r) return;
+      btn.disabled = true;
+      try {
+        await slskdApi('/api/slskd/send', {
+          method: 'POST',
+          body: JSON.stringify({ artist: r.artist, song: r.title, album: r.title, kind: 'album' })
+        });
+        toast(`Sent "${r.artist} — ${r.title}" to Soulseek. See Downloads in the Soulseek tab.`);
+      } catch (e) {
+        toast(`Soulseek: ${e.message}`);
+      }
+      btn.disabled = false;
+    };
+  });
   listEl.querySelectorAll('[data-release-undo]').forEach(btn => {
     btn.onclick = () => {
       const key = btn.closest('.release-card').dataset.releaseKey;
@@ -11167,6 +11186,7 @@ function renderReleases() {
     ? '<div class="release-group">Saved</div>' + saved.map(s =>
         releaseCardHTML(s, `<div class="release-actions">
           <button class="release-act" data-release-undo="${escHtml(s.key)}" title="Remove from saved and put back in the releases list">↩ Undo</button>
+          <button class="release-act" data-release-soulseek="${escHtml(s.key)}" title="Queue this album from the best Soulseek source">⬇ Soulseek</button>
         </div>`)).join('')
     : '';
 
@@ -11212,6 +11232,7 @@ function renderReleases() {
   const feedActions = key => `
     <div class="release-actions">
       <button class="release-act" data-release-save="${escHtml(key)}" title="Save to your saved releases and remove from this list">★ Save</button>
+      <button class="release-act" data-release-soulseek="${escHtml(key)}" title="Queue this album from the best Soulseek source">⬇ Soulseek</button>
       <button class="release-act release-act-dismiss" data-release-dismiss="${escHtml(key)}" title="Remove; won't come back">✕ Dismiss</button>
     </div>`;
 
