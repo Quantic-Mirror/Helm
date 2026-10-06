@@ -84,7 +84,7 @@ def fetch_events(token):
         return ev if isinstance(ev, list) else []
     except Exception as e:
         print(f"backup-digest: could not fetch events: {e}", file=sys.stderr)
-        return []
+        return None
 
 
 def stage_summary(events, stage_id):
@@ -128,6 +128,10 @@ def main():
         return 1
 
     events = fetch_events(token)
+    if events is None:
+        # Fetch failed: our problem, not the pipeline's. Nothing is mailed,
+        # but exit nonzero so systemd retries (boot race with Tailscale).
+        return 1
     if not events:
         # Distinguish "no events ever" from "could not reach Helm". Only the
         # former is a pipeline fact worth reporting; the second is our own
@@ -203,7 +207,8 @@ def main():
     )
     if failures or stale:
         body += "\nProblems are detailed in the alerts above.\n"
-    notify(f"Backup digest: {health}", body, digest_to)
+    if not notify(f"Backup digest: {health}", body, digest_to):
+        return 1  # let systemd retry; the heartbeat must not be lost
 
     return 0
 
