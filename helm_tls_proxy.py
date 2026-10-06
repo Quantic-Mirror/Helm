@@ -240,11 +240,14 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), ProxyHandler)
+    # HELM_PROXY_BIND restricts the listen address (e.g. a tailnet IP) for
+    # backends with no auth of their own. Default stays 0.0.0.0.
+    bind = os.environ.get("HELM_PROXY_BIND", "0.0.0.0")
+    server = http.server.ThreadingHTTPServer((bind, LISTEN_PORT), ProxyHandler)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
     server.socket = ctx.wrap_socket(server.socket, server_side=True)
-    print(f"helm_tls_proxy listening on https://0.0.0.0:{LISTEN_PORT} -> {BACKEND_BASE}")
+    print(f"helm_tls_proxy listening on https://{bind}:{LISTEN_PORT} -> {BACKEND_BASE}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

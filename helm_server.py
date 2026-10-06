@@ -1732,6 +1732,8 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "audio_url": AUDIO_BACKEND,
                 "leafwiki_url": os.environ.get("LEAFWIKI_URL", f"https://{SERVER_HOST}:9004"),
                 "dailytxt_url": os.environ.get("DAILYTXT_URL", f"https://{SERVER_HOST}:9005"),
+                # Sola MPD lives on hyperion, not this host: no default, set SOLA_URL.
+                "sola_url": os.environ.get("SOLA_URL", ""),
                 "freshrss_url": os.environ.get("FRESHRSS_URL", f"https://{SERVER_HOST}:9007/i/"),
             })
             return

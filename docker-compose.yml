@@ -139,6 +139,9 @@ services:
       # tab's iframe. Fresh port (9005) following the 9004 precedent, so no
       # stale browser-side state from any earlier port ever bleeds in.
       DAILYTXT_URL: "https://${SERVER_HOST:-localhost}:${DAILYTXT_PROXY_LISTEN_PORT:-9005}"
+      # Sola MPD tab: runs on hyperion behind its own TLS proxy (not a compose
+      # service). Empty = tab shows a blank frame.
+      SOLA_URL: "${SOLA_URL:-}"
     command: ["python3", "helm_server.py", "8443"]
 
   # ── LeafWiki (self-hosted markdown wiki, iframed into the Wiki tab) ─────────
