@@ -8,7 +8,12 @@
 # In beets 2.x the MusicBrainz lookup is a plugin, not built in. Leaving this
 # empty makes every import report "Evaluating 0 candidates" and skip -- there
 # is no metadata source to match against.
-plugins: [musicbrainz]
+plugins: [musicbrainz, lyrics]
+
+lyrics:
+  auto: yes
+  synced: yes
+  sources: [lrclib, genius]
 
 import:
   move: yes          # Inbox is a staging area; imported albums leave it
@@ -22,7 +27,7 @@ import:
 match:
   strong_rec_thresh: 0.10   # beets default: only <10% distance counts as confident
 
-# Artist - Album (Year), no number prefix. The year is dropped (not "()") when
+# Artist/Album (Year)/, no number prefix on albums. The year is dropped (not "()") when
 # a release has none.
 # Filename character rules. MusicBrainz uses typographic quotes (’ ‘ “ ”) while
 # the existing library uses plain ASCII ones, so map them in *paths only* --
@@ -48,6 +53,6 @@ replace:
 paths:
   comp:true disctotal:2..: Compilations/$album%if{$year, ($year)}/$disc-$track - $artist - $title
   comp:true: Compilations/$album%if{$year, ($year)}/$track - $artist - $title
-  disctotal:2..: $albumartist - $album%if{$year, ($year)}/$disc-$track - $title
-  default: $albumartist - $album%if{$year, ($year)}/$track - $title
+  disctotal:2..: $albumartist/$album%if{$year, ($year)}/$disc-$track - $title
+  default: $albumartist/$album%if{$year, ($year)}/$track - $title
   singleton: Singles/$artist - $title
