@@ -3071,7 +3071,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
           <button class="dropdown-item" id="btn-add-randomwiki">Random Wikipedia Article</button>
           <button class="dropdown-item" id="btn-add-quoteoftheday">Quote of the Day</button>
           <button class="dropdown-item" id="btn-add-sunmoon">Sun &amp; Moon</button>
-          <button class="dropdown-item" id="btn-add-tailscale">Tailscale Peers</button>
           <button class="dropdown-item" id="btn-add-comics">Comics</button>
           <button class="dropdown-item" id="btn-add-somafm">SomaFM Now Playing</button>
           <button class="dropdown-item" id="btn-add-lyrics">SomaFM Lyrics</button>
@@ -3168,6 +3167,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <button class="btn" id="btn-refresh-services">↺ Refresh</button>
   </div>
   <div id="network-info-section"></div>
+  <div id="tailscale-section"></div>
   <div id="services-grid"></div>
 </div>
 
@@ -3962,6 +3962,8 @@ function load() {
   if (!state.settings.reminderDays && state.settings.reminderDays !== 0) state.settings.reminderDays = 7;
   // Terminal widget was removed as a feature — drop any leftover instances
   if (state.widgets) state.widgets = state.widgets.filter(w => w.type !== 'terminal');
+  // Tailscale moved from a dashboard widget to the Services tab — drop leftovers
+  if (state.widgets) state.widgets = state.widgets.filter(w => w.type !== 'tailscale');
   if (!state.widgets || state.widgets.length === 0) {
     state.widgets = [
       { id: uid(), type: 'search', engine: 'searx' },
@@ -4131,7 +4133,6 @@ function renderDashboard() {
     randomwiki: renderRandomWikiWidget,
     quoteoftheday: renderQuoteWidget,
     sunmoon: renderSunMoonWidget,
-    tailscale: renderTailscaleWidget,
     comics: renderComicsWidget,
     somafm: renderSomaFMWidget,
     lyrics: renderLyricsWidget,
@@ -8400,9 +8401,8 @@ function renderQuoteHtml(body, quote) {
 
 const SUNMOON_CACHE = {}; // widgetId -> { data, ts }
 
-// Tailscale peers cache is keyed by widgetId too, but there's only ever one
-// Tailscale per host, so any widget can share the single fetched payload
-// rather than each one hitting /api/tailscale on its own poll tick.
+// Shared payload for the Services-tab Tailscale card. Only one Tailscale
+// status exists per host, so a single cache is enough.
 const TAILSCALE_CACHE = { data: null, ts: 0 };
 
 
@@ -8521,109 +8521,45 @@ function renderSunMoonHtml(body, data) {
   `;
 }
 
-// ── TAILSCALE PEERS WIDGET ─────────────────────────────────────────────────────
-// Reads /api/tailscale, which queries tailscaled's LocalAPI over its unix
-// socket (no CLI in the container, no token — see get_tailscale_status).
-// Degrades to an explanatory message rather than a broken card when the socket
-// isn't mounted, since that's a compose-config state, not an error.
+// ── TAILSCALE SECTION (Services tab) ────────────────────────────────────────
+// Reuses same Tailscale cache; fetched as part of fetchServices().
 
-function renderTailscaleWidget(w) {
-  const el = document.createElement('div');
-  el.className = 'folder-card widget-card tailscale-widget';
-  el.dataset.widgetId = w.id;
-  el.draggable = false;
-
-  el.innerHTML = `
-    <div class="folder-header widget-header">
-      <span class="col-dot" style="background:#5E7CE2"></span>
-      <span class="column-title" style="cursor:default">Tailscale</span>
-      <div class="col-actions" style="opacity:1">
-        <button class="icon-btn" title="Refresh" data-ts-refresh="${w.id}">↻</button>
-        <button class="icon-btn danger" title="Remove widget" data-del-widget="${w.id}">✕</button>
-      </div>
-    </div>
-    <div class="tailscale-body" id="tailscale-${w.id}">
-      <div class="tailscale-loading">Loading…</div>
-    </div>
-  `;
-
-  setTimeout(() => {
-    const header = el.querySelector('.widget-header');
-    if (header) header.onmousedown = () => { el.draggable = true; };
-    el.addEventListener('dragend', () => { el.draggable = false; });
-    document.addEventListener('mouseup', () => { el.draggable = false; });
-
-    const btn = el.querySelector('[data-ts-refresh]');
-    if (btn) btn.onclick = () => {
-      TAILSCALE_CACHE.ts = 0;   // force a refetch past the freshness window
-      loadTailscale(w);
-    };
-
-    loadTailscale(w);
-  }, 0);
-
-  return el;
-}
-
-async function loadTailscale(w) {
-  const body = document.getElementById('tailscale-' + w.id);
-  if (!body) return;
-
-  // Peer online/offline state changes on the order of seconds-to-minutes, so a
-  // 30s cache is plenty and keeps a 5s dashboard re-render from re-fetching.
-  if (TAILSCALE_CACHE.data && Date.now() - TAILSCALE_CACHE.ts < 30 * 1000) {
-    renderTailscaleHtml(body, TAILSCALE_CACHE.data);
-    return;
-  }
+async function fetchTailscaleSection() {
+  const el = document.getElementById('tailscale-section');
+  if (!el) return;
 
   try {
     const resp = await fetch('/api/tailscale');
-    if (resp.status === 401) {
-      body.innerHTML = '<div class="tailscale-error">Token required</div>';
-      return;
-    }
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     TAILSCALE_CACHE.data = data;
     TAILSCALE_CACHE.ts = Date.now();
-    renderTailscaleHtml(body, data);
+    renderTailscaleSectionHtml(el, data);
   } catch (e) {
-    body.innerHTML = `<div class="tailscale-error">Could not load peers.<br><small>${escHtml(e.message)}</small></div>`;
+    el.innerHTML = '<div class="net-card"><div class="net-header"><span class="net-title">Tailscale</span></div><div class="net-body" style="padding:12px 16px"><div class="tailscale-error">Could not load status.<br><small>' + escHtml(e.message) + '</small></div></div></div>';
+    console.log('[Helm] Tailscale error:', e);
   }
 }
 
-function renderTailscaleHtml(body, data) {
+function renderTailscaleSectionHtml(el, data) {
   if (!data.available) {
-    body.innerHTML = `<div class="tailscale-error">Tailscale unavailable<br><small>${escHtml(data.error || '')}</small></div>`;
+    el.innerHTML = '<div class="net-card"><div class="net-header"><span class="net-title">Tailscale</span></div><div class="net-body" style="padding:12px 16px"><div class="tailscale-error">Tailscale unavailable<br><small>' + escHtml(data.error || '') + '</small></div></div></div>';
     return;
   }
-  // Hide self from the peer list — the header line below already names it, and
-  // a "my-vps — this node" row is noise on a two-device tailnet.
+
   const peers = (data.peers || []).filter(p => !p.is_self);
   const self = data.self || {};
-
   const selfIp = (self.ips || []).find(ip => ip && ip.indexOf(':') === -1) || '';
-  const rows = peers.length
-    ? peers.map(p => {
-        const ip = (p.ips || []).find(x => x && x.indexOf(':') === -1) || '';
-        return `
-      <div class="tailscale-peer${p.online ? '' : ' tailscale-offline'}">
-            <span class="tailscale-dot${p.online ? ' online' : ''}"></span>
-            <span class="tailscale-name">${escHtml(p.hostname || p.dns_name || p.id)}${p.exit_node ? ' ↗' : ''}</span>
-            <span class="tailscale-ip">${escHtml(ip)}</span>
-          </div>`;
-      }).join('')
-    : '<div class="tailscale-loading">No other peers on this tailnet</div>';
-
   const onlineCount = peers.filter(p => p.online).length;
 
-  body.innerHTML = `
-    <div class="tailscale-self">
-      This node: ${escHtml(self.hostname || 'unknown')}${selfIp ? ' (' + escHtml(selfIp) + ')' : ''}
-      · ${onlineCount}/${peers.length} peers online
-      ${data.backend_state ? '· ' + escHtml(data.backend_state) : ''}
-    </div>
-    ${rows}
-  `;
+  const peerRows = peers.length
+    ? peers.map(p => {
+        const ip = (p.ips || []).find(x => x && x.indexOf(':') === -1) || '';
+        return '<div class="tailscale-peer' + (p.online ? '' : ' tailscale-offline') + '"><span class="tailscale-dot' + (p.online ? ' online' : '') + '"></span><span class="tailscale-name">' + escHtml(p.hostname || p.dns_name || p.id) + (p.exit_node ? ' ↗' : '') + '</span><span class="tailscale-ip">' + escHtml(ip) + '</span></div>';
+      }).join('')
+    : '<div class="tailscale-loading" style="padding:4px 0">No other peers on this tailnet</div>';
+
+  el.innerHTML = '<div class="net-card"><div class="net-header"><span class="net-title">Tailscale</span></div><div class="tailscale-body"><div class="tailscale-self">This node: ' + escHtml(self.hostname || 'unknown') + (selfIp ? ' (' + escHtml(selfIp) + ')' : '') + ' · ' + onlineCount + '/' + peers.length + ' peers online' + (data.backend_state ? ' · ' + escHtml(data.backend_state) : '') + '</div>' + peerRows + '</div></div>';
 }
 
 function renderNotesWidget(w) {
@@ -8845,10 +8781,6 @@ document.getElementById('btn-add-quoteoftheday').onclick = () => {
 };
 document.getElementById('btn-add-sunmoon').onclick = () => {
   state.widgets.push({ id: uid(), type: 'sunmoon', city: 'Athens, GA', gridCol: 2 });
-  save(); render(); renderDashboard();
-};
-document.getElementById('btn-add-tailscale').onclick = () => {
-  state.widgets.push({ id: uid(), type: 'tailscale', gridCol: 0 });
   save(); render(); renderDashboard();
 };
 document.getElementById('btn-add-comics').onclick = () => {
@@ -10463,8 +10395,8 @@ async function fetchServices() {
       '<div class="svc-error">Services monitoring requires the local backend (helm_server.py). Not reachable.</div>';
     return;
   }
-  // Fetch all three in parallel
-  const [,] = await Promise.all([fetchNetworkInfo(), fetchServiceStatus()]);
+  // Fetch all in parallel
+  const [,] = await Promise.all([fetchNetworkInfo(), fetchTailscaleSection(), fetchServiceStatus()]);
   const el = document.getElementById('services-last-updated');
   if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
