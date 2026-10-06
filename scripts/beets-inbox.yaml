@@ -24,6 +24,23 @@ match:
 
 # Artist - Album (Year), no number prefix. The year is dropped (not "()") when
 # a release has none.
+# Filename character rules. MusicBrainz uses typographic quotes (’ ‘ “ ”) while
+# the existing library uses plain ASCII ones, so map them in *paths only* --
+# tags keep MusicBrainz's spelling. Setting `replace` REPLACES beets' built-in
+# list, so the defaults are repeated below (without them, "?" or "/" in a title
+# would be written into filenames unescaped).
+replace:
+  '[’‘]': "'"
+  '[“”]': "'"
+  '[\\/]': _
+  '^\.': _
+  '[\x00-\x1f]': _
+  '[<>:"\?\*\|]': _
+  '\.$': _
+  '\s+$': ''
+  '^\s+': ''
+  '^-': _
+
 # Keys are beets queries, tried top to bottom. `disctotal:2..` means "two or
 # more discs", so only those get a disc prefix. (An earlier version used
 # %if{$multidisc,...}, but $multidisc is not a beets field: it was never empty,
