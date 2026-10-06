@@ -1,0 +1,42 @@
+# For trying beets by hand. Same naming rules as the unattended config
+# (beets-inbox.yaml: "Artist - Album (Year)", straight apostrophes), but
+# interactive and non-destructive: it asks about every album and COPIES instead
+# of moving, so the original folder is never touched.
+#
+#   beet -c ~/repos/Helm/scripts/beets-manual.yaml -l SCRATCH.db -d SCRATCH_DIR import FOLDER
+#
+# Standalone on purpose. An `include:` of beets-inbox.yaml is silently ignored
+# when it appears in a -c config (beets lists no source for it), so beets used
+# its default layout, Artist/Album/01 Title. The `replace:` and `paths:` blocks
+# below are therefore COPIES of beets-inbox.yaml; test_beets_configs.py fails if
+# they differ.
+
+plugins: [musicbrainz]
+
+import:
+  quiet: no
+  copy: yes
+  move: no
+  write: yes
+  timid: no
+  log: ~/.cache/helm/beets-manual-import.log
+  incremental: no
+
+replace:
+  '[’‘]': "'"
+  '[“”]': "'"
+  '[\\/]': _
+  '^\.': _
+  '[\x00-\x1f]': _
+  '[<>:"\?\*\|]': _
+  '\.$': _
+  '\s+$': ''
+  '^\s+': ''
+  '^-': _
+
+paths:
+  comp:true disctotal:2..: Compilations/$album%if{$year, ($year)}/$disc-$track - $artist - $title
+  comp:true: Compilations/$album%if{$year, ($year)}/$track - $artist - $title
+  disctotal:2..: $albumartist - $album%if{$year, ($year)}/$disc-$track - $title
+  default: $albumartist - $album%if{$year, ($year)}/$track - $title
+  singleton: Singles/$artist - $title
