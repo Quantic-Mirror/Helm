@@ -45,7 +45,13 @@ ALIASES = {"slskd@hyperion", "search@hyperion", "slskd-search@hyperion"}
 # Senders whose mail this pipe must never act on. notify.py sends as
 # `helm@vps`, and system mail on hyperion arrives from root@localhost. Without
 # this, the system reads its own failure reports as new requests.
-_OWN_SENDERS = ("helm@vps", "root@localhost", "root@hyperion",
+#
+# helm@hyperion is what notify.py sends as now. It used to be helm@vps, and
+# changing the sender without updating this list silently re-opened the mail
+# loop (a failure report containing "slskd: <query>" gets queued as a search).
+# Keep this in step with HELM_NOTIFY_FROM in notify.py -- test_slskd_trigger.py
+# checks the default sender against this list.
+_OWN_SENDERS = ("helm@hyperion", "helm@vps", "root@localhost", "root@hyperion",
                 "isaboo@localhost")
 
 # Captures an optional [N] and the query. The --album suffix is stripped off
