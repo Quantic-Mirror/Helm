@@ -1,0 +1,36 @@
+# Beets config for the Soulseek Inbox -> library step.
+# Used only by slskd_ingest.py (beet -c this-file); it does not replace or
+# change any config you use for beets interactively.
+#
+# `directory` and `library` are passed on the command line by slskd_ingest.py
+# so the same file works for a scratch test and the real library.
+
+# In beets 2.x the MusicBrainz lookup is a plugin, not built in. Leaving this
+# empty makes every import report "Evaluating 0 candidates" and skip -- there
+# is no metadata source to match against.
+plugins: [musicbrainz]
+
+import:
+  move: yes          # Inbox is a staging area; imported albums leave it
+  write: yes         # write the corrected tags into the files
+  quiet: yes         # never prompt (this runs unattended)
+  quiet_fallback: skip   # unsure match -> leave the album in the Inbox untouched
+  timid: no
+  log: ~/.cache/helm/beets-import.log
+  incremental: no
+
+match:
+  strong_rec_thresh: 0.10   # beets default: only <10% distance counts as confident
+
+# Artist - Album (Year), no number prefix. The year is dropped (not "()") when
+# a release has none.
+# Keys are beets queries, tried top to bottom. `disctotal:2..` means "two or
+# more discs", so only those get a disc prefix. (An earlier version used
+# %if{$multidisc,...}, but $multidisc is not a beets field: it was never empty,
+# so every single-disc album got "01-" on every track.)
+paths:
+  comp:true disctotal:2..: Compilations/$album%if{$year, ($year)}/$disc-$track - $artist - $title
+  comp:true: Compilations/$album%if{$year, ($year)}/$track - $artist - $title
+  disctotal:2..: $albumartist - $album%if{$year, ($year)}/$disc-$track - $title
+  default: $albumartist - $album%if{$year, ($year)}/$track - $title
+  singleton: Singles/$artist - $title
