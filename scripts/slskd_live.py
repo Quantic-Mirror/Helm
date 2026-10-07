@@ -201,6 +201,7 @@ def _ui_offer(offer, index):
             "name": album,
             "tracks": len(files),
             "size_mb": round(sum(f.get("size") or 0 for f in files) / 1e6, 1),
+            "quality": S.quality_label(files),
         })
     return {
         "index": index,

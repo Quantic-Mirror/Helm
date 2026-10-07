@@ -9275,7 +9275,7 @@ function renderSlskdSearch(data) {
     const card = document.createElement('div');
     card.className = 'slskd-offer-card';
     const albumsHtml = o.albums.map(a =>
-      `<div class="slskd-album">💿 ${escHtml(a.name)} — ${a.tracks} tracks, ${a.size_mb} MB</div>`
+      `<div class="slskd-album">💿 ${escHtml(a.name)} — ${a.tracks} tracks, ${a.size_mb} MB${a.quality ? ` · <span class="slskd-quality">${escHtml(a.quality)}</span>` : ''}</div>`
     ).join('');
     const details = [
       o.score !== undefined && o.score !== null ? `score ${Math.round(o.score)}` : '',

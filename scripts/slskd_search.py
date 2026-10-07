@@ -338,6 +338,36 @@ def file_ext(f):
     return ext.lower().lstrip(".")
 
 
+def quality_label(files):
+    """Short format label for one album's files: "FLAC 24/96", "MP3 ~320 kbps".
+
+    Lossless gets bit depth and sample rate, which slskd reports directly.
+    Lossy has no bitrate field (see score_response), so it is estimated from
+    size/length. That number is approximate: tags and VBR shift it, so the
+    "~" is part of the label. Returns "" when there is no audio to describe.
+    """
+    audio = [f for f in files if file_ext(f) in AUDIO_EXT]
+    if not audio:
+        return ""
+    counts = {}
+    for f in audio:
+        counts[file_ext(f)] = counts.get(file_ext(f), 0) + 1
+    ext = max(counts, key=counts.get)
+    name = ext.upper()
+    if ext in LOSSLESS_EXT:
+        ref = next((f for f in audio if file_ext(f) == ext and f.get("sampleRate")), None)
+        if ref is None:
+            return name
+        khz = f"{ref['sampleRate'] / 1000:g}"
+        bd = ref.get("bitDepth")
+        return f"{name} {bd}/{khz}" if bd else f"{name} {khz} kHz"
+    kbps = [int(f["size"] * 8 / f["length"] / 1000) for f in audio
+            if f.get("size") and f.get("length")]
+    if kbps:
+        return f"{name} ~{sum(kbps) // len(kbps)} kbps"
+    return name
+
+
 def score_response(query, resp):
     """Rank one peer's response. Higher is better; None-able fields.
 

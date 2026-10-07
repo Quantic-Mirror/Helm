@@ -2011,7 +2011,8 @@ class HelmHandler(SimpleHTTPRequestHandler):
                     album_list.append({
                         "name": album,
                         "tracks": len(files),
-                        "size_mb": round(mb, 1)
+                        "size_mb": round(mb, 1),
+                        "quality": S.quality_label(files),
                     })
                 ui_offers.append({
                     "index": int(o["id"].split(":")[-1]) + 1,
