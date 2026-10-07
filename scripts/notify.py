@@ -27,8 +27,11 @@ SMTP_PORT = 25
 
 
 def send(subject, body, sender, recipient, host=HYPERION_TAILNET_IP, port=SMTP_PORT,
-         timeout=15, dry_run=False):
-    """Build and send one message. Returns True if handed to the MTA."""
+         timeout=15, dry_run=False, attachments=()):
+    """Build and send one message. Returns True if handed to the MTA.
+
+    attachments: (filename, bytes, mime_type) tuples, added after the body.
+    """
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = sender
@@ -39,6 +42,9 @@ def send(subject, body, sender, recipient, host=HYPERION_TAILNET_IP, port=SMTP_P
     # stricter than a naive .eml dump, so set it properly.
     msg["Message-ID"] = make_msgid(domain="helm.local")
     msg.set_content(body)
+    for filename, data, mime in attachments:
+        maintype, subtype = mime.split("/", 1)
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename)
 
     if dry_run:
         print("--- dry run, not sending ---")
@@ -67,11 +73,21 @@ def main():
     p.add_argument("--port", type=int, default=int(os.environ.get("HELM_NOTIFY_PORT", SMTP_PORT)))
     p.add_argument("--dry-run", action="store_true",
                    help="print the message instead of sending it")
+    p.add_argument("--attach", action="append", default=[], metavar="PATH",
+                   help="attach a file (repeatable); MIME type is guessed from the name")
     args = p.parse_args()
+
+    import mimetypes
+    attachments = []
+    for path in args.attach:
+        mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        with open(path, "rb") as f:
+            attachments.append((os.path.basename(path), f.read(), mime))
 
     try:
         send(args.subject, args.body or "", args.sender, args.recipient,
-             host=args.host, port=args.port, dry_run=args.dry_run)
+             host=args.host, port=args.port, dry_run=args.dry_run,
+             attachments=attachments)
     except (smtplib.SMTPException, OSError, socket.error) as e:
         # Never exit 0 on a failed notification. Cron would treat that as
         # success and the message would be silently lost, which is the one
