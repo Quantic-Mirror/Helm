@@ -1,0 +1,11 @@
+# 07:00 Eastern, so the timer tracks DST without edits. Ahead of the 08:00
+# morning-activity digest — chores arrive before you start the day.
+[Unit]
+Description=Daily chore reminder at 07:00 Eastern
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

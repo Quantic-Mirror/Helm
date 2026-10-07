@@ -1,0 +1,10 @@
+# VPS user unit. Install: copy to ~/.config/systemd/user/ on the VPS, then
+#   systemctl --user daemon-reload && systemctl --user enable --now helm-chores-digest.timer
+[Unit]
+Description=Mail today's cleaning chore
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/helm/scripts/chores_digest.py
+StandardOutput=journal
+StandardError=journal
