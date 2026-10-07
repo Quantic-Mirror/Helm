@@ -1,0 +1,11 @@
+# Sunday 20:00 Eastern -- ahead of helm-host-maintenance.timer (23:00) so
+# the two weekly reports don't land in the same few minutes.
+[Unit]
+Description=Weekly Helm code audit at Sunday 20:00 Eastern
+
+[Timer]
+OnCalendar=Sun *-*-* 20:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

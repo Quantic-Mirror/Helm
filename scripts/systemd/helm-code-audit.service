@@ -1,0 +1,10 @@
+# User unit on hyperion only (needs local git history to audit).
+# Install: systemctl --user daemon-reload && systemctl --user enable --now helm-code-audit.timer
+[Unit]
+Description=Weekly Helm code audit (deterministic, mailed)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/repos/Helm/scripts/code_audit.py
+StandardOutput=journal
+StandardError=journal
