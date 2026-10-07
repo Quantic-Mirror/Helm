@@ -12,10 +12,11 @@ Tier 1 (actually performed, safe/reversible or purely reclaiming disk space):
     - journal vacuum (--vacuum-time=2weeks)   [needs root — skipped + flagged if not]
     - docker system prune -af                 (no root needed; isaboo is in the docker group)
 
-Tier 2 (report only, never auto-applied):
-    - orphaned package list/count
-    - available update count
-    - failed systemd units (system + user)
+Tier 2 (report only, never auto-applied — each comes with the exact manual
+command to run it yourself, not just a count):
+    - orphaned package list/count + `sudo pacman -Rns ...` to remove them
+    - available update count + `sudo pacman -Syu` / `apt upgrade`
+    - failed systemd units (system + user) + `journalctl -xeu <unit>` to inspect
     - disk usage, flagged over 85%
 
 Deliberately NOT done: pacman -Syu / apt upgrade, or removing orphans.
@@ -168,8 +169,14 @@ def pacman_section(lines):
             trim_note = "needs root — run manually: sudo paccache -rk2"
 
     section(lines, "Pacman cache", [f"{cache_size} before trim", trim_note])
-    section(lines, "Orphaned packages", [f"{len(orphans)} found"] + orphans[:20])
-    section(lines, "Available updates", [update_note])
+    orphan_lines = [f"{len(orphans)} found"] + orphans[:20]
+    if orphans:
+        orphan_lines.append("remove: sudo pacman -Rns " + " ".join(orphans))
+    section(lines, "Orphaned packages", orphan_lines)
+    update_lines = [update_note]
+    if update_note.split()[0].isdigit() and int(update_note.split()[0]) > 0:
+        update_lines.append("apply: sudo pacman -Syu")
+    section(lines, "Available updates", update_lines)
 
 
 def journal_section(lines):
@@ -191,7 +198,10 @@ def docker_section(lines):
     # prune failure as noteworthy rather than just "not applicable here".
     ok, _ = run(["docker", "info"], timeout=10)
     if not ok:
-        section(lines, "Docker", ["installed but daemon not reachable — skipped"])
+        section(lines, "Docker", [
+            "installed but daemon not reachable — skipped",
+            "start it: sudo systemctl enable --now docker",
+        ])
         return
     ok, before = run(["docker", "system", "df", "--format",
                        "{{.Type}}: {{.Reclaimable}} reclaimable"])
@@ -212,9 +222,15 @@ def main():
     if have("apt"):
         ok, out = run(["apt", "list", "--upgradable"])
         count = max(0, len([ln for ln in out.splitlines() if "/" in ln]) ) if ok else 0
-        section(lines, "Available updates (apt, index may be stale)", [f"{count} available"])
+        apt_lines = [f"{count} available"]
+        if count:
+            apt_lines.append("apply: sudo apt update && sudo apt upgrade")
+        section(lines, "Available updates (apt, index may be stale)", apt_lines)
 
-    section(lines, "Failed systemd units", failed_units_lines())
+    failed = failed_units_lines()
+    if failed:
+        failed = failed + ["inspect: journalctl -xeu <unit>"]
+    section(lines, "Failed systemd units", failed)
     section(lines, "Disk usage", disk_usage_lines())
 
     body = "\n".join(lines) + "\n"
