@@ -26,6 +26,12 @@ DAILY = [
     "Quick sweep of obvious pet hair / tidy living room",
 ]
 
+# High-traffic floors need mopping more than once a week, independent of the
+# single-room-focus ROTATION below (which only touches kitchen/living room
+# once each). Tue/Thu/Sat/Sun = ~every 2 days, one 1-day gap (Sat->Sun).
+MOP_DAYS = {1, 3, 5, 6}  # Tuesday, Thursday, Saturday, Sunday
+MOP_ITEM = "Mop kitchen & living room floors"
+
 # Monday=0 .. Sunday=6 (datetime.weekday()). One room/focus per day so
 # nothing stacks — see the two-bathroom / three-bedroom split.
 ROTATION = {
@@ -73,6 +79,10 @@ def build_body(now):
     lines = [f"Chores for {now.strftime('%A, %B %d')}", ""]
     lines.append(f"Today's focus: {focus_title}")
     lines += [f"  - {it}" for it in focus_items]
+    if weekday in MOP_DAYS:
+        lines.append("")
+        lines.append("Also today:")
+        lines.append(f"  - {MOP_ITEM}")
     lines.append("")
     lines.append("Every day:")
     lines += [f"  - {it}" for it in DAILY]
