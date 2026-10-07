@@ -111,12 +111,18 @@ def disk_usage_lines():
 
 def failed_units_lines():
     lines = []
+    # systemctl --failed prefixes each row with a "●" bullet column, so the
+    # unit name is parts[1] (if the bullet is there) not parts[0].
+    def unit_name(ln):
+        parts = ln.split()
+        return parts[1] if parts and parts[0] in ("●", "*") else parts[0]
+
     ok, out = run(["systemctl", "--failed", "--no-legend"])
     if ok and out:
-        lines += [f"[system] {ln.split()[0]}" for ln in out.splitlines() if ln.strip()]
+        lines += [f"[system] {unit_name(ln)}" for ln in out.splitlines() if ln.strip()]
     ok, out = run(["systemctl", "--user", "--failed", "--no-legend"])
     if ok and out:
-        lines += [f"[user] {ln.split()[0]}" for ln in out.splitlines() if ln.strip()]
+        lines += [f"[user] {unit_name(ln)}" for ln in out.splitlines() if ln.strip()]
     return lines
 
 
@@ -179,6 +185,13 @@ def journal_section(lines):
 
 def docker_section(lines):
     if not have("docker"):
+        return
+    # The `docker` CLI can be installed without the daemon running (e.g. tv
+    # has the client but no dockerd) -- check connectivity before treating a
+    # prune failure as noteworthy rather than just "not applicable here".
+    ok, _ = run(["docker", "info"], timeout=10)
+    if not ok:
+        section(lines, "Docker", ["installed but daemon not reachable — skipped"])
         return
     ok, before = run(["docker", "system", "df", "--format",
                        "{{.Type}}: {{.Reclaimable}} reclaimable"])
