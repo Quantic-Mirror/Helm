@@ -1,0 +1,15 @@
+# User unit. Install on EACH host (hyperion/tv/popcorn/vps): copy this +
+# the matching .timer to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now helm-host-maintenance.timer
+#
+# Runs as the normal user, not root -- see host_maintenance.py's docstring
+# for exactly which actions that limits (paccache/journal vacuum need root
+# and are skipped + flagged in the report rather than silently failing).
+[Unit]
+Description=Weekly host maintenance (cache trim, cleanup report)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/host_maintenance.py
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,10 @@
+# Sunday 23:00 local time on each host.
+[Unit]
+Description=Weekly host maintenance at Sunday 23:00
+
+[Timer]
+OnCalendar=Sun *-*-* 23:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
