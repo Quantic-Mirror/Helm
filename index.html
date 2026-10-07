@@ -3450,6 +3450,13 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <button class="btn" style="margin-top:8px;width:100%" onclick="navigator.clipboard.writeText(document.getElementById('bml-code').value).then(()=>toast('Copied!'))">Copy code</button>
   </div>
 </div>
+<!-- SEARXNG SEARCH OVERLAY -->
+<div id="searxng-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:300;align-items:center;justify-content:center;padding:24px">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;width:100%;max-width:560px;box-shadow:0 24px 48px rgba(0,0,0,0.4)">
+    <input id="searxng-input" type="text" placeholder="Search SearxNG…" autocomplete="off"
+      style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:16px;padding:12px 14px;outline:none;font-family:var(--font-body)">
+  </div>
+</div>
 <!-- READER PANE -->
 <div id="reader-overlay">
   <div id="reader-pane">
@@ -8812,11 +8819,43 @@ document.getElementById('search-clear').onclick = () => {
   filterBookmarks('');
 };
 
+const SEARXNG_URL = 'http://100.77.126.57:8081/';
+function openSearxng() {
+  const overlay = document.getElementById('searxng-overlay');
+  const input = document.getElementById('searxng-input');
+  input.value = '';
+  overlay.style.display = 'flex';
+  input.focus();
+}
+function closeSearxng() {
+  document.getElementById('searxng-overlay').style.display = 'none';
+}
+document.getElementById('searxng-input').onkeydown = (e) => {
+  if (e.key === 'Enter') {
+    const q = e.target.value.trim();
+    if (q) window.open(SEARXNG_URL + '?q=' + encodeURIComponent(q), '_blank');
+    closeSearxng();
+  } else if (e.key === 'Escape') {
+    closeSearxng();
+  }
+};
+document.getElementById('searxng-overlay').onclick = (e) => {
+  if (e.target.id === 'searxng-overlay') closeSearxng();
+};
+
 document.onkeydown = (e) => {
-  if (e.key === 'Escape') { closeModal(); closeReader(); ['sort-modal','bml-modal'].forEach(id => document.getElementById(id).classList.remove('open')); ['bg-modal','ext-modal','backups-modal'].forEach(id => document.getElementById(id).style.display='none'); }
+  if (e.key === 'Escape') { closeModal(); closeReader(); closeSearxng(); ['sort-modal','bml-modal'].forEach(id => document.getElementById(id).classList.remove('open')); ['bg-modal','ext-modal','backups-modal'].forEach(id => document.getElementById(id).style.display='none'); }
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault();
     document.getElementById('search').focus();
+  }
+  if (e.key === '/' && document.getElementById('searxng-overlay').style.display !== 'flex') {
+    const tag = (e.target.tagName || '').toLowerCase();
+    const editable = tag === 'input' || tag === 'textarea' || e.target.isContentEditable;
+    if (!editable) {
+      e.preventDefault();
+      openSearxng();
+    }
   }
   if (e.key === 'Enter' && document.getElementById('modal-overlay').classList.contains('open')) {
     if (document.activeElement !== document.getElementById('modal-cancel')) saveModal();
