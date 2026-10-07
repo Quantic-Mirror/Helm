@@ -336,6 +336,33 @@ services:
   # helm_server.py's token-authed POST /api/backup-events. There used to be a
   # rabbitmq broker + a backup-worker drainer container; both are gone.
 
+  # ── Vikunja task manager (recurring chore checklist) ────────────────────────
+  # Standalone, not iframed into Helm (no tab, no helm_tls_proxy) — reached
+  # directly on its own port, same posture as searxng above. Single container,
+  # SQLite backend (fine for one user — see vikunja.io/docs/full-docker-example).
+  # Registration is left disabled; the admin account is created once via the
+  # CLI (`docker compose exec vikunja /app/vikunja/vikunja user create`),
+  # mirroring the "no browser setup wizard" posture already used for
+  # LeafWiki/DailyTxT, just via CLI instead of a deterministic env var since
+  # Vikunja doesn't expose one. See scripts/vikunja_setup_chores.py, which logs
+  # in with that same password to create the recurring chore tasks via the API.
+  vikunja:
+    image: vikunja/vikunja:latest
+    container_name: vikunja
+    restart: unless-stopped
+    ports:
+      - "${VIKUNJA_PORT:-${HELM_BIND:-127.0.0.1}:3456:3456}"
+    volumes:
+      - ./vikunja-files:/app/vikunja/files
+      - ./vikunja-db:/db
+    environment:
+      VIKUNJA_SERVICE_PUBLICURL: "http://${SERVER_HOST:-localhost}:3456"
+      VIKUNJA_SERVICE_JWTSECRET: "${VIKUNJA_SECRET:?set a secret in .env, e.g. openssl rand -hex 32}"
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: "false"
+      VIKUNJA_SERVICE_TIMEZONE: "${TZ:-America/New_York}"
+      VIKUNJA_DATABASE_TYPE: sqlite
+      VIKUNJA_DATABASE_PATH: /db/vikunja.db
+
 # ── Network: all containers on an isolated bridge so they can reach each other
 # by service name. The host (and LAN browsers) reach helm on published ports.
 networks:
