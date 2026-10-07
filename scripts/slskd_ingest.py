@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hyperion side of the Soulseek pipeline: pull finished albums, import with beets.
 
-    VPS slskd downloads/  --rsync-->  ~/Inbox  --beets-->  library
+    VPS slskd downloads/  --rsync-->  /mnt/SharedStuff/Music/Inbox  --beets-->  library
 
 Run on Hyperion (the library and beets live here; the VPS cannot reach Hyperion,
 but Hyperion can reach the VPS). Safe to run repeatedly -- a lock stops overlap.
@@ -28,12 +28,13 @@ import subprocess
 import sys
 
 from activity import emit
+from slskd_inbox_sync import report_synced
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VPS = os.environ.get("SLSKD_VPS", "vps")
 REMOTE_DL = os.environ.get("SLSKD_REMOTE_DOWNLOADS",
                            "/home/isaboo/soulseek/data/downloads/")
-INBOX = os.path.expanduser(os.environ.get("SLSKD_INBOX", "~/Inbox"))
+INBOX = os.path.expanduser(os.environ.get("SLSKD_INBOX", "/mnt/SharedStuff/Music/Inbox"))
 LIBRARY = os.environ.get("SLSKD_LIBRARY", "/mnt/SharedStuff/Music")
 BEETS_CONFIG = os.path.join(HERE, "beets-inbox.yaml")
 BEETS_DB = os.path.expanduser(os.environ.get(
@@ -90,13 +91,17 @@ def transfers_in_progress():
 
 
 def pull(source, force=False, dry_run=False):
-    """rsync completed files into the Inbox. Returns (ok, files_moved, note)."""
+    """rsync completed files into the Inbox. Returns (ok, files_moved, note, rels).
+
+    rels are the moved files' paths relative to the VPS downloads/ folder, in
+    the form Helm's Soulseek panel matches against (see report_synced).
+    """
     remote = ":" in source.split("/")[0]
     if remote:                                # remote source: ask slskd first
         n = transfers_in_progress()
         if n != 0 and not force:
             why = "could not reach slskd" if n < 0 else f"{n} transfer(s) unfinished"
-            return True, 0, f"waiting: {why}"
+            return True, 0, f"waiting: {why}", []
     os.makedirs(INBOX, exist_ok=True)
     # --remove-source-files only deletes a source file once it is fully
     # transferred. The audio filter keeps stray .nfo/.jpg/.m3u from being pulled
@@ -110,15 +115,17 @@ def pull(source, force=False, dry_run=False):
         cmd.insert(1, "--dry-run")
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
     if r.returncode != 0:
-        return False, 0, f"rsync failed ({r.returncode}): {r.stderr.strip()[:200]}"
-    moved = sum(1 for ln in r.stdout.splitlines()
-                if ln.startswith(">f") or ln.startswith("<f"))
+        return False, 0, f"rsync failed ({r.returncode}): {r.stderr.strip()[:200]}", []
+    # itemized lines are "<flags> <path>"; a received file starts with ">f".
+    rels = [ln.split(" ", 1)[1] for ln in r.stdout.splitlines()
+            if ln.startswith(">f") and " " in ln]
+    moved = len(rels)
     if moved and not dry_run and remote:
         # Remove the now-empty album folders left on the VPS.
         host, path = source.split(":", 1)
         subprocess.run(["ssh", host, "find", path, "-mindepth", "1", "-type", "d",
                         "-empty", "-delete"], capture_output=True, timeout=60)
-    return True, moved, ""
+    return True, moved, "", rels
 
 
 def album_dirs(root):
@@ -181,9 +188,9 @@ def main():
         log("ingest: another run is in progress")
         return 0
 
-    moved, note = 0, ""
+    moved, note, rels = 0, "", []
     if not args.no_pull:
-        ok, moved, note = pull(args.source, args.force, args.dry_run)
+        ok, moved, note, rels = pull(args.source, args.force, args.dry_run)
         if not ok:
             log(f"ingest: {note}")
             if not args.no_mail:
@@ -191,6 +198,10 @@ def main():
             return 1
         if note:
             log(f"ingest: {note}")
+        if rels and not args.dry_run:
+            # The Soulseek panel shows a file as "synced" only once Helm has been
+            # told it reached the Inbox. This replaces the old inbox-sync timer's report.
+            report_synced(rels)
 
     imported, review = import_albums(args.dry_run)
     log(f"ingest: pulled {moved} file(s), imported {len(imported)}, "
