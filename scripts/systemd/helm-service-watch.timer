@@ -1,0 +1,12 @@
+# Every 5 minutes. A service that goes down and recovers inside one interval
+# can be missed; that's the trade-off for not polling faster.
+[Unit]
+Description=Poll Helm service status for the morning digest
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

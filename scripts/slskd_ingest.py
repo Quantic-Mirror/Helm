@@ -27,6 +27,8 @@ import shutil
 import subprocess
 import sys
 
+from activity import emit
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 VPS = os.environ.get("SLSKD_VPS", "vps")
 REMOTE_DL = os.environ.get("SLSKD_REMOTE_DOWNLOADS",
@@ -193,6 +195,14 @@ def main():
     imported, review = import_albums(args.dry_run)
     log(f"ingest: pulled {moved} file(s), imported {len(imported)}, "
         f"{len(review)} left for review")
+
+    if not args.dry_run:
+        if moved:
+            emit("music", "pulled", "pulled", f"{moved} file(s) pulled from the VPS")
+        for name in imported:
+            emit("music", "imported", name, f"imported {name}")
+        for name in review:
+            emit("music", "review", name, f"left for beets review: {name}")
 
     if (imported or review or moved) and not args.no_mail and not args.dry_run:
         lines = []

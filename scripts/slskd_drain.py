@@ -26,6 +26,7 @@ sys.path.insert(0, os.environ.get(
 import slskd_offers as OFF
 import slskd_queue as Q
 import slskd_search as S
+from activity import emit
 
 NOTIFY = os.environ.get("NOTIFY", os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "notify.py"))
@@ -238,6 +239,8 @@ def main():
         # done. Marking before sending would lose a query if the mail failed.
         Q.mark_drained(done)
         Q.clear_pending(done)
+        for q in done:
+            emit("music", "searched", q, f"searched Soulseek for '{q}'")
         print(f"drain: mailed {n} result set(s); marked {len(done)} drained",
               file=sys.stderr)
         return 0

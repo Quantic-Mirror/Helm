@@ -1,0 +1,10 @@
+# VPS user unit. Install: copy to ~/.config/systemd/user/ on the VPS, then
+#   systemctl --user daemon-reload && systemctl --user enable --now helm-service-watch.timer
+[Unit]
+Description=Record Helm service up/down transitions
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/helm/scripts/service_watch.py
+StandardOutput=journal
+StandardError=journal

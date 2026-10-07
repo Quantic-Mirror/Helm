@@ -1,0 +1,27 @@
+# System unit (not a user unit): a user manager is torn down during shutdown and
+# can't reliably run a stop hook that needs the network and postfix still up.
+#
+# Install on hyperion (needs root):
+#   sudo cp scripts/systemd/hyperion-shutdown-mail.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hyperion-shutdown-mail.service
+#
+# ExecStart does nothing; the work is in ExecStop, which systemd runs when the
+# unit is stopped at shutdown. shutdown_notice.py skips reboots itself.
+[Unit]
+Description=Mail a notice when hyperion shuts down (not on reboot)
+# Ordering on stop is the reverse of start: this unit stops before any of these,
+# so the mail can still leave.
+After=network-online.target tailscaled.service postfix.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/bin/python3 /home/isaboo/repos/Helm/scripts/shutdown_notice.py
+TimeoutStopSec=60
+User=isaboo
+
+[Install]
+WantedBy=multi-user.target

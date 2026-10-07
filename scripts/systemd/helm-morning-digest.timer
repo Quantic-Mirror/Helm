@@ -1,0 +1,10 @@
+# 08:00 Eastern, so the timer tracks DST without edits.
+[Unit]
+Description=Daily Helm activity digest at 08:00 Eastern
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target
