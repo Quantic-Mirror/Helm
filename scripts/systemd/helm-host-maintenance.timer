@@ -1,9 +1,11 @@
-# Sunday 23:00 local time on each host.
+# Sunday 23:00 Eastern, explicitly -- pinned rather than relying on each
+# host's system timezone, since the VPS runs on UTC while hyperion/tv/popcorn
+# are America/New_York (same reasoning as the chore/morning-digest timers).
 [Unit]
-Description=Weekly host maintenance at Sunday 23:00
+Description=Weekly host maintenance at Sunday 23:00 Eastern
 
 [Timer]
-OnCalendar=Sun *-*-* 23:00:00
+OnCalendar=Sun *-*-* 23:00:00 America/New_York
 Persistent=true
 
 [Install]
