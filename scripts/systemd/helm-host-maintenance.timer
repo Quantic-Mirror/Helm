@@ -1,11 +1,12 @@
-# Sunday 23:00 Eastern, explicitly -- pinned rather than relying on each
-# host's system timezone, since the VPS runs on UTC while hyperion/tv/popcorn
-# are America/New_York (same reasoning as the chore/morning-digest timers).
+# Sunday 21:00 Eastern -- an hour after helm-code-audit.timer (20:00) so the
+# two weekly reports don't land together, and safely before hyperion's
+# typical ~22:00 shutdown (it's on all day, off overnight). The original
+# 23:00 would have reliably missed hyperion entirely.
 [Unit]
-Description=Weekly host maintenance at Sunday 23:00 Eastern
+Description=Weekly host maintenance at Sunday 21:00 Eastern
 
 [Timer]
-OnCalendar=Sun *-*-* 23:00:00 America/New_York
+OnCalendar=Sun *-*-* 21:00:00 America/New_York
 Persistent=true
 
 [Install]
