@@ -29,3 +29,9 @@ dailytxt-data/
 helm-and-backup-runbook.md
 BACKUP-PIPELINE-GUIDE.md
 HYPERION-RESTORE.md
+
+# Unrelated local workstation fixes, not part of the Helm app -- this has
+# been accidentally swept into Helm commits twice by a careless `git add -A`
+# (see the code_audit.py "commits touching 3+ unrelated paths" check, which
+# exists specifically to catch this class of mistake).
+client-fixes/
