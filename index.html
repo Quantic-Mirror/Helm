@@ -2106,12 +2106,13 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 .fin-start-balance {
   display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px;
 }
+.fin-start-note { color: var(--text-dim); font-size: 11px; }
 .fin-start-balance input {
   width: 110px; background: var(--surface); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px;
 }
 .fin-entry-row {
-  display: grid; grid-template-columns: 90px 1fr 90px 36px 90px 28px;
+  display: grid; grid-template-columns: 90px 1fr 90px 90px 28px;
   align-items: center; gap: 6px; padding: 5px 8px; font-size: 12.5px;
   border-bottom: 1px solid var(--border);
 }
@@ -5134,9 +5135,10 @@ document.getElementById('log-entries-list')?.addEventListener('click', (e) => {
 // ── FINANCES PAGE ─────────────────────────────────────────────────────────────
 // Two parallel month ledgers (This Month / Next Month, keyed by "YYYY-MM")
 // fed by a managed list of recurring bills/income (state.financeRecurring).
-// Every row counts toward the running balance. The per-row checkbox (stored as
-// `posted` so existing data needs no migration) now just marks a row as
-// planned / on the radar; it does not change the balance.
+// Start from a balance (typed, or carried from the previous month), add known
+// income/expenses, and add more as the month goes. The ending balance at the
+// bottom includes every row, and the next month's start follows it automatically
+// unless a start balance is typed in by hand.
 // Shared across both profiles (not per-profile like bookmarks/feeds).
 
 function finMonthKey(offset) {
@@ -5182,14 +5184,34 @@ function finEnsureMonth(monthKey) {
   return month;
 }
 
-// Returns { rows: [{entry, balance}], finalBalance } -- rows in chronological
-// order, with every row applied to the running balance.
+function finShiftKey(monthKey, delta) {
+  let [y, m] = monthKey.split('-').map(Number);
+  m += delta;
+  while (m > 12) { m -= 12; y += 1; }
+  while (m < 1) { m += 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+// A month's starting balance: the one typed in (startManual) or, otherwise,
+// the previous month's final balance, so it follows that month as it changes.
+// Falls back to the stored value (or 0) when there is no previous month.
+function finEffectiveStart(monthKey) {
+  const month = state.financeMonths[monthKey];
+  if (month && month.startManual && month.startBalance !== null && month.startBalance !== undefined) {
+    return Number(month.startBalance) || 0;
+  }
+  const prevKey = finShiftKey(monthKey, -1);
+  if (state.financeMonths[prevKey]) return finComputeBalances(prevKey).finalBalance;
+  return Number(month && month.startBalance) || 0;
+}
+
+// Returns { rows: [{entry, balance}], finalBalance } -- rows in date order,
+// every row applied to the running balance, starting from finEffectiveStart.
 function finComputeBalances(monthKey) {
   const month = state.financeMonths[monthKey];
   const sorted = [...month.entries].sort((a, b) => a.date.localeCompare(b.date));
-  let running = Number(month.startBalance) || 0;
+  let running = finEffectiveStart(monthKey);
   const rows = sorted.map(entry => {
-    // Every row counts toward the balance, planned or not.
     const amt = Number(entry.amount) || 0;
     running += entry.type === 'income' ? amt : -amt;
     return { entry, balance: running };
@@ -5218,11 +5240,7 @@ function renderFinancePage() {
   const thisKey = finMonthKey(0);
   const nextKey = finMonthKey(1);
   finEnsureMonth(thisKey);
-  const thisResult = finComputeBalances(thisKey);
-  // Next month's starting balance defaults to this month's balance-so-far
-  // (only set once, so it doesn't keep clobbering a manual override).
-  const nextMonth = finEnsureMonth(nextKey);
-  if (nextMonth.startBalance === null) nextMonth.startBalance = thisResult.finalBalance;
+  finEnsureMonth(nextKey);
 
   monthsEl.innerHTML = [
     finRenderMonthColumn(thisKey, 'This Month'),
@@ -5238,7 +5256,6 @@ function finRenderMonthColumn(monthKey, label) {
       <input type="date" class="fin-f-date" value="${entry.date}">
       <input type="text" class="fin-f-who" value="${escHtml(entry.who)}">
       <input type="number" step="0.01" class="fin-f-amount fin-entry-${entry.type}" value="${entry.amount}">
-      <input type="checkbox" class="fin-f-posted" ${entry.posted ? 'checked' : ''} title="Planned / on my radar">
       <span class="fin-entry-balance">$${balance.toFixed(2)}</span>
       <button class="fin-entry-del" title="Delete">✕</button>
     </div>`).join('')
@@ -5249,10 +5266,11 @@ function finRenderMonthColumn(monthKey, label) {
       <h3>${label} — ${finMonthLabel(monthKey)}</h3>
       <div class="fin-start-balance">
         <label for="fin-start-${monthKey}">Starting balance</label>
-        <input id="fin-start-${monthKey}" type="number" step="0.01" class="fin-f-start" value="${month.startBalance ?? ''}" data-month="${monthKey}">
+        <input id="fin-start-${monthKey}" type="number" step="0.01" class="fin-f-start" value="${finEffectiveStart(monthKey).toFixed(2)}" data-month="${monthKey}">
+        <span class="fin-start-note">${month.startManual ? 'manual (clear to follow previous month)' : 'auto from previous month'}</span>
       </div>
       <div class="fin-entries-list">${rowsHtml}</div>
-      <div class="fin-month-summary">Balance: $${finalBalance.toFixed(2)}</div>
+      <div class="fin-month-summary">Ending balance: $${finalBalance.toFixed(2)}</div>
       <button class="btn fin-add-entry-btn" data-month="${monthKey}">+ Add one-off entry</button>
     </div>`;
 }
@@ -5308,7 +5326,8 @@ function finAddOneOffEntry(monthKey) {
 
 function finSetStartBalance(monthKey, value) {
   const month = finEnsureMonth(monthKey);
-  month.startBalance = value === '' ? null : Number(value);
+  if (value === '') { month.startBalance = null; month.startManual = false; }
+  else { month.startBalance = Number(value); month.startManual = true; }
   save();
   renderFinancePage();
 }
@@ -5357,7 +5376,6 @@ document.getElementById('fin-months')?.addEventListener('change', (e) => {
   if (e.target.classList.contains('fin-f-date')) finUpdateEntry(monthKey, entryId, { date: e.target.value });
   else if (e.target.classList.contains('fin-f-who')) finUpdateEntry(monthKey, entryId, { who: e.target.value });
   else if (e.target.classList.contains('fin-f-amount')) finUpdateEntry(monthKey, entryId, { amount: Number(e.target.value) });
-  else if (e.target.classList.contains('fin-f-posted')) finUpdateEntry(monthKey, entryId, { posted: e.target.checked });
 });
 
 // ── UPCOMING EVENTS ALERT STRIP ───────────────────────────────────────────────
