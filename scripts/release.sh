@@ -3,6 +3,7 @@
 #
 #   scripts/release.sh 0.9.0            # tag v0.9.0 and publish with generated notes
 #   scripts/release.sh 0.9.0 --draft    # create the release as a draft to edit first
+#   NOTES_FILE=notes.md scripts/release.sh 0.9.0   # use hand-written notes
 #
 # Run from a clean, up-to-date main. The tag lands on the commit that carries the
 # new VERSION file, so the build and the tag always agree.
@@ -26,6 +27,17 @@ if [[ "$(cat VERSION 2>/dev/null)" != "$ver" ]]; then
 fi
 git tag -a "$tag" -m "Helm $tag"
 git push origin main "$tag"
-gh release create "$tag" --title "Helm $tag" --generate-notes "$@"
+# Notes: NOTES_FILE if given, else the commit subjects since the previous release
+# tag. (GitHub's --generate-notes lists only merged PRs, and most work here lands
+# directly on main.)
+notes="${NOTES_FILE:-}"
+if [[ -z "$notes" ]]; then
+  notes="$(mktemp)"
+  prev="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$tag^" 2>/dev/null || true)"
+  range="${prev:+$prev..}$tag"
+  { echo "Changes since ${prev:-the start of history}:"; echo
+    git log "$range" --no-merges --format='- %s' | grep -v -E '^- Release v[0-9]'; } > "$notes"
+fi
+gh release create "$tag" --title "Helm $tag" --notes-file "$notes" "$@"
 echo "released $tag"
 echo "deploy: ssh vps 'cd ~/helm && git pull && docker compose up -d --build helm'"
