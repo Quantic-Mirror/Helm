@@ -127,11 +127,11 @@ Design decisions, each load-bearing — don't undo them without a reason:
   keys may hold the *other* profile's data, or a pre-profiles blob may have no
   sub-objects at all), re-renders, and re-persists locally. New `state`-swap
   sites must call it too.
-- **No tab hiding.** Both profiles show every tab; `switchTab()` and the
-  startup hash router do no profile-based redirect. (An earlier version hid
-  `backups`/`workout`/`journal` under Work via `PROFILE_HIDDEN_TABS` +
-  `data-profile-hide` — removed after testing; don't reintroduce it without
-  being asked.)
+- **No per-profile tab hiding.** Both profiles show the same tabs; nothing
+  redirects by profile. (An earlier version hid `backups`/`workout`/`journal`
+  under Work via `PROFILE_HIDDEN_TABS` + `data-profile-hide` — removed after
+  testing; don't reintroduce it.) Tab visibility is a separate, user-controlled
+  setting shared by both profiles — see "Frontend: tab visibility" below.
 - **Migration** is `ensureProfiles()`, idempotent, run on `load()` and inside
   `afterStateSwap()`: a pre-profiles blob's existing data becomes Personal;
   Work is seeded with **one empty "Work" column** (non-empty on purpose, so
@@ -266,3 +266,28 @@ around the gap.
   optional third-party import anywhere in the backend, and it's guarded. If
   a task seems to need a new pip dependency, treat that as a signal to look
   for a stdlib or shell-out alternative first.
+
+## Frontend: tab visibility
+
+The dashboard's **Tabs ▾** menu turns tabs on and off, like **+ Widget** adds and
+removes widgets. The hidden list is `state.settings.hiddenTabs` (tab ids), so it
+syncs across devices and rides in backups and Load Config with the rest of
+`settings` — no new top-level state key.
+
+- `dashboard` and `services` are in `ALWAYS_VISIBLE_TABS` and cannot be hidden.
+- Hiding removes the button and makes `switchTab()` and the startup hash router
+  treat the tab as unavailable (it lands on the dashboard). It never deletes data.
+- **Existing installs keep every tab** (no `hiddenTabs` key). Only a fresh install,
+  via `seedDefaults()`, starts with `DEFAULT_HIDDEN_TABS` — it shows Bookmarks,
+  YouTube, News, Calendar and Services.
+- The Wiki, Journal and Reader iframes are given their `src` only while their tab
+  is visible (`TAB_FRAMES` / `loadTabFrame()`).
+- `applyTabVisibility()` runs from `load()` and `afterStateSwap()`, so remote sync,
+  restore and import re-apply it. Its constants are declared in the early-globals
+  block for the same TDZ reason as `currentTab`.
+- `VALID_TABS` is derived from `#tab-nav`. **Adding a tab** needs only: the nav
+  link, the page `<div>`, a `show(...)` line and a `titles` entry in `switchTab()`;
+  it then appears in the Tabs menu automatically. If it should start hidden on a
+  fresh install, add it to `DEFAULT_HIDDEN_TABS`.
+- `python3 scripts/test_tabs.py` checks that every nav tab is wired, the startup
+  order, and the behaviour (it needs `node`).

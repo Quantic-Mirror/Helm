@@ -1695,6 +1695,12 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   white-space: nowrap;
 }
 .dropdown-item:hover { background: var(--surface-3); }
+.tab-toggle-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px;
+  color: var(--text); font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.tab-toggle-row:hover { background: var(--surface-3); }
+.tab-menu-hint { padding: 4px 10px 6px; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 .dropdown-divider {
   height: 1px;
   background: var(--border);
@@ -3132,6 +3138,10 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
           <button class="dropdown-item" id="btn-access-token">🔑 Access Token</button>
         </div>
       </div>
+      <div class="dropdown" id="dd-tabs">
+        <button class="btn dropdown-trigger" data-dd="dd-tabs" title="Choose which tabs are shown">Tabs ▾</button>
+        <div class="dropdown-menu" id="tab-menu"></div>
+      </div>
       <div class="dropdown" id="dd-widgets">
         <button class="btn dropdown-trigger" data-dd="dd-widgets">+ Widget ▾</button>
         <div class="dropdown-menu">
@@ -3649,6 +3659,24 @@ let syncPushPending = false; // true while a push is queued or in flight
 let LOCAL_BACKEND_AVAILABLE = null; // null = unchecked, true/false once confirmed
 let BACKEND_CHECK_PROMISE = null; // in-flight de-dupe for concurrent checkLocalBackend() callers
 let currentTab = 'dashboard';       // active tab — declared here to avoid TDZ errors
+
+// ── TAB VISIBILITY ────────────────────────────────────────────────────────────
+// Tabs can be switched off from the dashboard's "Tabs" menu, like widgets are
+// added and removed. The hidden list is state.settings.hiddenTabs (synced
+// across devices). Hiding only removes the button and makes the router treat the
+// tab as unavailable; the tab's data stays in state, backups and sync.
+// Declared up here, not next to the functions below, because load() (which calls
+// applyTabVisibility()) and switchTab(initialTab) both run before file order
+// would reach them.
+const ALWAYS_VISIBLE_TABS = ['dashboard', 'services'];
+// What a brand-new install starts without. Existing installs have no hiddenTabs
+// key and keep every tab; this is applied only when seedDefaults() builds a fresh
+// state.
+const DEFAULT_HIDDEN_TABS = ['log', 'finances', 'music', 'leafwiki', 'journal', 'reader', 'logs'];
+// Tabs that embed another app: tab id -> iframe id. The iframe is only given its
+// src once its tab is visible, so a hidden tab costs nothing at page load.
+const TAB_FRAMES = { leafwiki: 'leafwiki-frame', journal: 'dailytxt-frame', reader: 'freshrss-frame' };
+const TAB_FRAME_URLS = {};          // tab id -> src, filled in by initConfig()
 let calPageView = 'month';
 let calPageYear = new Date().getFullYear();
 let calPageMonth = new Date().getMonth();
@@ -3796,6 +3824,7 @@ function writeBackActiveProfile() {
 // df4b55d for why the render trio is mandatory after a state swap).
 function afterStateSwap() {
   ensureProfiles();
+  applyTabVisibility();
   hydrateActiveProfile();
   render();
   renderDashboard();
@@ -4043,6 +4072,7 @@ function load() {
   if (!state.columns || state.columns.length === 0) { seedDefaults(); ensureProfiles(); hydrateActiveProfile(); }
   if (!state.collapsedCols) state.collapsedCols = [];
   if (!state.settings) state.settings = {};
+  applyTabVisibility();
   if (!state.feeds) state.feeds = [];
   if (!state.newsSources) state.newsSources = [];
   if (!state.logEntries) state.logEntries = [];
@@ -4109,7 +4139,7 @@ function seedDefaults() {
     { id: uid(), colId: cols[2].id, url: 'https://www.wikipedia.org', title: 'Wikipedia', tag: 'ref', order: 0 },
     { id: uid(), colId: cols[2].id, url: 'https://readwise.io', title: 'Readwise', tag: 'read', order: 1 },
   ];
-  state = { columns: cols, bookmarks: bms, settings: {}, widgets: [
+  state = { columns: cols, bookmarks: bms, settings: { hiddenTabs: DEFAULT_HIDDEN_TABS.slice() }, widgets: [
     { id: uid(), type: 'search', engine: 'searx' },
     { id: uid(), type: 'weather', city: 'Athens, GA', unit: 'f' }
   ], collapsedCols: [] };
@@ -9307,13 +9337,66 @@ setTimeout(startMailPolling, 1500);
 // bookmarked/refreshed) with a specific tab's hash in the URL, honor it
 // instead of always landing on Dashboard — but only if it's a real,
 // known tab, so a stray or malformed hash doesn't switch to nothing.
-const VALID_TABS = ['dashboard', 'bookmarks', 'feeds', 'news', 'calendar', 'services', 'music', 'logs', 'leafwiki', 'journal', 'reader'];
+function hiddenTabs() {
+  const l = state.settings && state.settings.hiddenTabs;
+  return Array.isArray(l) ? l : [];
+}
+
+function isTabVisible(tab) {
+  return ALWAYS_VISIBLE_TABS.includes(tab) || !hiddenTabs().includes(tab);
+}
+
+function loadTabFrame(tab) {
+  const id = TAB_FRAMES[tab], url = TAB_FRAME_URLS[tab];
+  const f = id && document.getElementById(id);
+  if (f && url && isTabVisible(tab) && !f.getAttribute('src')) f.src = url;
+}
+
+function applyTabVisibility() {
+  document.querySelectorAll('#tab-nav .tab-btn[data-tab]').forEach(b => {
+    const tab = b.dataset.tab;
+    b.style.display = isTabVisible(tab) ? '' : 'none';
+    loadTabFrame(tab);
+  });
+  // The tab you are on was just hidden (here, or from another device).
+  if (!isTabVisible(currentTab)) switchTab('dashboard');
+  renderTabMenu();
+}
+
+function setTabHidden(tab, hidden) {
+  if (ALWAYS_VISIBLE_TABS.includes(tab)) return;
+  if (!state.settings) state.settings = {};
+  const set = new Set(hiddenTabs());
+  if (hidden) set.add(tab); else set.delete(tab);
+  state.settings.hiddenTabs = [...set];
+  save();
+  applyTabVisibility();
+}
+
+function renderTabMenu() {
+  const menu = document.getElementById('tab-menu');
+  if (!menu) return;
+  const rows = Array.from(document.querySelectorAll('#tab-nav .tab-btn[data-tab]'))
+    .filter(b => !ALWAYS_VISIBLE_TABS.includes(b.dataset.tab));
+  // .tab-toggle-row (not .dropdown-item) so a click does not close the menu.
+  menu.innerHTML = rows.map(b =>
+    `<label class="tab-toggle-row"><input type="checkbox" data-tab-toggle="${escHtml(b.dataset.tab)}"` +
+    `${isTabVisible(b.dataset.tab) ? ' checked' : ''}> <span>${escHtml(b.textContent.trim())}</span></label>`
+  ).join('') +
+    '<div class="dropdown-divider"></div>' +
+    '<div class="tab-menu-hint">Hiding a tab keeps its data.</div>' +
+    '<button class="dropdown-item" id="btn-tabs-all">Show all tabs</button>';
+}
+
+// The list is read from the nav, so a tab added there is routable with no second
+// list to keep in step.
+const VALID_TABS = ['dashboard', ...Array.from(document.querySelectorAll('#tab-nav .tab-btn[data-tab]'), b => b.dataset.tab)];
 // Audio Grabber (#audio) and musicXplorer (#musicxplorer) merged into one
 // Music tab — redirect anyone with an old bookmarked/shared hash instead of
 // falling through to Dashboard.
 const LEGACY_TAB_HASH = { audio: 'music', musicxplorer: 'music' };
 const _hashTab = LEGACY_TAB_HASH[location.hash.slice(1)] || location.hash.slice(1);
-const initialTab = VALID_TABS.includes(_hashTab) ? _hashTab : 'dashboard';
+const initialTab = (VALID_TABS.includes(_hashTab) && isTabVisible(_hashTab)) ? _hashTab : 'dashboard';
 switchTab(initialTab);
 document.getElementById('helm-logo').onclick = () => switchTab('dashboard');
 
@@ -9366,6 +9449,19 @@ document.querySelectorAll('.dropdown-trigger').forEach(trigger => {
   };
 });
 
+document.getElementById('tab-menu').addEventListener('change', (e) => {
+  const t = e.target.closest('[data-tab-toggle]');
+  if (t) setTabHidden(t.dataset.tabToggle, !t.checked);
+});
+document.getElementById('tab-menu').addEventListener('click', (e) => {
+  if (e.target.closest('#btn-tabs-all')) {
+    if (!state.settings) state.settings = {};
+    state.settings.hiddenTabs = [];
+    save();
+    applyTabVisibility();
+  }
+});
+
 // Close any open dropdown when clicking elsewhere, or when any item inside is clicked
 document.addEventListener('click', (e) => {
   if (e.target.closest('.dropdown-item')) {
@@ -9415,17 +9511,19 @@ async function initConfig() {
         document.getElementById('helm-logo').title = `Dashboard · Helm v${cfg.app_version}`;
       }
       if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
-      if (cfg.leafwiki_url) document.getElementById('leafwiki-frame').src = cfg.leafwiki_url;
-      if (cfg.dailytxt_url) document.getElementById('dailytxt-frame').src = cfg.dailytxt_url;
-      if (cfg.freshrss_url) document.getElementById('freshrss-frame').src = cfg.freshrss_url;
+      if (cfg.leafwiki_url) TAB_FRAME_URLS.leafwiki = cfg.leafwiki_url;
+      if (cfg.dailytxt_url) TAB_FRAME_URLS.journal = cfg.dailytxt_url;
+      if (cfg.freshrss_url) TAB_FRAME_URLS.reader = cfg.freshrss_url;
+      Object.keys(TAB_FRAMES).forEach(loadTabFrame);   // only visible tabs load
     }
   } catch (e) {
     // Config endpoint not available (e.g. running via python3 directly).
     // Fall back to localhost for SearxNG, LeafWiki, DailyTxT, and FreshRSS.
     ENGINES.searx.url = 'http://localhost:8080/search?q=';
-    document.getElementById('leafwiki-frame').src = 'https://localhost:9004';
-    document.getElementById('dailytxt-frame').src = 'https://localhost:9005';
-    document.getElementById('freshrss-frame').src = 'https://localhost:9007/i/';
+    TAB_FRAME_URLS.leafwiki = 'https://localhost:9004';
+    TAB_FRAME_URLS.journal = 'https://localhost:9005';
+    TAB_FRAME_URLS.reader = 'https://localhost:9007/i/';
+    Object.keys(TAB_FRAMES).forEach(loadTabFrame);
   }
 }
 
@@ -9493,6 +9591,7 @@ function ensureFeeds() {
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
 function switchTab(tab) {
+  if (!isTabVisible(tab)) tab = 'dashboard';   // hidden tabs are not routable
   currentTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   const logo = document.getElementById('helm-logo');
@@ -9541,7 +9640,7 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', log: 'Helm — Log', finances: 'Helm — Finances', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal', books: 'Helm — Books' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', log: 'Helm — Log', finances: 'Helm — Finances', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal', reader: 'Helm — Reader' };
   setDocumentTitle(titles[tab] || 'Helm');
 
   if (tab === 'feeds')     renderFeeds();
