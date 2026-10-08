@@ -1695,6 +1695,7 @@ body.compact .add-bm-btn { padding: 4px 8px; }
   white-space: nowrap;
 }
 .dropdown-item:hover { background: var(--surface-3); }
+a.dropdown-item { box-sizing: border-box; text-decoration: none; }
 .tab-toggle-row {
   display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px;
   color: var(--text); font-size: 12px; cursor: pointer; white-space: nowrap;
@@ -3136,6 +3137,8 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
           <button class="dropdown-item" id="btn-backups">🗄 Rolling Backups</button>
           <div class="dropdown-divider"></div>
           <button class="dropdown-item" id="btn-access-token">🔑 Access Token</button>
+          <div class="dropdown-divider"></div>
+          <a class="dropdown-item" id="helm-version-link" href="https://github.com/Quantic-Mirror/Helm" target="_blank" rel="noopener noreferrer" title="Helm on GitHub">Helm</a>
         </div>
       </div>
       <div class="dropdown" id="dd-tabs">
@@ -9502,14 +9505,21 @@ document.querySelectorAll('[data-calpage-view]').forEach(btn => {
 // ── RUNTIME CONFIG ─────────────────────────────────────────────────────────────
 // Pull /api/config to get runtime hostnames/URLs so nothing is hardcoded.
 // Fallback to localhost defaults for local dev (python3 helm_server.py).
+// The running build's version, from /api/config: logo tooltip and the link at the
+// bottom of the Data menu (which points at the project on GitHub).
+function showAppVersion(v) {
+  if (!v || v === 'unknown') return;
+  document.getElementById('helm-logo').title = `Dashboard · Helm v${v}`;
+  const a = document.getElementById('helm-version-link');
+  if (a) a.textContent = `Helm v${v}`;
+}
+
 async function initConfig() {
   try {
     const resp = await fetch('/api/config', { signal: AbortSignal.timeout(5000) });
     if (resp.ok) {
       const cfg = await resp.json();
-      if (cfg.app_version && cfg.app_version !== 'unknown') {
-        document.getElementById('helm-logo').title = `Dashboard · Helm v${cfg.app_version}`;
-      }
+      showAppVersion(cfg.app_version);
       if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
       if (cfg.leafwiki_url) TAB_FRAME_URLS.leafwiki = cfg.leafwiki_url;
       if (cfg.dailytxt_url) TAB_FRAME_URLS.journal = cfg.dailytxt_url;
