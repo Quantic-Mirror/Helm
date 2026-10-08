@@ -9411,6 +9411,9 @@ async function initConfig() {
     const resp = await fetch('/api/config', { signal: AbortSignal.timeout(5000) });
     if (resp.ok) {
       const cfg = await resp.json();
+      if (cfg.app_version && cfg.app_version !== 'unknown') {
+        document.getElementById('helm-logo').title = `Dashboard · Helm v${cfg.app_version}`;
+      }
       if (cfg.searxng_url) ENGINES.searx.url = cfg.searxng_url + '/search?q=';
       if (cfg.leafwiki_url) document.getElementById('leafwiki-frame').src = cfg.leafwiki_url;
       if (cfg.dailytxt_url) document.getElementById('dailytxt-frame').src = cfg.dailytxt_url;

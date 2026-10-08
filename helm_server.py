@@ -537,6 +537,20 @@ def get_releases():
     return 503, json.dumps({"error": "Release list is being built, try again shortly"}).encode("utf-8")
 
 
+# ── APP VERSION ─────────────────────────────────────────────────────────────────
+# Read from the VERSION file at the repo root (baked into the image with the rest
+# of the code). scripts/release.sh writes it, commits it, and tags the same commit,
+# so the running build reports the release it was built from.
+def _read_app_version():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
+            return f.read().strip() or "unknown"
+    except OSError:
+        return "unknown"
+
+
+APP_VERSION = _read_app_version()
+
 # ── SERVER HOST (for generating correct URLs in /api/config) ────────────────────
 # Used by the frontend to construct absolute URLs for proxied services.
 # Defaults to "localhost" — override with SERVER_HOST env var.
@@ -1725,6 +1739,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
             # they're passed through as-is — an earlier rsplit("/", 1)[0] here
             # was wrong and turned "http://host:8090" into "http:/".
             self.send_json(200, {
+                "app_version": APP_VERSION,
                 "server_host": SERVER_HOST,
                 "server_port": SERVER_PORT,
                 "searxng_url": os.environ.get("SEARXNG_URL", f"http://{SERVER_HOST}:{SERVER_PORT}"),
