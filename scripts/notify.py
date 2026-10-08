@@ -13,17 +13,54 @@ Usage:
     notify.py "Subject line" [body-text] [--from addr] [--to addr]
 
 Defaults route to isaboo@hyperion over the Tailscale address.
+
+Spooling (VPS): hyperion is not always on. When a spool directory is set --
+HELM_NOTIFY_SPOOL, or ~/mail-spool if that directory exists -- a message that
+cannot be delivered because hyperion is unreachable (or answers with a
+temporary 4xx) is written there as an .eml file and the send counts as
+successful. scripts/mail_spool_pull.py on hyperion fetches the spool over ssh
+and hands each message to hyperion's own MTA, so ~/.forward still runs.
+Permanent rejections (5xx) are never spooled. With no spool directory, a
+failed send still exits 1, as before.
 """
 import argparse
 import os
 import smtplib
 import socket
 import sys
+import time
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
 HYPERION_TAILNET_IP = "100.79.12.117"
 SMTP_PORT = 25
+
+
+def spool_dir():
+    """Directory to queue undeliverable mail in, or None when spooling is off."""
+    d = os.environ.get("HELM_NOTIFY_SPOOL") or os.path.expanduser("~/mail-spool")
+    if os.environ.get("HELM_NOTIFY_SPOOL") or os.path.isdir(d):
+        return d
+    return None
+
+
+def _temporary(exc):
+    """True for failures that mean 'try again later', not 'rejected'."""
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return 400 <= exc.smtp_code < 500
+    return isinstance(exc, (OSError, smtplib.SMTPServerDisconnected))
+
+
+def spool_message(msg, directory):
+    """Write msg to the spool atomically. Returns the file path."""
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    name = f"{time.time_ns()}-{os.getpid()}.eml"
+    tmp = os.path.join(directory, "." + name + ".tmp")
+    with open(tmp, "wb") as fh:
+        fh.write(msg.as_bytes())
+    final = os.path.join(directory, name)
+    os.replace(tmp, final)
+    return final
 
 
 def send(subject, body, sender, recipient, host=HYPERION_TAILNET_IP, port=SMTP_PORT,
@@ -54,8 +91,16 @@ def send(subject, body, sender, recipient, host=HYPERION_TAILNET_IP, port=SMTP_P
     # Plain SMTP on the tailnet. No STARTTLS: both ends are behind Tailscale's
     # encrypted WireGuard transport, so the traffic is already encrypted in
     # transit, and postfix on a tailnet-only listener has no cert to offer.
-    with smtplib.SMTP(host, port, timeout=timeout) as s:
-        s.send_message(msg)
+    try:
+        with smtplib.SMTP(host, port, timeout=timeout) as s:
+            s.send_message(msg)
+    except (smtplib.SMTPException, OSError) as e:
+        d = spool_dir()
+        if d is None or not _temporary(e):
+            raise
+        path = spool_message(msg, d)
+        print(f"spooled {msg['Message-ID']} -> {recipient} ({e}); queued at {path}")
+        return True
 
     print(f"sent {msg['Message-ID']} -> {recipient} via {host}:{port}")
     return True

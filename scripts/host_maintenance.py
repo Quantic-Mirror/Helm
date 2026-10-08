@@ -32,6 +32,7 @@ import smtplib
 import socket
 import subprocess
 import sys
+import time
 from datetime import datetime
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
@@ -58,8 +59,22 @@ def send_mail(subject, body, sender, recipient):
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain="helm.local")
     msg.set_content(body)
-    with smtplib.SMTP(HYPERION_TAILNET_IP, SMTP_PORT, timeout=15) as s:
-        s.send_message(msg)
+    try:
+        with smtplib.SMTP(HYPERION_TAILNET_IP, SMTP_PORT, timeout=15) as s:
+            s.send_message(msg)
+    except (smtplib.SMTPServerDisconnected, OSError) as e:
+        # Hyperion is off or unreachable: queue for scripts/mail_spool_pull.py
+        # (same spool as notify.py) so the report arrives when it boots.
+        d = os.environ.get("HELM_NOTIFY_SPOOL") or os.path.expanduser("~/mail-spool")
+        if not (os.environ.get("HELM_NOTIFY_SPOOL") or os.path.isdir(d)):
+            raise
+        os.makedirs(d, mode=0o700, exist_ok=True)
+        name = f"{time.time_ns()}-{os.getpid()}.eml"
+        tmp = os.path.join(d, "." + name + ".tmp")
+        with open(tmp, "wb") as fh:
+            fh.write(msg.as_bytes())
+        os.replace(tmp, os.path.join(d, name))
+        print(f"host-maintenance: hyperion unreachable ({e}); report queued in {d}")
 
 
 def run(cmd, timeout=120):
