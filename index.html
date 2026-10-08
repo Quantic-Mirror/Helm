@@ -3309,8 +3309,8 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
         </select>
       </div>
       <div class="field">
-        <label for="fin-day">Day of month</label>
-        <input id="fin-day" type="number" min="1" max="31" value="1" required>
+        <label for="fin-day">Usual day (optional)</label>
+        <input id="fin-day" type="number" min="1" max="31" placeholder="varies">
       </div>
       <div class="field">
         <label for="fin-amount">Default amount</label>
@@ -5154,6 +5154,7 @@ function finDaysInMonth(y, m) {
 }
 
 function finDateForDay(monthKey, day) {
+  if (!day) return ''; // no usual day: the date is filled in each month
   const [y, m] = monthKey.split('-').map(Number);
   const clamped = Math.min(Math.max(1, day), finDaysInMonth(y, m));
   return `${monthKey}-${String(clamped).padStart(2, '0')}`;
@@ -5209,7 +5210,7 @@ function finEffectiveStart(monthKey) {
 // every row applied to the running balance, starting from finEffectiveStart.
 function finComputeBalances(monthKey) {
   const month = state.financeMonths[monthKey];
-  const sorted = [...month.entries].sort((a, b) => a.date.localeCompare(b.date));
+  const sorted = [...month.entries].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
   let running = finEffectiveStart(monthKey);
   const rows = sorted.map(entry => {
     const amt = Number(entry.amount) || 0;
@@ -5229,7 +5230,7 @@ function renderFinancePage() {
     <div class="fin-recurring-row" data-id="${rec.id}">
       <span class="fin-rec-name">${escHtml(rec.who)}</span>
       <span class="fin-rec-${rec.type}">${rec.type === 'income' ? '+ Income' : '− Expense'}</span>
-      <span class="fin-rec-day">day ${rec.day}</span>
+      <span class="fin-rec-day">${rec.day ? 'usually day ' + rec.day : 'day varies'}</span>
       <span class="fin-rec-amount">$${Number(rec.amount).toFixed(2)}</span>
       <button class="fin-rec-del" title="Delete">✕</button>
     </div>`).join('') : '<div style="color:var(--text-dim);font-size:13px">No recurring items yet — add one above.</div>';
@@ -5276,7 +5277,7 @@ function finRenderMonthColumn(monthKey, label) {
 }
 
 function finAddRecurring(who, type, day, amount) {
-  state.financeRecurring.push({ id: uid(), who: who.trim(), type, day: Number(day), amount: Number(amount) });
+  state.financeRecurring.push({ id: uid(), who: who.trim(), type, day: day === '' ? null : Number(day), amount: Number(amount) });
   save();
   renderFinancePage();
 }
@@ -5341,7 +5342,7 @@ document.getElementById('fin-recurring-add')?.addEventListener('submit', (e) => 
   if (!who.trim()) return;
   finAddRecurring(who, type, day, amount);
   document.getElementById('fin-name').value = '';
-  document.getElementById('fin-day').value = '1';
+  document.getElementById('fin-day').value = '';
   document.getElementById('fin-amount').value = '0';
 });
 
