@@ -204,6 +204,11 @@ def main():
             report_synced(rels)
 
     imported, review = import_albums(args.dry_run)
+    if not args.dry_run:
+        # beets prunes directories it leaves empty, up to the library root, and the
+        # Inbox sits inside the library -- so importing the last album deletes it.
+        # Put it back so it is always there to drop files into.
+        os.makedirs(INBOX, exist_ok=True)
     log(f"ingest: pulled {moved} file(s), imported {len(imported)}, "
         f"{len(review)} left for review")
 
