@@ -1,0 +1,12 @@
+# Hyperion user unit. Install: copy to ~/.config/systemd/user/, then
+#   systemctl --user daemon-reload && systemctl --user enable --now hyperion-mail-spool-pull.timer
+[Unit]
+Description=Pull mail the VPS queued while hyperion was off
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/repos/Helm/scripts/mail_spool_pull.py
+StandardOutput=journal
+StandardError=journal

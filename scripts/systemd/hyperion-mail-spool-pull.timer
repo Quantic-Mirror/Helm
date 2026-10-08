@@ -1,0 +1,9 @@
+[Unit]
+Description=Pull queued VPS mail shortly after login, then every 5 minutes
+
+[Timer]
+OnStartupSec=45s
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
