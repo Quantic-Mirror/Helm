@@ -5134,11 +5134,9 @@ document.getElementById('log-entries-list')?.addEventListener('click', (e) => {
 // ── FINANCES PAGE ─────────────────────────────────────────────────────────────
 // Two parallel month ledgers (This Month / Next Month, keyed by "YYYY-MM")
 // fed by a managed list of recurring bills/income (state.financeRecurring).
-// Mirrors the user's existing spreadsheet mechanic: Balance only changes on
-// a row once it's marked "posted" (the bill/income actually happened); an
-// unposted row just carries forward the last posted balance, same as their
-// sheet's flat-repeated-balance-until-the-next-real-entry pattern -- except
-// here it's computed, not retyped by hand on every row.
+// Every row counts toward the running balance. The per-row checkbox (stored as
+// `posted` so existing data needs no migration) now just marks a row as
+// planned / on the radar; it does not change the balance.
 // Shared across both profiles (not per-profile like bookmarks/feeds).
 
 function finMonthKey(offset) {
@@ -5185,16 +5183,15 @@ function finEnsureMonth(monthKey) {
 }
 
 // Returns { rows: [{entry, balance}], finalBalance } -- rows in chronological
-// order, balance only advancing on posted rows, flat otherwise.
+// order, with every row applied to the running balance.
 function finComputeBalances(monthKey) {
   const month = state.financeMonths[monthKey];
   const sorted = [...month.entries].sort((a, b) => a.date.localeCompare(b.date));
   let running = Number(month.startBalance) || 0;
   const rows = sorted.map(entry => {
-    if (entry.posted) {
-      const amt = Number(entry.amount) || 0;
-      running += entry.type === 'income' ? amt : -amt;
-    }
+    // Every row counts toward the balance, planned or not.
+    const amt = Number(entry.amount) || 0;
+    running += entry.type === 'income' ? amt : -amt;
     return { entry, balance: running };
   });
   return { rows, finalBalance: running };
@@ -5241,7 +5238,7 @@ function finRenderMonthColumn(monthKey, label) {
       <input type="date" class="fin-f-date" value="${entry.date}">
       <input type="text" class="fin-f-who" value="${escHtml(entry.who)}">
       <input type="number" step="0.01" class="fin-f-amount fin-entry-${entry.type}" value="${entry.amount}">
-      <input type="checkbox" class="fin-f-posted" ${entry.posted ? 'checked' : ''} title="Posted?">
+      <input type="checkbox" class="fin-f-posted" ${entry.posted ? 'checked' : ''} title="Planned / on my radar">
       <span class="fin-entry-balance">$${balance.toFixed(2)}</span>
       <button class="fin-entry-del" title="Delete">✕</button>
     </div>`).join('')
@@ -9933,7 +9930,7 @@ async function refreshSlskdStaged() {
     if (resultsEl && SLSKD_LAST) {
       const syncedIndices = new Set();
       for (const e of data.entries) {
-        if (e.status === 'synced' && e.searchIndex) {
+        if (e.status === 'synced' && e.searchIndex && e.searchId === SLSKD_SEARCH_ID) {
           syncedIndices.add(e.searchIndex);
         }
       }
