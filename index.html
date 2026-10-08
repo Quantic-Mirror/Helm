@@ -2064,40 +2064,9 @@ body.compact .add-bm-btn { padding: 4px 8px; }
 #log-empty { color: var(--text-dim); font-size: 13px; padding: 10px 0; }
 
 /* ── FINANCES PAGE ───────────────────────────────────────────────────────────
-   Two-column month ledger (This Month / Next Month) + a managed list of
-   recurring bills/income that auto-populates both columns. See
-   state.financeRecurring / state.financeMonths and the "FINANCES" JS banner. */
+   Two-column month ledger (This Month / Next Month), every row
+   entered by hand. See state.financeMonths and the "FINANCES" JS banner. */
 #finances-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
-#fin-recurring-section {
-  margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid var(--border);
-}
-#fin-recurring-add {
-  display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px;
-}
-#fin-recurring-add .field { margin-bottom: 0; }
-#fin-recurring-add input, #fin-recurring-add select {
-  background: var(--surface); color: var(--text);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 7px 10px; font-size: 13px;
-}
-#fin-name { width: 140px; }
-#fin-day { width: 70px; }
-#fin-amount { width: 100px; }
-#fin-recurring-list { display: flex; flex-direction: column; gap: 4px; }
-.fin-recurring-row {
-  display: flex; align-items: center; gap: 10px; padding: 6px 10px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-  font-size: 13px;
-}
-.fin-recurring-row .fin-rec-name { font-weight: 600; min-width: 110px; }
-.fin-recurring-row .fin-rec-income { color: #3fb950; }
-.fin-recurring-row .fin-rec-expense { color: #f85149; }
-.fin-recurring-row .fin-rec-day { color: var(--text-dim); min-width: 70px; }
-.fin-recurring-row .fin-rec-amount { min-width: 80px; }
-.fin-recurring-row .fin-rec-del {
-  background: none; border: none; color: var(--text-dim); cursor: pointer; margin-left: auto;
-}
-.fin-recurring-row .fin-rec-del:hover { color: var(--text); }
 #fin-months { display: flex; gap: 24px; flex-wrap: wrap; }
 .fin-month-col { flex: 1; min-width: 360px; }
 .fin-month-col h3 {
@@ -3291,35 +3260,8 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 </div>
 
 <!-- FINANCES PAGE: two-column month ledger (This Month / Next Month) fed by
-     a managed recurring-item list. Shared across both profiles, see
-     state.financeRecurring / state.financeMonths. -->
+     entered by hand. Shared across both profiles, see state.financeMonths. -->
 <div id="finances-page" style="display:none">
-  <div id="fin-recurring-section">
-    <h3 style="font-family:var(--font-display);font-size:15px;margin:0 0 10px;color:var(--text)">Recurring bills &amp; income</h3>
-    <form id="fin-recurring-add">
-      <div class="field">
-        <label for="fin-name">Name</label>
-        <input id="fin-name" type="text" placeholder="Rent, UNIV, SS…" required>
-      </div>
-      <div class="field">
-        <label for="fin-type">Type</label>
-        <select id="fin-type">
-          <option value="expense">Expense</option>
-          <option value="income">Income</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="fin-day">Usual day (optional)</label>
-        <input id="fin-day" type="number" min="1" max="31" placeholder="varies">
-      </div>
-      <div class="field">
-        <label for="fin-amount">Default amount</label>
-        <input id="fin-amount" type="number" step="0.01" min="0" value="0" required>
-      </div>
-      <button type="submit" class="btn">+ Add</button>
-    </form>
-    <div id="fin-recurring-list"></div>
-  </div>
   <div id="fin-months"></div>
 </div>
 
@@ -5133,8 +5075,8 @@ document.getElementById('log-entries-list')?.addEventListener('click', (e) => {
 });
 
 // ── FINANCES PAGE ─────────────────────────────────────────────────────────────
-// Two parallel month ledgers (This Month / Next Month, keyed by "YYYY-MM")
-// fed by a managed list of recurring bills/income (state.financeRecurring).
+// Two parallel month ledgers (This Month / Next Month, keyed by "YYYY-MM"),
+// filled in by hand. (state.financeRecurring is kept in saved data but unused.)
 // Start from a balance (typed, or carried from the previous month), add known
 // income/expenses, and add more as the month goes. The ending balance at the
 // bottom includes every row, and the next month's start follows it automatically
@@ -5165,23 +5107,12 @@ function finMonthLabel(monthKey) {
   return new Date(y, m - 1, 1).toLocaleDateString([], { month: 'long', year: 'numeric' });
 }
 
-// Ensure a month exists and has one entry per recurring item (adding any
-// missing ones -- covers both first creation and a recurring item added
-// after the month already existed). Never removes entries, so deleting a
-// recurring item doesn't retroactively delete history.
+// Ensure a month record exists. Entries are only ever added by hand.
 function finEnsureMonth(monthKey) {
   if (!state.financeMonths[monthKey]) {
     state.financeMonths[monthKey] = { startBalance: null, entries: [] };
   }
   const month = state.financeMonths[monthKey];
-  const haveRecurringIds = new Set(month.entries.map(e => e.recurringId).filter(Boolean));
-  state.financeRecurring.forEach(rec => {
-    if (haveRecurringIds.has(rec.id)) return;
-    month.entries.push({
-      id: uid(), recurringId: rec.id, date: finDateForDay(monthKey, rec.day),
-      who: rec.who, type: rec.type, amount: rec.amount, posted: false,
-    });
-  });
   return month;
 }
 
@@ -5221,19 +5152,8 @@ function finComputeBalances(monthKey) {
 }
 
 function renderFinancePage() {
-  const recListEl = document.getElementById('fin-recurring-list');
   const monthsEl = document.getElementById('fin-months');
-  if (!recListEl || !monthsEl) return;
-
-  // Recurring items list.
-  recListEl.innerHTML = state.financeRecurring.length ? state.financeRecurring.map(rec => `
-    <div class="fin-recurring-row" data-id="${rec.id}">
-      <span class="fin-rec-name">${escHtml(rec.who)}</span>
-      <span class="fin-rec-${rec.type}">${rec.type === 'income' ? '+ Income' : '− Expense'}</span>
-      <span class="fin-rec-day">${rec.day ? 'usually day ' + rec.day : 'day varies'}</span>
-      <span class="fin-rec-amount">$${Number(rec.amount).toFixed(2)}</span>
-      <button class="fin-rec-del" title="Delete">✕</button>
-    </div>`).join('') : '<div style="color:var(--text-dim);font-size:13px">No recurring items yet — add one above.</div>';
+  if (!monthsEl) return;
 
   // Two month columns: this month rolls forward automatically because
   // finMonthKey(0) always reflects the real current calendar month -- no
@@ -5274,20 +5194,6 @@ function finRenderMonthColumn(monthKey, label) {
       <div class="fin-month-summary">Ending balance: $${finalBalance.toFixed(2)}</div>
       <button class="btn fin-add-entry-btn" data-month="${monthKey}">+ Add one-off entry</button>
     </div>`;
-}
-
-function finAddRecurring(who, type, day, amount) {
-  state.financeRecurring.push({ id: uid(), who: who.trim(), type, day: day === '' ? null : Number(day), amount: Number(amount) });
-  save();
-  renderFinancePage();
-}
-
-function finDeleteRecurring(id) {
-  const idx = state.financeRecurring.findIndex(r => r.id === id);
-  if (idx === -1) return;
-  state.financeRecurring.splice(idx, 1);
-  save();
-  renderFinancePage();
 }
 
 function finUpdateEntry(monthKey, entryId, patch) {
@@ -5332,28 +5238,6 @@ function finSetStartBalance(monthKey, value) {
   save();
   renderFinancePage();
 }
-
-document.getElementById('fin-recurring-add')?.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const who = document.getElementById('fin-name').value;
-  const type = document.getElementById('fin-type').value;
-  const day = document.getElementById('fin-day').value;
-  const amount = document.getElementById('fin-amount').value;
-  if (!who.trim()) return;
-  finAddRecurring(who, type, day, amount);
-  document.getElementById('fin-name').value = '';
-  document.getElementById('fin-day').value = '';
-  document.getElementById('fin-amount').value = '0';
-});
-
-document.getElementById('fin-recurring-list')?.addEventListener('click', (e) => {
-  const del = e.target.closest('.fin-rec-del');
-  if (!del) return;
-  const row = del.closest('.fin-recurring-row');
-  if (row && confirm('Delete this recurring item? (Past entries already created stay as-is.)')) {
-    finDeleteRecurring(row.dataset.id);
-  }
-});
 
 // Delegated listeners on the months container -- entries re-render on every
 // edit, so binding to individual inputs would lose the handlers each time.
