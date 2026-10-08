@@ -9928,6 +9928,29 @@ function renderSlskdStaged(entries) {
 async function refreshSlskdStaged() {
   try {
     const data = await slskdApi('/api/slskd/staging');
+    // Auto-clear sources from search results when downloads finish (synced)
+    const resultsEl = document.getElementById('slskd-results');
+    if (resultsEl && SLSKD_LAST) {
+      const syncedIndices = new Set();
+      for (const e of data.entries) {
+        if (e.status === 'synced' && e.searchIndex) {
+          syncedIndices.add(e.searchIndex);
+        }
+      }
+      if (syncedIndices.size > 0) {
+        // Remove the source cards for synced downloads
+        resultsEl.querySelectorAll('.slskd-offer-card').forEach(card => {
+          const btn = card.querySelector('.slskd-download-btn');
+          if (btn && syncedIndices.has(parseInt(btn.dataset.index, 10))) {
+            card.remove();
+          }
+        });
+        // If all sources are gone, hide the results container
+        if (!resultsEl.querySelector('.slskd-offer-card')) {
+          resultsEl.style.display = 'none';
+        }
+      }
+    }
     renderSlskdStaged(data.entries);
   } catch (e) {
     // Leave the last list up; the next tick tries again.

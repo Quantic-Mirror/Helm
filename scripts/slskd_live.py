@@ -298,6 +298,7 @@ def _run_pick(sid, index, album):
                     files=len(files))
         stage({"kind": "album", "query": query, "album": chosen_album or "",
                "username": offer["username"], "state": "queued",
+               "searchIndex": index,
                "files": [{"filename": f["filename"], "size": f.get("size") or 0}
                          for f in files]})
     with _LOCK:
