@@ -47,6 +47,11 @@ STALE_HOURS = float(os.environ.get("STALE_HOURS", "26"))
 STAGES = [
     ("hyperion_backup", "Hyperion -> GitHub"),
     ("r2_sync", "popcorn -> R2"),
+    # hyperion's own Hermes state -> R2 (hyperion-hermes-backup.timer). Added
+    # after the popcorn-side Hermes job turned out to have been failing for two
+    # weeks with nothing reporting it: hermes_backup events were recorded but
+    # never digested.
+    ("hermes_backup", "Hyperion Hermes -> R2"),
 ]
 
 TIMEOUT = 20
