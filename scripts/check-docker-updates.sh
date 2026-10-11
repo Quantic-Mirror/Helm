@@ -156,7 +156,7 @@ if not isinstance(entries, list):
 for e in entries:
     desc = e.get("Descriptor") or {}
     plat = desc.get("platform") or {}
-    oci = e.get("OCIManifest") or {}
+    oci = e.get("OCIManifest") or e.get("SchemaV2Manifest") or {}
     cfg = (oci.get("config") or {}).get("digest")
     if not cfg:
         continue
@@ -179,6 +179,7 @@ container_digest() {
 DOCKER_ARCH="$(docker version --format '{{.Server.Arch}}' 2>/dev/null)"
 
 updates=()
+declare -A update_dirs=()
 checked=0
 unknown=0
 local_builds=0
@@ -225,6 +226,11 @@ while IFS='|' read -r name ref cid; do
 
     if [[ "$local_digest" != "$remote" ]]; then
         updates+=("$name"$'\t'"$ref")
+        # Compose project dir the container was created from, so the mail can
+        # say where to run the update. Containers outside ~/helm (stalwart,
+        # slskd, ...) are NOT touched by a compose run in ~/helm.
+        wd=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$cid" 2>/dev/null)
+        update_dirs["${wd:-unknown}"]=1
     fi
 done < <(running_containers)
 
@@ -261,7 +267,14 @@ fi
         printf '  %-24s %s\n' "${u%%$'\t'*}" "${u##*$'\t'}"
     done
     echo
-    echo "Apply with:  cd ~/helm && docker compose pull && docker compose up -d"
+    echo "Apply with (one per compose project):"
+    for d in "${!update_dirs[@]}"; do
+        if [[ "$d" == unknown ]]; then
+            echo "  (project dir unknown -- container not started by compose)"
+        else
+            echo "  cd ${d/#$HOME/\~} && docker compose pull && docker compose up -d"
+        fi
+    done
 } > /tmp/helm-docker-update-body.txt
 
 subject="Docker updates available on vps (${#updates[@]} of $checked)"
