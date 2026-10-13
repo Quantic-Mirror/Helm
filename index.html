@@ -2618,6 +2618,10 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
 .musicx-card-art .musicx-badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.7); }
 .musicx-badge { min-width: 0; padding: 1px 6px; font-size: 10px; flex-shrink: 0; }
 .musicx-badge-none { display: none; }
+.musicx-video-note { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.musicx-video-note:empty { display: none; }
+.musicx-video-note a { color: var(--accent); }
+.musicx-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; font-size: 12px; color: var(--text-muted); }
 .musicx-lyrics { margin-top: 4px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface-2); }
 .musicx-lyrics-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
 .musicx-lyrics-lines { position: relative; max-height: 340px; overflow-y: auto; scroll-behavior: smooth; }
@@ -3738,6 +3742,12 @@ let MUSICX_STAGING = null;        // last /api/slskd/staging entries, for the st
 let MUSICX_STAGING_TS = 0;
 let MUSICX_TIME_SEEN = false;     // true once the YouTube embed has reported a playback time
 const MUSICX_LYRICS = {};         // favorite id -> { synced: [{t,text}], plain, found }
+const MUSICX_PROBES = new Set();  // hidden embed-check iframes waiting on a player message
+const MUSICX_REPAIRING = new Set();     // favorite ids being re-sourced right now
+const MUSICX_REPAIR_FAILED = new Set(); // "id:videoId" that no alternative was found for (this session)
+const MUSICX_NOTES = {};          // favorite id -> note shown under the video (failures)
+let MUSICX_CHECKING = false;      // "Check videos" is running
+let MUSICX_CHECK_TEXT = '';
 let MUSICX_SELECTED_ID = null;    // id of the favorited track shown in the detail pane; null = newest
 let MUSICX_EXPLORE_ARTIST = null; // non-null while drilled into a related artist's own explorer panel
 let MUSICX_SEARCH_ARTIST = null;  // non-null while showing the free-text artist search's explorer instead of a favorited track
@@ -11786,7 +11796,7 @@ async function addMusicxFromYoutubeLink(link) {
 
 // ── Favorites: Soulseek status, overview, lyrics ─────────────────────────────
 
-function musicxNorm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+function musicxNorm(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 
 // Best status among the staged Soulseek downloads for this favorite, or null if
 // it was never sent. Matched on artist + title, which "Send to Soulseek" records
@@ -11841,6 +11851,10 @@ function renderMusicxOverview(detailEl, favs) {
       ${tile('<span id="musicx-stat-sent">–</span>', 'Sent to Soulseek')}
       ${tile('<span id="musicx-stat-synced">–</span>', 'Delivered to Inbox')}
     </div>
+    <div class="musicx-toolbar">
+      <button class="btn" id="musicx-fix-btn" title="Load each video in the background and replace any that can't be embedded"${MUSICX_CHECKING ? ' disabled' : ''}>🔧 Check videos</button>
+      <span id="musicx-fix-status">${escHtml(MUSICX_CHECK_TEXT)}</span>
+    </div>
     <div class="musicx-grid">${favs.map(f => `
       <div class="musicx-card" data-musicx-open="${escHtml(f.id)}" title="${escHtml(f.song)} — ${escHtml(f.artist)}">
         <div class="musicx-card-art">♪${f.videoId ? `<img loading="lazy" alt="" src="https://i.ytimg.com/vi/${encodeURIComponent(f.videoId)}/mqdefault.jpg" onerror="this.remove()">` : ''}
@@ -11851,6 +11865,7 @@ function renderMusicxOverview(detailEl, favs) {
       </div>`).join('')}
     </div>`;
   detailEl.querySelectorAll('[data-musicx-open]').forEach(c => { c.onclick = () => selectMusicxEntry(c.dataset.musicxOpen); });
+  document.getElementById('musicx-fix-btn').onclick = musicxCheckAll;
   paintMusicxBadges();
 }
 
@@ -11974,11 +11989,181 @@ window.addEventListener('message', (e) => {
   if (e.origin !== 'https://www.youtube.com') return;
   let d = e.data;
   if (typeof d === 'string') { try { d = JSON.parse(d); } catch (err) { return; } }
-  const t = d && d.info && d.info.currentTime;
+  if (!d) return;
+  for (const p of MUSICX_PROBES) { if (p.frame.contentWindow === e.source) { p.onEvent(d); return; } }
+  if (d.event === 'onError' && MUSICX_BLOCKED_CODES.includes(d.info)) {
+    const vis = document.querySelector('.musicx-video-wrap iframe');
+    if (vis && vis.contentWindow === e.source) musicxVideoBlocked(vis);
+    return;
+  }
+  const t = d.info && d.info.currentTime;
   if (typeof t !== 'number') return;
   MUSICX_TIME_SEEN = true;
   musicxFollow(t);
 });
+
+// ── Videos the owner has blocked from embedding ──────────────────────────────
+// The player reports error 150 (or 101) for those, and 100 for removed/private
+// videos. Rather than leave "This video is unavailable", look for another upload of
+// the song, load each candidate in a hidden player to prove it embeds, and switch.
+const MUSICX_BLOCKED_CODES = [100, 101, 150];
+const MUSICX_BAD_WORDS = ['live', 'cover', 'remix', 'karaoke', 'instrumental', 'reaction', 'sped up', 'slowed',
+  'nightcore', '8d', 'tutorial', 'lesson', 'full set', 'session', 'acoustic', 'tribute'];
+
+// Search hits worth trying, best first. A hit must name both the song and the artist,
+// is dropped if it is a live/cover/remix version the favorite is not, and when the
+// blocked video's length is known it must be within 12% of it.
+function musicxRankCandidates(fav, results, badIds) {
+  const song = musicxNorm(musicxCleanTitle(fav.song) || fav.song), artist = musicxNorm(fav.artist);
+  const favTitle = String(fav.song || '').toLowerCase();
+  const hasWord = (text, w) => new RegExp('\\b' + w + '\\b').test(text);
+  const ref = ((results || []).find(r => badIds.has(r.id)) || {}).duration || null;
+  const scored = [];
+  (results || []).forEach((r, i) => {
+    if (!r || !r.id || badIds.has(r.id)) return;
+    const title = String(r.title || '').toLowerCase(), up = String(r.uploader || '');
+    if (!musicxNorm(r.title).includes(song)) return;
+    if (!musicxNorm(r.title).includes(artist) && !musicxNorm(up).includes(artist)) return;
+    if (MUSICX_BAD_WORDS.some(w => hasWord(title, w) && !hasWord(favTitle, w))) return;
+    // Fan-filmed concerts are usually titled with a date or "@ venue" rather than "live".
+    if ((/\d{1,2}\/\d{1,2}\/\d{2,4}/.test(title) || title.includes('@')) && !/\d\/|@/.test(favTitle)) return;
+    let s = 0;
+    if (ref && r.duration) {
+      const d = Math.abs(r.duration - ref) / ref;
+      if (d > 0.12) return;
+      s += (0.12 - d) * 10;
+    }
+    if (/- topic$/i.test(up)) s += 3;
+    if (musicxNorm(up) === artist) s += 1.5;
+    if (title.includes('official')) s += 1;
+    if (title.includes('lyric')) s -= 0.5;
+    s -= i * 0.05;
+    scored.push({ r, s });
+  });
+  return scored.sort((a, b) => b.s - a.s).map(x => x.r);
+}
+
+// 'ok' | 'blocked' | 'unknown'. Loads the video in an off-screen player and waits for
+// it to either report an error or sit ready for a couple of seconds without one.
+function musicxProbeEmbed(videoId, timeoutMs = 12000) {
+  return new Promise(resolve => {
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;left:-9999px;top:0;width:320px;height:180px;border:0';
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    frame.allow = 'autoplay; encrypted-media';
+    let done = false, ready = false, tick = null, readyTimer = null, hard = null;
+    const probe = { frame, onEvent: null };
+    const finish = (result) => {
+      if (done) return;
+      done = true;
+      clearInterval(tick); clearTimeout(readyTimer); clearTimeout(hard);
+      MUSICX_PROBES.delete(probe);
+      frame.remove();
+      resolve(result);
+    };
+    probe.onEvent = (d) => {
+      if (d.event === 'onError') finish(MUSICX_BLOCKED_CODES.includes(d.info) ? 'blocked' : 'unknown');
+      else if (d.event === 'onReady' && !ready) { ready = true; readyTimer = setTimeout(() => finish('ok'), 2500); }
+    };
+    MUSICX_PROBES.add(probe);
+    hard = setTimeout(() => finish('unknown'), timeoutMs);
+    frame.addEventListener('load', () => {
+      let n = 0;
+      tick = setInterval(() => {
+        if (done || ++n > 15) { clearInterval(tick); return; }
+        try { frame.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'probe', channel: 'widget' }), 'https://www.youtube.com'); } catch (e) { /* not ready */ }
+      }, 700);
+    });
+    frame.src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}${musicxEmbedParams()}`;
+    document.body.appendChild(frame);
+  });
+}
+
+// An embeddable alternative for a favorite, or null. Throws if the search service is down.
+async function musicxFindEmbeddable(fav) {
+  const clean = musicxCleanTitle(fav.song) || fav.song;
+  let results = await searchMusicxVideo(`${fav.artist} ${clean}`);
+  try { results = results.concat(await searchMusicxVideo(`${fav.artist} ${clean} Provided to YouTube by`)); } catch (e) { /* the first search is enough */ }
+  const seen = new Set();
+  results = results.filter(r => r && r.id && !seen.has(r.id) && seen.add(r.id));
+  for (const r of musicxRankCandidates(fav, results, new Set([fav.videoId])).slice(0, 6)) {
+    if (await musicxProbeEmbed(r.id) === 'ok') return r;
+  }
+  return null;
+}
+
+function musicxShowNote(entry) {
+  const n = document.getElementById('musicx-video-note');
+  if (!n || n.dataset.entry !== entry.id) return;
+  const watch = (id) => `<a href="https://www.youtube.com/watch?v=${encodeURIComponent(id)}" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>`;
+  if (MUSICX_REPAIRING.has(entry.id)) n.textContent = 'Embedding is disabled for this video — looking for another upload…';
+  else if (MUSICX_NOTES[entry.id]) n.innerHTML = MUSICX_NOTES[entry.id];
+  else if (entry.replacedFrom) n.innerHTML = `Switched to another upload, because the original can't be embedded. ${watch(entry.replacedFrom).replace('Watch on YouTube', 'Original on YouTube')}`;
+  else n.textContent = '';
+}
+
+async function musicxVideoBlocked(frame) {
+  const wrap = frame.closest('.musicx-video-wrap');
+  const entry = wrap && (state.musicXplorer || []).find(e => 'musicx-video-' + e.id === wrap.id);
+  if (!entry || MUSICX_REPAIRING.has(entry.id)) return;
+  const key = entry.id + ':' + entry.videoId;
+  const watch = `<a href="https://www.youtube.com/watch?v=${encodeURIComponent(entry.videoId)}" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>`;
+  const giveUp = `This video can't be embedded and no embeddable alternative was found. ${watch}, or use "Pick a different video".`;
+  if (MUSICX_REPAIR_FAILED.has(key)) { MUSICX_NOTES[entry.id] = giveUp; musicxShowNote(entry); return; }
+  MUSICX_REPAIRING.add(entry.id);
+  delete MUSICX_NOTES[entry.id];
+  musicxShowNote(entry);
+  const oldId = entry.videoId;
+  try {
+    const pick = await musicxFindEmbeddable(entry);
+    if (pick) {
+      entry.replacedFrom = oldId;
+      entry.videoId = pick.id;
+      save();
+    } else {
+      MUSICX_REPAIR_FAILED.add(key);
+      MUSICX_NOTES[entry.id] = giveUp;
+    }
+  } catch (e) {
+    MUSICX_NOTES[entry.id] = `Could not look for another video: ${escHtml(e.message)}. ${watch}`;
+  } finally {
+    MUSICX_REPAIRING.delete(entry.id);
+  }
+  if (getMusicxSelectedEntry()?.id === entry.id && MUSICX_VIEW === 'detail' && !MUSICX_SEARCH_ARTIST) {
+    if (entry.videoId !== oldId) renderMusicxVideo(entry);
+    musicxShowNote(entry);
+  }
+}
+
+// Overview "Check videos": probe every favorite's video and replace the blocked ones.
+async function musicxCheckAll() {
+  if (MUSICX_CHECKING) return;
+  MUSICX_CHECKING = true;
+  const say = (t) => { MUSICX_CHECK_TEXT = t; const s = document.getElementById('musicx-fix-status'); if (s) s.textContent = t; };
+  const btn = document.getElementById('musicx-fix-btn');
+  if (btn) btn.disabled = true;
+  const favs = (state.musicXplorer || []).filter(f => f.videoId);
+  let blocked = 0, fixed = 0, stuck = 0, unknown = 0;
+  try {
+    for (let i = 0; i < favs.length; i++) {
+      const f = favs[i];
+      say(`Checking ${i + 1} of ${favs.length}: ${f.song}…`);
+      const res = await musicxProbeEmbed(f.videoId);
+      if (res === 'unknown') { unknown++; continue; }
+      if (res === 'ok') continue;
+      blocked++;
+      say(`Looking for another upload of ${f.song}…`);
+      try {
+        const pick = await musicxFindEmbeddable(f);
+        if (pick) { f.replacedFrom = f.videoId; f.videoId = pick.id; save(); fixed++; } else stuck++;
+      } catch (e) { stuck++; }
+    }
+    say(`Checked ${favs.length}: ${blocked} blocked, ${fixed} replaced, ${stuck} still blocked` + (unknown ? `, ${unknown} could not be checked` : '') + '.');
+  } finally {
+    MUSICX_CHECKING = false;
+    if (currentTab === 'music') renderMusicXplorerPage();
+  }
+}
 
 document.getElementById('musicx-overview-btn').onclick = () => {
   MUSICX_VIEW = 'overview';
@@ -12057,6 +12242,7 @@ function renderMusicXplorerPage() {
         <div class="musicx-video-actions">
           <button class="btn" id="musicx-repick-btn">🔍 Pick a different video</button>
         </div>
+        <div class="musicx-video-note" id="musicx-video-note" data-entry="${escHtml(selected.id)}"></div>
         <div id="musicx-video-picker"></div>
         <div class="musicx-lyrics" id="musicx-lyrics" data-entry="${escHtml(selected.id)}"></div>
       </div>
@@ -12068,6 +12254,7 @@ function renderMusicXplorerPage() {
   document.getElementById('musicx-sls-album').onclick = () => sendMusicxToSoulseek(selected, 'album');
 
   renderMusicxVideo(selected);
+  musicxShowNote(selected);
   renderMusicxLyrics(selected);
   renderMusicxExplorer(selected.artist);
 }
@@ -12131,6 +12318,7 @@ function openMusicxVideoPicker(entry) {
     el.querySelectorAll('[data-musicx-pick]').forEach(btn => {
       btn.onclick = () => {
         entry.videoId = btn.dataset.musicxPick;
+        delete entry.replacedFrom; delete MUSICX_NOTES[entry.id]; MUSICX_REPAIR_FAILED.delete(entry.id + ':' + entry.videoId);
         save();
         el.innerHTML = '';
         if (getMusicxSelectedEntry()?.id === entry.id) renderMusicxVideo(entry);

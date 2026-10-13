@@ -31,8 +31,10 @@ def block(start_pat, kind):
 
 
 FUNCS = [r"^(?:async )?function musicxNorm\(", r"^function musicxStatusFor\(", r"^function musicxCleanTitle\(",
-         r"^function parseLrc\(", r"^function musicxLineIndex\(", r"^async function fetchMusicxLyrics\("]
-code = block(r"^const MUSICX_STATUS_RANK", "const") + "\n" + "\n".join(block(p, "func") for p in FUNCS)
+         r"^function parseLrc\(", r"^function musicxLineIndex\(", r"^async function fetchMusicxLyrics\(",
+         r"^function musicxRankCandidates\("]
+code = (block(r"^const MUSICX_STATUS_RANK", "const") + "\n" + block(r"^const MUSICX_BAD_WORDS", "const") + "\n"
+        + "\n".join(block(p, "func") for p in FUNCS))
 
 JS = r"""
 const MUSICX_LYRICS = {};
@@ -96,6 +98,52 @@ ok('line index after last', musicxLineIndex(times, 999) === 2);
   try { await fetchMusicxLyrics({ id:'f', artist:'A', song:'B' }); } catch (e) { threw = true; }
   ok('network failure throws and is not cached', threw && !MUSICX_LYRICS.f);
 
+
+  // ── re-sourcing a video the owner blocked (fixtures are real yt-dlp search results) ──
+  const R = (id, uploader, title, duration) => ({ id, uploader, title, duration });
+  const ids = (list) => list.map(x => x.id);
+  let ranked = musicxRankCandidates({ artist:'Chairlift', song:'Bruises (Radio Edit)' }, [
+    R('ZQ9hLOHj8ag','chairliftband','Chairlift - Bruises (Video)',241),            // the blocked one
+    R('w8HRCacAQ-4','Melonhead','Chairlift - Bruises',246),
+    R('LMET_M023I0','Ramunas Bruzas','Chairlift - Bruises (with Lyrics)',242),
+    R('q3XtcSWDJGY','Chairlift 王阿达','Chairlift  Bruises Live Festival Sommer',240),
+    R('SjONd8Brn_U','Michael','Chairlift- Bruises @ Interface',240),
+    R('59lhiFTvDLA','Chairlift 王阿达','Chairlift  Bruises (Abbey Road Live)',393),
+    R('dgg7_GEql8k','Valéry Pellegrini','BRUISES - Chairlift / COVER',201),
+  ], new Set(['ZQ9hLOHj8ag']));
+  ok('rank: blocked video is never offered again', !ids(ranked).includes('ZQ9hLOHj8ag'));
+  ok('rank: live, @venue and cover versions dropped', ids(ranked).sort().join() === ['LMET_M023I0','w8HRCacAQ-4'].sort().join());
+
+  ranked = musicxRankCandidates({ artist:'Ásgeir', song:'Ferris Wheel' }, [
+    R('LT6qolTsrwc','Ásgeir','Ásgeir - Ferris Wheel (Official Music Video)',206),
+    R('G33UvxChi18','Ásgeir','Ásgeir - Ferris Wheel (in CDMX)',203),
+    R('14Z4TnkQ1UY','Ásgeir','Ferris Wheel',206),
+    R('f3rBwyrhKxc','eTown','Ásgeir - "Ferris Wheel" (live on eTown)',242),
+  ], new Set(['LT6qolTsrwc']));
+  ok('rank: accents ignored, exact-length upload first', ids(ranked)[0] === '14Z4TnkQ1UY' && !ids(ranked).includes('f3rBwyrhKxc'));
+
+  ranked = musicxRankCandidates({ artist:'Snail Mail', song:'Cruise' }, [
+    R('7pChOkglJQ8','Snail Mail','Snail Mail - "Cruise" (Official Lyric Video)',187),
+    R('yimq-rxiRIc','John Doe','Snail Mail - Cruise - Milwaukee, WI 04/10/26 (Live at X)',188),
+    R('KhyPi5PhyBM','Benjamin Lee','Snail Mail "Cruise" (5/1/26) The Wiltern',188),
+    R('CRMzCBi8nHs','Clarence Braxton','Snail Mail | Cruise - Live @ Union Craft Brewing',159),
+    R('lUdhD_NMSWE','Snail Mail','Snail Mail - "Forever (Sailing)" (Official Audio)',259),
+  ], new Set(['7pChOkglJQ8']));
+  ok('rank: only concert recordings left -> no candidates (do not swap in a fan concert)', ranked.length === 0);
+
+  ranked = musicxRankCandidates({ artist:'Tennis', song:'Meter And Line' }, [
+    R('RlhahIEpMnk','Tennis','Meter And Line',152),
+    R('Z6lk2hSLyqI','Indie Guvenc','Tennis - Meter and Line',151),
+    R('i0OE5y6i4Kw','TennisBySpize','How to Measure Tennis String Perfectly!',97),
+    R('66i7GY7dQXk','Sports information','tennis court measurements',78),
+  ], new Set(['RlhahIEpMnk']));
+  ok('rank: unrelated results rejected, same-length reupload kept', ids(ranked).join() === 'Z6lk2hSLyqI');
+
+  ranked = musicxRankCandidates({ artist:'A', song:'Song' }, [R('x1','A - Topic','A - Song',200), R('x2','Other','A - Song (Official Video)',200)], new Set());
+  ok('rank: Topic upload preferred', ids(ranked)[0] === 'x1');
+  ok('rank: no results is fine', musicxRankCandidates({artist:'A',song:'B'}, [], new Set()).length === 0);
+  ok('rank: a favorite that is itself a live track keeps live results',
+     ids(musicxRankCandidates({artist:'A',song:'Song (Live)'}, [R('l1','A','A - Song (Live)',200)], new Set())).length === 1);
   console.log(JSON.stringify(out));
 })();
 """
