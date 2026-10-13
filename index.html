@@ -2600,6 +2600,30 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #musicx-detail-panel { flex: 1; min-width: 0; }
+#musicx-overview-btn { width: 100%; margin: 12px 0 10px; padding: 7px 10px; }
+#musicx-overview-btn.on { border-color: var(--accent); color: var(--accent); }
+.musicx-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.musicx-stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.musicx-stat .n { font-size: 24px; font-weight: 700; color: var(--accent); line-height: 1.1; }
+.musicx-stat .l { font-size: 12px; color: var(--text-muted); }
+.musicx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+.musicx-card { cursor: pointer; border-radius: 10px; padding: 6px; min-width: 0; }
+.musicx-card:hover { background: var(--surface-2); }
+.musicx-card-art {
+  position: relative; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; margin-bottom: 6px;
+  background: var(--surface-2); display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 22px;
+}
+.musicx-card-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.musicx-card-art .musicx-badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.7); }
+.musicx-badge { min-width: 0; padding: 1px 6px; font-size: 10px; flex-shrink: 0; }
+.musicx-badge-none { display: none; }
+.musicx-lyrics { margin-top: 4px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface-2); }
+.musicx-lyrics-head { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+.musicx-lyrics-lines { position: relative; max-height: 340px; overflow-y: auto; scroll-behavior: smooth; }
+.musicx-lyric { padding: 3px 6px; color: var(--text-muted); font-size: 14px; line-height: 1.4; transition: color 0.2s; }
+.musicx-lyric.active { color: var(--text); font-weight: 600; }
+.musicx-lyrics-plain { white-space: pre-wrap; font-size: 13px; line-height: 1.5; color: var(--text); max-height: 340px; overflow-y: auto; }
 .musicx-detail-header { margin-bottom: 14px; }
 .musicx-detail-song { font-family: var(--font-display); font-size: 18px; font-weight: 600; color: var(--text); }
 .musicx-detail-artist { font-size: 13px; color: var(--text-muted); }
@@ -3350,6 +3374,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
           <input type="text" id="musicx-artist-search" placeholder="Artist name…" autocomplete="off" spellcheck="false">
           <button type="button" id="musicx-artist-search-clear" title="Clear search">✕</button>
         </form>
+        <button class="btn" id="musicx-overview-btn" title="Stats and a thumbnail wall of your favorites">▦ Overview</button>
         <div id="musicx-list"></div>
       </div>
       <div id="musicx-detail-panel"></div>
@@ -3708,6 +3733,11 @@ let MAIL_TITLE_BASE = 'Helm';
 // file) for the same TDZ reason as currentTab/calPageView/newsViewMode above —
 // switchTab() can run renderMusicXplorerPage() early via the startup hash
 // check (e.g. a bookmarked #musicxplorer URL).
+let MUSICX_VIEW = 'overview';     // 'overview' (stats + thumbnail wall) or 'detail' (one favorite)
+let MUSICX_STAGING = null;        // last /api/slskd/staging entries, for the status badges
+let MUSICX_STAGING_TS = 0;
+let MUSICX_TIME_SEEN = false;     // true once the YouTube embed has reported a playback time
+const MUSICX_LYRICS = {};         // favorite id -> { synced: [{t,text}], plain, found }
 let MUSICX_SELECTED_ID = null;    // id of the favorited track shown in the detail pane; null = newest
 let MUSICX_EXPLORE_ARTIST = null; // non-null while drilled into a related artist's own explorer panel
 let MUSICX_SEARCH_ARTIST = null;  // non-null while showing the free-text artist search's explorer instead of a favorited track
@@ -11683,6 +11713,7 @@ function getMusicxSelectedEntry() {
 
 function selectMusicxEntry(id) {
   MUSICX_SELECTED_ID = id;
+  MUSICX_VIEW = 'detail';
   MUSICX_EXPLORE_ARTIST = null; // selecting a different track resets any drill-down
   MUSICX_SEARCH_ARTIST = null;  // ...and any free-text artist search in progress
   renderMusicXplorerPage();
@@ -11753,12 +11784,221 @@ async function addMusicxFromYoutubeLink(link) {
   }
 }
 
+// ── Favorites: Soulseek status, overview, lyrics ─────────────────────────────
+
+function musicxNorm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+
+// Best status among the staged Soulseek downloads for this favorite, or null if
+// it was never sent. Matched on artist + title, which "Send to Soulseek" records
+// for both the track and album buttons.
+const MUSICX_STATUS_RANK = { synced: 4, downloaded: 3, queued: 2, searching: 1, failed: 0 };
+function musicxStatusFor(fav, entries) {
+  const a = musicxNorm(fav.artist), t = musicxNorm(fav.song);
+  let best = null;
+  for (const e of entries || []) {
+    if (!e.artist || !e.title) continue;
+    if (musicxNorm(e.artist) !== a || musicxNorm(e.title) !== t) continue;
+    if (!(e.status in MUSICX_STATUS_RANK)) continue;
+    if (best === null || MUSICX_STATUS_RANK[e.status] > MUSICX_STATUS_RANK[best]) best = e.status;
+  }
+  return best;
+}
+
+function paintMusicxBadges() {
+  const favs = state.musicXplorer || [];
+  const status = new Map(favs.map(f => [f.id, musicxStatusFor(f, MUSICX_STAGING)]));
+  document.querySelectorAll('[data-musicx-badge]').forEach(el => {
+    const st = status.get(el.dataset.musicxBadge);
+    el.className = 'slskd-status musicx-badge' + (st ? ` slskd-status-${st}` : ' musicx-badge-none');
+    el.textContent = st || '';
+    el.title = st ? `Soulseek: ${st}` : '';
+  });
+  const vals = [...status.values()];
+  const sent = document.getElementById('musicx-stat-sent');
+  const synced = document.getElementById('musicx-stat-synced');
+  if (sent) sent.textContent = MUSICX_STAGING === null ? '–' : vals.filter(Boolean).length;
+  if (synced) synced.textContent = MUSICX_STAGING === null ? '–' : vals.filter(s => s === 'synced').length;
+}
+
+async function loadMusicxStatus() {
+  if (Date.now() - MUSICX_STAGING_TS < 4000) { paintMusicxBadges(); return; }
+  MUSICX_STAGING_TS = Date.now();
+  try {
+    const d = await slskdApi('/api/slskd/staging');
+    MUSICX_STAGING = d.entries || [];
+  } catch (e) { /* keep the last list; the next tick tries again */ }
+  paintMusicxBadges();
+}
+
+function renderMusicxOverview(detailEl, favs) {
+  const weekAgo = Date.now() - 7 * 86400000;
+  const added = favs.filter(f => (f.addedAt || 0) >= weekAgo).length;
+  const tile = (n, label) => `<div class="musicx-stat"><div class="n">${n}</div><div class="l">${label}</div></div>`;
+  detailEl.innerHTML = `
+    <div class="musicx-stats">
+      ${tile(favs.length, 'Favorites')}
+      ${tile(added, 'Added this week')}
+      ${tile('<span id="musicx-stat-sent">–</span>', 'Sent to Soulseek')}
+      ${tile('<span id="musicx-stat-synced">–</span>', 'Delivered to Inbox')}
+    </div>
+    <div class="musicx-grid">${favs.map(f => `
+      <div class="musicx-card" data-musicx-open="${escHtml(f.id)}" title="${escHtml(f.song)} — ${escHtml(f.artist)}">
+        <div class="musicx-card-art">♪${f.videoId ? `<img loading="lazy" alt="" src="https://i.ytimg.com/vi/${encodeURIComponent(f.videoId)}/mqdefault.jpg" onerror="this.remove()">` : ''}
+          <span class="slskd-status musicx-badge musicx-badge-none" data-musicx-badge="${escHtml(f.id)}"></span>
+        </div>
+        <div class="musicx-list-song">${escHtml(f.song)}</div>
+        <div class="musicx-list-artist">${escHtml(f.artist)}</div>
+      </div>`).join('')}
+    </div>`;
+  detailEl.querySelectorAll('[data-musicx-open]').forEach(c => { c.onclick = () => selectMusicxEntry(c.dataset.musicxOpen); });
+  paintMusicxBadges();
+}
+
+// "Radio Edit", "(feat. X)", "[Remastered]" and the like never match LRCLib's titles.
+function musicxCleanTitle(s) {
+  return String(s || '')
+    .replace(/\s*[\(\[][^)\]]*[\)\]]/g, '')
+    .replace(/\s+-\s+(radio edit|single version|album version|remaster(ed)?.*|live.*|mono|stereo)$/i, '')
+    .replace(/\s+/g, ' ').trim();
+}
+
+function parseLrc(text) {
+  const out = [];
+  for (const line of String(text || '').split('\n')) {
+    const stamps = [...line.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];
+    if (!stamps.length) continue;
+    const txt = line.replace(/\[[^\]]*\]/g, '').trim();
+    stamps.forEach(m => out.push({ t: Number(m[1]) * 60 + parseFloat(m[2]), text: txt }));
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+// Index of the line being sung at time t (last line whose time has passed), or -1.
+function musicxLineIndex(times, t) {
+  let idx = -1;
+  for (let i = 0; i < times.length; i++) { if (times[i] <= t) idx = i; else break; }
+  return idx;
+}
+
+// Wrong lyrics are worse than none, so a result must match the title AND the artist.
+async function fetchMusicxLyrics(entry) {
+  if (MUSICX_LYRICS[entry.id]) return MUSICX_LYRICS[entry.id];
+  const title = musicxCleanTitle(entry.song) || entry.song;
+  const t = musicxNorm(title), a = musicxNorm(entry.artist);
+  const enc = encodeURIComponent;
+  const queries = [`track_name=${enc(title)}&artist_name=${enc(entry.artist)}`, `q=${enc(entry.artist + ' ' + title)}`];
+  let reached = false;
+  for (const q of queries) {
+    let list;
+    try {
+      const res = await fetch('https://lrclib.net/api/search?' + q, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) continue;
+      list = await res.json();
+      reached = true;
+    } catch (e) { continue; }
+    const ok = (list || []).filter(r => {
+      if (r.instrumental) return false;
+      const rt = musicxNorm(r.trackName), ra = musicxNorm(r.artistName);
+      return (rt === t || (t.length > 3 && rt.includes(t))) && (ra.includes(a) || a.includes(ra));
+    });
+    const pick = ok.find(r => r.syncedLyrics) || ok.find(r => r.plainLyrics);
+    if (pick) {
+      return (MUSICX_LYRICS[entry.id] = {
+        synced: pick.syncedLyrics ? parseLrc(pick.syncedLyrics) : [],
+        plain: pick.plainLyrics || '', found: true });
+    }
+  }
+  if (!reached) throw new Error('lyrics service unreachable');
+  return (MUSICX_LYRICS[entry.id] = { synced: [], plain: '', found: false });
+}
+
+function renderMusicxLyrics(entry) {
+  const box = document.getElementById('musicx-lyrics');
+  if (!box) return;
+  box.innerHTML = '<div class="svc-loading">Finding lyrics…</div>';
+  const current = () => {
+    const b = document.getElementById('musicx-lyrics');
+    return b && b.dataset.entry === entry.id ? b : null;
+  };
+  fetchMusicxLyrics(entry).then(l => {
+    const b = current();
+    if (!b) return;
+    if (l.synced.length) {
+      b.innerHTML = `<div class="musicx-lyrics-head"><span>Lyrics · LRCLIB</span><span id="musicx-lyrics-sync">play the video to follow along</span></div>
+        <div class="musicx-lyrics-lines">${l.synced.map(x => `<div class="musicx-lyric" data-t="${x.t}">${escHtml(x.text) || '♪'}</div>`).join('')}</div>`;
+    } else if (l.plain) {
+      b.innerHTML = `<div class="musicx-lyrics-head"><span>Lyrics · LRCLIB</span><span>not time-synced</span></div>
+        <div class="musicx-lyrics-plain">${escHtml(l.plain)}</div>`;
+    } else {
+      b.innerHTML = '<div class="svc-loading">No lyrics found for this track.</div>';
+    }
+  }).catch(e => {
+    const b = current();
+    if (b) b.innerHTML = `<div class="svc-error">Could not load lyrics: ${escHtml(e.message)}</div>`;
+  });
+}
+
+// Follow the video: the embed reports its playback time by postMessage once it has
+// been told we are listening (enablejsapi=1 + a "listening" message, no script load).
+function musicxEmbedParams() {
+  return location.protocol.startsWith('http')
+    ? `?enablejsapi=1&origin=${encodeURIComponent(location.origin)}` : '?enablejsapi=1';
+}
+
+function musicxListen(frame) {
+  MUSICX_TIME_SEEN = false;
+  let tries = 0;
+  const iv = setInterval(() => {
+    if (!frame.isConnected || MUSICX_TIME_SEEN || ++tries > 30) { clearInterval(iv); return; }
+    try {
+      frame.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'musicx', channel: 'widget' }), 'https://www.youtube.com');
+    } catch (e) { /* frame not ready; try again */ }
+  }, 1000);
+}
+
+function musicxFollow(seconds) {
+  const box = document.getElementById('musicx-lyrics');
+  const lines = box ? box.querySelectorAll('.musicx-lyric') : [];
+  if (!lines.length) return;
+  const idx = musicxLineIndex(Array.from(lines, el => Number(el.dataset.t)), seconds);
+  lines.forEach((el, i) => el.classList.toggle('active', i === idx));
+  const status = document.getElementById('musicx-lyrics-sync');
+  if (status) status.textContent = 'following the video';
+  if (idx >= 0) {
+    const scroller = box.querySelector('.musicx-lyrics-lines'), el = lines[idx];
+    scroller.scrollTop = el.offsetTop - scroller.clientHeight / 2 + el.clientHeight / 2;
+  }
+}
+
+window.addEventListener('message', (e) => {
+  if (e.origin !== 'https://www.youtube.com') return;
+  let d = e.data;
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (err) { return; } }
+  const t = d && d.info && d.info.currentTime;
+  if (typeof t !== 'number') return;
+  MUSICX_TIME_SEEN = true;
+  musicxFollow(t);
+});
+
+document.getElementById('musicx-overview-btn').onclick = () => {
+  MUSICX_VIEW = 'overview';
+  MUSICX_SEARCH_ARTIST = null;
+  MUSICX_EXPLORE_ARTIST = null;
+  renderMusicXplorerPage();
+};
+
+// Keep the badges current while the Favorites section is on screen.
+setInterval(() => {
+  if (currentTab === 'music' && MUSIC_ACTIVE_TAB === 'favorites') loadMusicxStatus();
+}, 15000);
+
 function renderMusicXplorerPage() {
   const listEl = document.getElementById('musicx-list');
   const detailEl = document.getElementById('musicx-detail-panel');
   if (!listEl || !detailEl) return;
   const tracks = state.musicXplorer || [];
-  const selected = MUSICX_SEARCH_ARTIST ? null : getMusicxSelectedEntry();
+  const overview = !MUSICX_SEARCH_ARTIST && MUSICX_VIEW === 'overview' && tracks.length > 0;
+  const selected = (MUSICX_SEARCH_ARTIST || overview) ? null : getMusicxSelectedEntry();
 
   const searchInput = document.getElementById('musicx-artist-search');
   if (searchInput && document.activeElement !== searchInput) searchInput.value = MUSICX_SEARCH_ARTIST || '';
@@ -11769,6 +12009,7 @@ function renderMusicXplorerPage() {
         <div class="musicx-list-song">${escHtml(t.song)}</div>
         <div class="musicx-list-artist">${escHtml(t.artist)}</div>
       </div>
+      <span class="slskd-status musicx-badge musicx-badge-none" data-musicx-badge="${escHtml(t.id)}"></span>
       <button class="icon-btn danger" data-musicx-remove="${t.id}" title="Remove">✕</button>
     </div>
   `).join('') : '<div class="svc-loading">No favorited tracks yet — use the ⭐ button on the SomaFM widget\'s now-playing track.</div>';
@@ -11784,12 +12025,17 @@ function renderMusicXplorerPage() {
   });
 
   updateMusicSectionChrome();
+  const ovBtn = document.getElementById('musicx-overview-btn');
+  if (ovBtn) ovBtn.classList.toggle('on', overview);
+  loadMusicxStatus();
 
   if (MUSICX_SEARCH_ARTIST) {
     detailEl.innerHTML = '<div id="musicx-explorer-wrap"></div>';
     renderMusicxExplorer(MUSICX_SEARCH_ARTIST);
     return;
   }
+
+  if (overview) { renderMusicxOverview(detailEl, tracks); return; }
 
   if (!selected) {
     detailEl.innerHTML = '<div class="svc-loading">Select a favorited track, or search an artist above, to explore it.</div>';
@@ -11812,6 +12058,7 @@ function renderMusicXplorerPage() {
           <button class="btn" id="musicx-repick-btn">🔍 Pick a different video</button>
         </div>
         <div id="musicx-video-picker"></div>
+        <div class="musicx-lyrics" id="musicx-lyrics" data-entry="${escHtml(selected.id)}"></div>
       </div>
       <div id="musicx-explorer-wrap"></div>
     </div>
@@ -11821,6 +12068,7 @@ function renderMusicXplorerPage() {
   document.getElementById('musicx-sls-album').onclick = () => sendMusicxToSoulseek(selected, 'album');
 
   renderMusicxVideo(selected);
+  renderMusicxLyrics(selected);
   renderMusicxExplorer(selected.artist);
 }
 
@@ -11836,7 +12084,9 @@ function renderMusicxVideo(entry) {
     // to nothing on a third-party iframe that doesn't explicitly opt in via
     // this attribute — Chrome's laxer defaults mask the same gap, which is
     // why this only shows up on stricter/privacy-hardened browsers.
-    wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(entry.videoId)}" title="${escHtml(entry.song)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    wrap.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(entry.videoId)}${musicxEmbedParams()}" title="${escHtml(entry.song)}" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+    const frame = wrap.querySelector('iframe');
+    if (frame) frame.addEventListener('load', () => musicxListen(frame));
     return;
   }
   wrap.innerHTML = '<div class="svc-loading">Finding a video…</div>';
