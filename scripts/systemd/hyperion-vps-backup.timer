@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily snapshot of the VPS data (runs when hyperion is on; catches up after boot)
+
+[Timer]
+OnCalendar=*-*-* 03:45:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

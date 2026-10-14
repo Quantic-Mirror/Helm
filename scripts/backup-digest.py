@@ -52,6 +52,8 @@ STAGES = [
     # weeks with nothing reporting it: hermes_backup events were recorded but
     # never digested.
     ("hermes_backup", "Hyperion Hermes -> R2"),
+    # VPS data (Forgejo, mail, slskd, ...) -> hyperion + R2 (hyperion-vps-backup.timer).
+    ("vps_backup", "VPS -> hyperion + R2"),
 ]
 
 TIMEOUT = 20

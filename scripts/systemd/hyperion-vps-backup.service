@@ -1,0 +1,18 @@
+[Unit]
+Description=Pull a consistent snapshot of the VPS data (Forgejo, mail, slskd, FreshRSS, ...) to hyperion + R2
+Wants=network-online.target
+After=network-online.target
+# Hyperion may be up before Tailscale/the VPS is reachable (boot catch-up): retry for ~30 min.
+StartLimitIntervalSec=7200
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/repos/Helm/scripts/vps_backup.py
+TimeoutStartSec=2100
+Restart=on-failure
+RestartSec=300
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
