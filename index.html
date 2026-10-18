@@ -2070,45 +2070,6 @@ a.dropdown-item { box-sizing: border-box; text-decoration: none; }
 .log-entry-row .log-entry-del:hover { color: var(--text); }
 #log-empty { color: var(--text-dim); font-size: 13px; padding: 10px 0; }
 
-/* ── FINANCES PAGE ───────────────────────────────────────────────────────────
-   Two-column month ledger (This Month / Next Month), every row
-   entered by hand. See state.financeMonths and the "FINANCES" JS banner. */
-#finances-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
-#fin-months { display: flex; gap: 24px; flex-wrap: wrap; }
-.fin-month-col { flex: 1; min-width: 360px; }
-.fin-month-col h3 {
-  font-family: var(--font-display); font-size: 15px; margin: 0 0 10px; color: var(--text);
-}
-.fin-start-balance {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px;
-}
-.fin-start-note { color: var(--text-dim); font-size: 11px; }
-.fin-start-balance input {
-  width: 110px; background: var(--surface); color: var(--text);
-  border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px;
-}
-.fin-entry-row {
-  display: grid; grid-template-columns: 90px 1fr 90px 90px 28px;
-  align-items: center; gap: 6px; padding: 5px 8px; font-size: 12.5px;
-  border-bottom: 1px solid var(--border);
-}
-.fin-entry-row input[type="text"], .fin-entry-row input[type="date"], .fin-entry-row input[type="number"] {
-  background: var(--surface); color: var(--text); border: 1px solid var(--border);
-  border-radius: 4px; padding: 3px 6px; font-size: 12px; width: 100%;
-}
-.fin-entry-row .fin-entry-income { color: #3fb950; }
-.fin-entry-row .fin-entry-expense { color: #f85149; }
-.fin-entry-row .fin-entry-balance { text-align: right; color: var(--text-dim); font-weight: 600; }
-.fin-entry-row .fin-entry-del {
-  background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px;
-}
-.fin-entry-row .fin-entry-del:hover { color: var(--text); }
-.fin-month-summary {
-  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
-  font-size: 13px; font-weight: 600; text-align: right;
-}
-.fin-add-entry-btn { margin-top: 10px; }
-
 /* ── CALENDAR PAGE ───────────────────────────────────────────────────────────── */
 #calendar-page { padding: 20px 24px; min-height: calc(100vh - 56px); }
 #calendar-topbar {
@@ -3299,12 +3260,6 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   <div id="log-entries-list"></div>
 </div>
 
-<!-- FINANCES PAGE: two-column month ledger (This Month / Next Month) fed by
-     entered by hand. Shared across both profiles, see state.financeMonths. -->
-<div id="finances-page" style="display:none">
-  <div id="fin-months"></div>
-</div>
-
 <!-- SERVICES PAGE -->
 <div id="services-page" style="display:none">
   <div id="services-topbar">
@@ -3703,7 +3658,7 @@ const ALWAYS_VISIBLE_TABS = ['dashboard', 'services'];
 // What a brand-new install starts without. Existing installs have no hiddenTabs
 // key and keep every tab; this is applied only when seedDefaults() builds a fresh
 // state.
-const DEFAULT_HIDDEN_TABS = ['log', 'finances', 'music', 'leafwiki', 'journal', 'reader', 'logs'];
+const DEFAULT_HIDDEN_TABS = ['log', 'music', 'leafwiki', 'journal', 'reader', 'logs'];
 // Tabs that embed another app: tab id -> iframe id. The iframe is only given its
 // src once its tab is visible, so a hidden tab costs nothing at page load.
 const TAB_FRAMES = { leafwiki: 'leafwiki-frame', journal: 'dailytxt-frame', reader: 'freshrss-frame' };
@@ -3963,8 +3918,6 @@ async function initSync() {
       if (!state.newsSources) state.newsSources = [];
       if (!state.musicXplorer) state.musicXplorer = [];
       if (!state.logEntries) state.logEntries = [];
-      if (!state.financeRecurring) state.financeRecurring = [];
-      if (!state.financeMonths) state.financeMonths = {};
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       // Reset the last-pulled snapshot so mid-session merge logic has a
       // fresh baseline from this startup, not from a stale previous session.
@@ -4087,8 +4040,6 @@ async function pollForRemoteChanges() {
       if (!state.newsSources) state.newsSources = [];
       if (!state.musicXplorer) state.musicXplorer = [];
       if (!state.logEntries) state.logEntries = [];
-      if (!state.financeRecurring) state.financeRecurring = [];
-      if (!state.financeMonths) state.financeMonths = {};
       localStorage.setItem(LS_KEY, JSON.stringify(state));
       localStorage.setItem(LS_KEY + '_last_pulled', JSON.stringify(data.state));
       afterStateSwap(); // silent — no toast, no dialog; re-hydrates active profile + re-renders
@@ -4118,8 +4069,6 @@ function load() {
   if (!state.feeds) state.feeds = [];
   if (!state.newsSources) state.newsSources = [];
   if (!state.logEntries) state.logEntries = [];
-  if (!state.financeRecurring) state.financeRecurring = [];
-  if (!state.financeMonths) state.financeMonths = {};
   if (!state.calendarEvents) {
     // Initialise calendar events store; migrate any events from old calendar widgets
     state.calendarEvents = {};
@@ -5144,195 +5093,6 @@ document.getElementById('log-entries-list')?.addEventListener('click', (e) => {
   if (!del) return;
   const row = del.closest('.log-entry-row');
   if (row) deleteLogEntry(row.dataset.id);
-});
-
-// ── FINANCES PAGE ─────────────────────────────────────────────────────────────
-// Two parallel month ledgers (This Month / Next Month, keyed by "YYYY-MM"),
-// filled in by hand. (state.financeRecurring is kept in saved data but unused.)
-// Start from a balance (typed, or carried from the previous month), add known
-// income/expenses, and add more as the month goes. The ending balance at the
-// bottom includes every row, and the next month's start follows it automatically
-// unless a start balance is typed in by hand.
-// Shared across both profiles (not per-profile like bookmarks/feeds).
-
-function finMonthKey(offset) {
-  const now = new Date();
-  let y = now.getFullYear(), m = now.getMonth() + 1 + offset;
-  while (m > 12) { m -= 12; y += 1; }
-  while (m < 1) { m += 12; y -= 1; }
-  return `${y}-${String(m).padStart(2, '0')}`;
-}
-
-function finDaysInMonth(y, m) {
-  return new Date(y, m, 0).getDate(); // m is 1-12; day 0 of next month = last day of this one
-}
-
-function finDateForDay(monthKey, day) {
-  if (!day) return ''; // no usual day: the date is filled in each month
-  const [y, m] = monthKey.split('-').map(Number);
-  const clamped = Math.min(Math.max(1, day), finDaysInMonth(y, m));
-  return `${monthKey}-${String(clamped).padStart(2, '0')}`;
-}
-
-function finMonthLabel(monthKey) {
-  const [y, m] = monthKey.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString([], { month: 'long', year: 'numeric' });
-}
-
-// Ensure a month record exists. Entries are only ever added by hand.
-function finEnsureMonth(monthKey) {
-  if (!state.financeMonths[monthKey]) {
-    state.financeMonths[monthKey] = { startBalance: null, entries: [] };
-  }
-  const month = state.financeMonths[monthKey];
-  return month;
-}
-
-function finShiftKey(monthKey, delta) {
-  let [y, m] = monthKey.split('-').map(Number);
-  m += delta;
-  while (m > 12) { m -= 12; y += 1; }
-  while (m < 1) { m += 12; y -= 1; }
-  return `${y}-${String(m).padStart(2, '0')}`;
-}
-
-// A month's starting balance: the one typed in (startManual) or, otherwise,
-// the previous month's final balance, so it follows that month as it changes.
-// Falls back to the stored value (or 0) when there is no previous month.
-function finEffectiveStart(monthKey) {
-  const month = state.financeMonths[monthKey];
-  if (month && month.startManual && month.startBalance !== null && month.startBalance !== undefined) {
-    return Number(month.startBalance) || 0;
-  }
-  const prevKey = finShiftKey(monthKey, -1);
-  if (state.financeMonths[prevKey]) return finComputeBalances(prevKey).finalBalance;
-  return Number(month && month.startBalance) || 0;
-}
-
-// Returns { rows: [{entry, balance}], finalBalance } -- rows in date order,
-// every row applied to the running balance, starting from finEffectiveStart.
-function finComputeBalances(monthKey) {
-  const month = state.financeMonths[monthKey];
-  const sorted = [...month.entries].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
-  let running = finEffectiveStart(monthKey);
-  const rows = sorted.map(entry => {
-    const amt = Number(entry.amount) || 0;
-    running += entry.type === 'income' ? amt : -amt;
-    return { entry, balance: running };
-  });
-  return { rows, finalBalance: running };
-}
-
-function renderFinancePage() {
-  const monthsEl = document.getElementById('fin-months');
-  if (!monthsEl) return;
-
-  // Two month columns: this month rolls forward automatically because
-  // finMonthKey(0) always reflects the real current calendar month -- no
-  // explicit "promote next month" step is needed, the key just changes.
-  const thisKey = finMonthKey(0);
-  const nextKey = finMonthKey(1);
-  finEnsureMonth(thisKey);
-  finEnsureMonth(nextKey);
-
-  monthsEl.innerHTML = [
-    finRenderMonthColumn(thisKey, 'This Month'),
-    finRenderMonthColumn(nextKey, 'Next Month'),
-  ].join('');
-}
-
-function finRenderMonthColumn(monthKey, label) {
-  const month = state.financeMonths[monthKey];
-  const { rows, finalBalance } = finComputeBalances(monthKey);
-  const rowsHtml = rows.length ? rows.map(({ entry, balance }) => `
-    <div class="fin-entry-row" data-id="${entry.id}" data-month="${monthKey}">
-      <input type="date" class="fin-f-date" value="${entry.date}">
-      <input type="text" class="fin-f-who" value="${escHtml(entry.who)}">
-      <input type="number" step="0.01" class="fin-f-amount fin-entry-${entry.type}" value="${entry.amount}">
-      <span class="fin-entry-balance">$${balance.toFixed(2)}</span>
-      <button class="fin-entry-del" title="Delete">✕</button>
-    </div>`).join('')
-    : '<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No entries.</div>';
-
-  return `
-    <div class="fin-month-col" data-month="${monthKey}">
-      <h3>${label} — ${finMonthLabel(monthKey)}</h3>
-      <div class="fin-start-balance">
-        <label for="fin-start-${monthKey}">Starting balance</label>
-        <input id="fin-start-${monthKey}" type="number" step="0.01" class="fin-f-start" value="${finEffectiveStart(monthKey).toFixed(2)}" data-month="${monthKey}">
-        <span class="fin-start-note">${month.startManual ? 'manual (clear to follow previous month)' : 'auto from previous month'}</span>
-      </div>
-      <div class="fin-entries-list">${rowsHtml}</div>
-      <div class="fin-month-summary">Ending balance: $${finalBalance.toFixed(2)}</div>
-      <button class="btn fin-add-entry-btn" data-month="${monthKey}">+ Add one-off entry</button>
-    </div>`;
-}
-
-function finUpdateEntry(monthKey, entryId, patch) {
-  const month = state.financeMonths[monthKey];
-  if (!month) return;
-  const entry = month.entries.find(e => e.id === entryId);
-  if (!entry) return;
-  Object.assign(entry, patch);
-  save();
-  renderFinancePage();
-}
-
-function finDeleteEntry(monthKey, entryId) {
-  const month = state.financeMonths[monthKey];
-  if (!month) return;
-  const idx = month.entries.findIndex(e => e.id === entryId);
-  if (idx === -1) return;
-  month.entries.splice(idx, 1);
-  save();
-  renderFinancePage();
-}
-
-function finAddOneOffEntry(monthKey) {
-  const who = prompt('Who / description?');
-  if (!who || !who.trim()) return;
-  const amount = parseFloat(prompt('Amount?', '0'));
-  if (isNaN(amount)) return;
-  const type = confirm('Is this income? OK = income, Cancel = expense') ? 'income' : 'expense';
-  const month = finEnsureMonth(monthKey);
-  month.entries.push({
-    id: uid(), recurringId: null, date: finDateForDay(monthKey, new Date().getDate()),
-    who: who.trim(), type, amount, posted: false,
-  });
-  save();
-  renderFinancePage();
-}
-
-function finSetStartBalance(monthKey, value) {
-  const month = finEnsureMonth(monthKey);
-  if (value === '') { month.startBalance = null; month.startManual = false; }
-  else { month.startBalance = Number(value); month.startManual = true; }
-  save();
-  renderFinancePage();
-}
-
-// Delegated listeners on the months container -- entries re-render on every
-// edit, so binding to individual inputs would lose the handlers each time.
-document.getElementById('fin-months')?.addEventListener('click', (e) => {
-  const addBtn = e.target.closest('.fin-add-entry-btn');
-  if (addBtn) { finAddOneOffEntry(addBtn.dataset.month); return; }
-  const del = e.target.closest('.fin-entry-del');
-  if (del) {
-    const row = del.closest('.fin-entry-row');
-    if (row) finDeleteEntry(row.dataset.month, row.dataset.id);
-  }
-});
-
-document.getElementById('fin-months')?.addEventListener('change', (e) => {
-  const startInput = e.target.closest('.fin-f-start');
-  if (startInput) { finSetStartBalance(startInput.dataset.month, startInput.value); return; }
-
-  const row = e.target.closest('.fin-entry-row');
-  if (!row) return;
-  const monthKey = row.dataset.month, entryId = row.dataset.id;
-  if (e.target.classList.contains('fin-f-date')) finUpdateEntry(monthKey, entryId, { date: e.target.value });
-  else if (e.target.classList.contains('fin-f-who')) finUpdateEntry(monthKey, entryId, { who: e.target.value });
-  else if (e.target.classList.contains('fin-f-amount')) finUpdateEntry(monthKey, entryId, { amount: Number(e.target.value) });
 });
 
 // ── UPCOMING EVENTS ALERT STRIP ───────────────────────────────────────────────
@@ -6558,8 +6318,6 @@ async function restoreBackup(filename) {
     if (!state.feeds) state.feeds = [];
     if (!state.newsSources) state.newsSources = [];
     if (!state.logEntries) state.logEntries = [];
-    if (!state.financeRecurring) state.financeRecurring = [];
-    if (!state.financeMonths) state.financeMonths = {};
     // A pre-profiles snapshot has no profile keys — rebuild them before the
     // push so the restored blob carries them: restored data → Personal, Work
     // seeded empty.
@@ -6731,8 +6489,6 @@ function loadConfig(file) {
         feeds:         data.feeds         || [],
         newsSources:   data.newsSources   || [],
         logEntries:    data.logEntries    || [],
-        financeRecurring: data.financeRecurring || [],
-        financeMonths:    data.financeMonths    || {},
         collapsedCols: data.collapsedCols || [],
         settings:      data.settings      || {},
         profilePersonal: data.profilePersonal,
@@ -9677,7 +9433,6 @@ function switchTab(tab) {
   show('news-page',      tab === 'news');
   show('calendar-page',  tab === 'calendar');
   show('log-page',       tab === 'log');
-  show('finances-page',  tab === 'finances');
   show('services-page',  tab === 'services');
   show('music-page',     tab === 'music');
   show('leafwiki-page',  tab === 'leafwiki');
@@ -9689,14 +9444,13 @@ function switchTab(tab) {
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', log: 'Helm — Log', finances: 'Helm — Finances', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal', reader: 'Helm — Reader' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', log: 'Helm — Log', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal', reader: 'Helm — Reader' };
   setDocumentTitle(titles[tab] || 'Helm');
 
   if (tab === 'feeds')     renderFeeds();
   if (tab === 'news')      renderNews();
   if (tab === 'calendar')  renderCalendarPage();
   if (tab === 'log')       renderLogPage();
-  if (tab === 'finances')  renderFinancePage();
   if (tab === 'dashboard') renderDashboard();
   if (tab === 'services')  { renderServicesPage(); startServicesPolling(); }
   else stopServicesPolling();
