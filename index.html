@@ -10269,7 +10269,7 @@ function promptInvidiousInstance(current) {
     current || DEFAULT_INVIDIOUS_INSTANCE
   );
   if (!instance || !instance.trim()) return null;
-  return instance.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+  return instance.trim().replace(/^https:\/\//, '').replace(/\/$/, ''); // keeps http:// if given (e.g. http://100.77.126.57:3001)
 }
 
 function updateInvidiousButton() {
@@ -10288,8 +10288,9 @@ function toInvidiousUrl(youtubeUrl) {
   try {
     const u = new URL(youtubeUrl);
     if (u.hostname.includes('youtube.com') || u.hostname === 'youtu.be') {
-      u.hostname = instance;
-      u.protocol = 'https:';
+      const m = instance.match(/^(https?):\/\/(.+)$/);
+      u.protocol = (m ? m[1] : (/^[\d.]+(:\d+)?$|:\d+$/.test(instance) ? 'http' : 'https')) + ':'; // bare IP / host:port -> http
+      u.host = m ? m[2] : instance; // host may include a port
       return u.href;
     }
   } catch {}
