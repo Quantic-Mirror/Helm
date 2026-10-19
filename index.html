@@ -2964,6 +2964,17 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
   border: none;
   display: block;
 }
+#weather-page {
+  height: calc(100vh - 56px);
+  overflow: hidden;
+  background: #000;
+}
+#weather-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
 
 /* ── READER PANE ────────────────────────────────────────────────────────────── */
 #reader-overlay {
@@ -3095,6 +3106,7 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
     <a class="tab-btn" href="#leafwiki" data-tab="leafwiki">📓 Wiki</a>
     <a class="tab-btn" href="#journal" data-tab="journal">📔 Journal</a>
     <a class="tab-btn" href="#reader" data-tab="reader">📡 Reader</a>
+    <a class="tab-btn" href="#weather" data-tab="weather">🌦 Weather</a>
     <a class="tab-btn" href="#logs" data-tab="logs">📜 Logs</a>
   </nav>
   <button class="btn" id="btn-refresh-all" title="Refresh bookmarks favicons, YouTube feeds, and news feeds all at once">↺ Refresh All</button>
@@ -3550,6 +3562,14 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
       style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:16px;padding:12px 14px;outline:none;font-family:var(--font-body)">
   </div>
 </div>
+<!-- WEATHER PAGE (WeatherStar 4000+, github.com/netbymatt/ws4kp) -->
+<!-- Embeds the author's public site (static; the browser talks to api.weather.gov
+     directly). Zip 30606, kiosk mode. src is set by loadTabFrame() once the tab is
+     visible, from WEATHER_URL below. -->
+<div id="weather-page" style="display:none">
+  <iframe id="weather-frame" src="" allow="autoplay; fullscreen"></iframe>
+</div>
+
 <!-- READER PANE -->
 <div id="reader-overlay">
   <div id="reader-pane">
@@ -3658,11 +3678,12 @@ const ALWAYS_VISIBLE_TABS = ['dashboard', 'services'];
 // What a brand-new install starts without. Existing installs have no hiddenTabs
 // key and keep every tab; this is applied only when seedDefaults() builds a fresh
 // state.
-const DEFAULT_HIDDEN_TABS = ['log', 'music', 'leafwiki', 'journal', 'reader', 'logs'];
+const DEFAULT_HIDDEN_TABS = ['log', 'music', 'leafwiki', 'journal', 'reader', 'weather', 'logs'];
 // Tabs that embed another app: tab id -> iframe id. The iframe is only given its
 // src once its tab is visible, so a hidden tab costs nothing at page load.
-const TAB_FRAMES = { leafwiki: 'leafwiki-frame', journal: 'dailytxt-frame', reader: 'freshrss-frame' };
-const TAB_FRAME_URLS = {};          // tab id -> src, filled in by initConfig()
+const TAB_FRAMES = { leafwiki: 'leafwiki-frame', journal: 'dailytxt-frame', reader: 'freshrss-frame', weather: 'weather-frame' };
+const WEATHER_URL = 'https://weatherstar.netbymatt.com/?latLonQuery=30606&kiosk=true';
+const TAB_FRAME_URLS = { weather: WEATHER_URL };   // tab id -> src; the rest filled in by initConfig()
 let calPageView = 'month';
 let calPageYear = new Date().getFullYear();
 let calPageMonth = new Date().getMonth();
@@ -9438,13 +9459,14 @@ function switchTab(tab) {
   show('leafwiki-page',  tab === 'leafwiki');
   show('dailytxt-page',  tab === 'journal');
   show('freshrss-page',  tab === 'reader');
+  show('weather-page',   tab === 'weather');
   show('logs-page',      tab === 'logs');
   show('search-wrap',    tab === 'bookmarks');
   show('topbar-actions', tab === 'dashboard' || tab === 'bookmarks');
   show('topbar-tools', tab === 'dashboard');
   show('btn-add-bm-top', tab === 'bookmarks');
 
-  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', log: 'Helm — Log', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal', reader: 'Helm — Reader' };
+  const titles = { dashboard: 'Helm', bookmarks: 'Helm — Bookmarks', feeds: 'Helm — YouTube Feeds', news: 'Helm — News', calendar: 'Helm — Calendar', log: 'Helm — Log', services: 'Helm — Services', backups: 'Helm — Backup Pipeline', music: 'Helm — Music', logs: 'Helm — Logs', leafwiki: 'Helm — Wiki', journal: 'Helm — Journal', reader: 'Helm — Reader', weather: 'Helm — Weather' };
   setDocumentTitle(titles[tab] || 'Helm');
 
   if (tab === 'feeds')     renderFeeds();
