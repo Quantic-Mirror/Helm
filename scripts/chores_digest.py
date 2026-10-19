@@ -61,6 +61,7 @@ MOP_ITEM = "Mop kitchen & living room floors"
 # (text, anchor date of the first occurrence, period in days).
 PERIODIC = [
     ("Disinfect water cooler", date(2026, 10, 25), 21),  # every 3 weeks, Sundays
+    ("Clean CPAP", date(2026, 10, 25), 21),  # same schedule as water cooler
 ]
 
 
