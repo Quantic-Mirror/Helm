@@ -32,7 +32,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime
 
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 NOTIFY = os.path.join(REPO, "scripts", "notify.py")
@@ -56,6 +56,18 @@ DAILY = [
 # once each). Tue/Thu/Sat/Sun = ~every 2 days, one 1-day gap (Sat->Sun).
 MOP_DAYS = {1, 3, 5, 6}  # Tuesday, Thursday, Saturday, Sunday
 MOP_ITEM = "Mop kitchen & living room floors"
+
+# Items on a fixed N-day cycle, independent of the weekday rotation:
+# (text, anchor date of the first occurrence, period in days).
+PERIODIC = [
+    ("Disinfect water cooler", date(2026, 10, 25), 21),  # every 3 weeks, Sundays
+]
+
+
+def periodic_due(now):
+    d = now.date() if isinstance(now, datetime) else now
+    return [t for t, anchor, n in PERIODIC if d >= anchor and (d - anchor).days % n == 0]
+
 
 # Monday=0 .. Sunday=6 (datetime.weekday()). One room/focus per day so
 # nothing stacks — see the two-bathroom / three-bedroom split.
@@ -108,6 +120,11 @@ def build_body(now):
         lines.append("")
         lines.append("Also today:")
         lines.append(f"  - {MOP_ITEM}")
+    due = periodic_due(now)
+    if due:
+        lines.append("")
+        lines.append("Also due (recurring):")
+        lines += [f"  - {it}" for it in due]
     lines.append("")
     lines.append("Every day:")
     lines += [f"  - {it}" for it in DAILY]
@@ -124,6 +141,7 @@ def calendar_items_for(now):
     items = [f"🧹 {focus_title}"]
     if weekday in MOP_DAYS:
         items.append(f"🧹 {MOP_ITEM}")
+    items += [f"🧹 {it}" for it in periodic_due(now)]
     return items
 
 
