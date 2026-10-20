@@ -5603,28 +5603,7 @@ window.openBm = function(e, id) {
 // Save an arbitrary URL/title as a bookmark — used by the "save" button on
 // YouTube video cards and news article cards. Switches to the Bookmarks tab
 // and opens the add-bookmark modal pre-filled, same flow as the bookmarklet.
-window.saveAsBookmark = function(url, title) {
-  switchTab('bookmarks');
-  const firstCol = state.columns[0];
-  setTimeout(() => {
-    openModal(null, firstCol ? firstCol.id : null, { url, title });
-  }, 50);
-};
 
-// Silent direct save — used by the browser extension when the user has
-// already chosen a folder in the popup. No modal, no tab switch.
-// Returns true if saved, false if the URL was already in that folder.
-window.saveToFolder = function(url, title, colId) {
-  const col = state.columns.find(c => c.id === colId);
-  if (!col) return false;
-  const already = state.bookmarks.find(b => b.colId === colId && b.url === url);
-  if (already) return false;
-  const id = uid();
-  state.bookmarks.push({ id, colId, url, title, addedAt: Date.now() });
-  save();
-  render();
-  return true;
-};
 
 function attachEvents() {
   document.querySelectorAll('.column-title').forEach(inp => {
@@ -6176,7 +6155,7 @@ function closeModal() {
 // bookmark shape exactly, just without the UI. Returns false (rather than
 // throwing) if the URL already exists in that folder, so callers can fall
 // back to opening the modal for the user to review instead.
-function saveToFolder(url, title, colId) {
+window.saveToFolder = function(url, title, colId) {
   if (!url || !colId) return false;
   const col = state.columns.find(c => c.id === colId);
   if (!col) return false;
@@ -6201,7 +6180,7 @@ function saveToFolder(url, title, colId) {
 
 // Used when the extension has no specific folder selected — defaults to
 // the first folder rather than silently doing nothing.
-function saveAsBookmark(url, title) {
+window.saveAsBookmark = function(url, title) {
   const firstCol = state.columns[0];
   if (!firstCol) return false;
   return saveToFolder(url, title, firstCol.id);
