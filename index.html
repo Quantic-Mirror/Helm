@@ -9387,7 +9387,11 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 // The optional colId param is added by the browser extension when the user
 // has selected a specific folder — in that case we save silently without
 // opening the modal (same as saveToFolder() called via executeScript).
-(function() {
+// Runs at load AND on hashchange: when Helm is already open, the extension's
+// content-script injection can't see page globals (Firefox Xray isolation), so its
+// fallback just retargets this tab to #bml&... — a hash-only change that does not
+// reload the page. Without the hashchange listener nothing was ever saved.
+function handleBmlHash() {
   const hash = location.hash;
   if (!hash.startsWith('#bml')) return;
   const raw = hash.slice(1);
@@ -9415,7 +9419,9 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       openModal(null, firstCol ? firstCol.id : null, { url, title });
     }
   }, 200);
-})();
+}
+handleBmlHash();
+window.addEventListener('hashchange', handleBmlHash);
 
 // ── YOUTUBE FEEDS PAGE ────────────────────────────────────────────────────────
 // YouTube exposes public Atom feeds per channel, no API key needed:
