@@ -12,11 +12,10 @@ generic tool: point it at any local backend port, give it its own listen
 port, and it terminates TLS with Helm's cert and forwards everything —
 GET/POST/PUT/DELETE/PATCH — through unchanged.
 
-This does NOT proxy WebSocket upgrades. Most of what Helm iframes (Wiki.js,
-gopherproxy, Forgejo's basic web UI) works fine over plain HTTP request/
-response without needing that. If a future service specifically needs
-WebSocket support through this proxy, that's a real enhancement to make
-here rather than working around — flag it rather than guessing silently.
+WebSocket upgrades (Upgrade: websocket on a GET) are tunnelled: the request
+is replayed to the backend over a raw socket and bytes are then spliced both
+ways until either side closes. Hister's search UI needs this. Framing and
+cookie rewriting do not apply to the tunnelled connection.
 
 Usage:
     python3 helm_tls_proxy.py <listen_port> <backend_port> [backend_host]
@@ -30,6 +29,8 @@ import http.server
 import urllib.request
 import urllib.error
 import os
+import select
+import socket
 
 LISTEN_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 9001
 BACKEND_PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8083
@@ -176,7 +177,40 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                 v = _rewrite_cookie_for_iframe(v)
             self.send_header(k, v)
 
+    def _tunnel(self):
+        try:
+            up = socket.create_connection((BACKEND_HOST, BACKEND_PORT), timeout=10)
+        except OSError as e:
+            self.send_response(502)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(f"Proxy error: {e}".encode())
+            return
+        head = f"{self.command} {self.path} HTTP/1.1\r\n"
+        head += "".join(f"{k}: {v}\r\n" for k, v in self.headers.items())
+        up.sendall(head.encode("latin-1") + b"\r\n")
+        up.settimeout(None)
+        client = self.connection
+        self.close_connection = True
+        try:
+            while True:
+                r, _, _ = select.select([client, up], [], [], 300)
+                if not r:
+                    break
+                for src in r:
+                    data = src.recv(65536)
+                    if not data:
+                        return
+                    (up if src is client else client).sendall(data)
+        except OSError:
+            pass
+        finally:
+            up.close()
+
     def _proxy(self, method):
+        if (method == "GET"
+                and "websocket" in self.headers.get("Upgrade", "").lower()):
+            return self._tunnel()
         url = BACKEND_BASE + self.path
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length) if length else None
