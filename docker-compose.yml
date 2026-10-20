@@ -139,9 +139,8 @@ services:
       # tab's iframe. Fresh port (9005) following the 9004 precedent, so no
       # stale browser-side state from any earlier port ever bleeds in.
       DAILYTXT_URL: "https://${SERVER_HOST:-localhost}:${DAILYTXT_PROXY_LISTEN_PORT:-9005}"
-      # Hister runs on hyperion behind helm-hister-proxy (tailnet IP:9009); no default host,
-      # so unset = no History tab content.
-      HISTER_URL: "${HISTER_URL:-}"
+      # Hister (History tab) — same pattern as FRESHRSS_URL.
+      HISTER_URL: "https://${SERVER_HOST:-localhost}:${HISTER_PROXY_LISTEN_PORT:-9009}"
     command: ["python3", "helm_server.py", "8443"]
 
   # ── LeafWiki (self-hosted markdown wiki, iframed into the Wiki tab) ─────────
@@ -314,6 +313,39 @@ services:
       HELM_TLS_KEY: "/app/state/key.pem"
       HELM_FRAME_ORIGINS: "${FRESHRSS_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
     command: ["python3", "helm_tls_proxy.py", "9007", "80", "freshrss", "keep-redirects"]
+
+  # ── Hister (self-hosted browser-history search, iframed into the History tab) ─
+  # No published port: only hister-proxy reaches it. Data (db, config, secret
+  # key) lives in ./hister-data, owned by uid 65532 (the image's user). The
+  # memory cap keeps it from starving neighbours on the small VPS.
+  hister:
+    image: ghcr.io/asciimoo/hister:v0.20.0
+    container_name: hister
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      HISTER__SERVER__ADDRESS: "0.0.0.0:4433"
+      HISTER__SERVER__BASE_URL: "https://${SERVER_HOST:-localhost}:${HISTER_PROXY_LISTEN_PORT:-9009}"
+    volumes:
+      - ./hister-data:/hister/data
+
+  hister-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.helm
+    container_name: hister-proxy
+    restart: unless-stopped
+    depends_on:
+      - hister
+    ports:
+      - "${HELM_BIND:-127.0.0.1}:${HISTER_PROXY_LISTEN_PORT:-9009}:9009"
+    volumes:
+      - ./data:/app/state
+    environment:
+      HELM_TLS_CERT: "/app/state/cert.pem"
+      HELM_TLS_KEY: "/app/state/key.pem"
+      HELM_FRAME_ORIGINS: "${HISTER_FRAME_ORIGINS:-https://${SERVER_HOST:-localhost}:8443}"
+    command: ["python3", "helm_tls_proxy.py", "9009", "4433", "hister", "keep-redirects"]
 
   # ── SearXNG metasearch engine (powering the Search widget) ──────────────────
   # The frontend populates the Searx engine URL dynamically from /api/config,
