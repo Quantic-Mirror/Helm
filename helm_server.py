@@ -1014,6 +1014,20 @@ MONITORED_SERVICES = [
         "container": "stalwart",
         "controllable": True,
     },
+    {
+        "id":        "invidious",
+        "label":     "Invidious",
+        "type":      "docker",
+        "container": "invidious-invidious-1",
+        "controllable": True,
+    },
+    {
+        "id":        "invidious-companion",
+        "label":     "Invidious Companion",
+        "type":      "docker",
+        "container": "invidious-companion-1",
+        "controllable": True,
+    },
 ]
 
 # ── Docker socket helpers ─────────────────────────────────────────────────────
@@ -1748,6 +1762,7 @@ class HelmHandler(SimpleHTTPRequestHandler):
                 "leafwiki_url": os.environ.get("LEAFWIKI_URL", f"https://{SERVER_HOST}:9004"),
                 "dailytxt_url": os.environ.get("DAILYTXT_URL", f"https://{SERVER_HOST}:9005"),
                 "freshrss_url": os.environ.get("FRESHRSS_URL", f"https://{SERVER_HOST}:9007/i/"),
+                "hister_url": os.environ.get("HISTER_URL", ""),   # runs on hyperion; empty = no tab
             })
             return
 
