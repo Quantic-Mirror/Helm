@@ -487,6 +487,35 @@ def _fetch_releases():
             "releases": releases}
 
 
+def hister_quick_search(q, limit=4):
+    """Top matches from Hister for the "\\" quick-search overlay.
+
+    Hister runs on hyperion behind a TLS proxy and answers JSON only when the
+    request says Accept: application/json (otherwise 500). The browser cannot
+    call it cross-origin (no CORS), so Helm fetches it server-side. Returns
+    (status, payload); degrades to available:false when HISTER_URL is unset or
+    the host is down."""
+    base = os.environ.get("HISTER_URL", "").rstrip("/")
+    q = (q or "").strip()
+    if not base:
+        return 200, {"available": False, "error": "HISTER_URL not set", "results": []}
+    if not q:
+        return 200, {"available": True, "results": [], "total": 0}
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False          # tailnet-only hop to a Helm-CA-signed cert
+    ctx.verify_mode = ssl.CERT_NONE
+    url = base + "/search?query=" + quote(json.dumps({"text": q, "limit": limit}))
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=6, context=ctx) as r:
+            d = json.loads(r.read())
+    except Exception as e:
+        return 200, {"available": False, "error": str(e)[:200], "results": []}
+    docs = [{"title": x.get("title") or x.get("url"), "url": x.get("url"),
+             "domain": x.get("domain", "")} for x in (d.get("documents") or [])[:limit]]
+    return 200, {"available": True, "total": d.get("total", len(docs)), "results": docs}
+
+
 def get_releases():
     """Cached release list. Serves stale cache, refreshes in the background."""
     cached = None
@@ -1741,6 +1770,10 @@ class HelmHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        if parsed.path == "/api/hister/search":
+            self.send_json(*hister_quick_search(parse_qs(parsed.query).get("q", [""])[0]))
             return
 
         if parsed.path == "/api/config":

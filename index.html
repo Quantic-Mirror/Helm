@@ -3557,6 +3557,14 @@ a.backup-label:hover { color: var(--accent); text-decoration: underline; }
       style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:16px;padding:12px 14px;outline:none;font-family:var(--font-body)">
   </div>
 </div>
+<!-- HISTER QUICK SEARCH OVERLAY (backslash key) -->
+<div id="hister-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:300;align-items:flex-start;justify-content:center;padding:15vh 24px 24px">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;width:100%;max-width:560px;box-shadow:0 24px 48px rgba(0,0,0,0.4)">
+    <input id="hister-input" type="text" placeholder="Search History… (Enter = full results)" autocomplete="off"
+      style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:16px;padding:12px 14px;outline:none;font-family:var(--font-body)">
+    <div id="hister-results" style="margin-top:8px"></div>
+  </div>
+</div>
 <!-- HISTER PAGE (browser-history search, runs on hyperion) -->
 <!-- Framed through helm-hister-proxy on hyperion. src is set from /api/config's
      hister_url in initConfig(); empty when HISTER_URL is unset. -->
@@ -9089,8 +9097,58 @@ document.getElementById('searxng-overlay').onclick = (e) => {
   if (e.target.id === 'searxng-overlay') closeSearxng();
 };
 
+let HISTER_BASE = '';   // set from /api/config in initConfig()
+let histerTimer = null, histerSeq = 0;
+function openHister() {
+  const input = document.getElementById('hister-input');
+  input.value = '';
+  document.getElementById('hister-results').innerHTML = '';
+  document.getElementById('hister-overlay').style.display = 'flex';
+  input.focus();
+}
+function closeHister() {
+  document.getElementById('hister-overlay').style.display = 'none';
+}
+function histerFullResults(q) {
+  if (HISTER_BASE) window.open(HISTER_BASE.replace(/\/$/, '') + '/?q=' + encodeURIComponent(q), '_blank', 'noopener');
+}
+async function histerQuick(q) {
+  const box = document.getElementById('hister-results');
+  const seq = ++histerSeq;
+  if (!q) { box.innerHTML = ''; return; }
+  let d;
+  try { d = await (await fetch('/api/hister/search?q=' + encodeURIComponent(q))).json(); }
+  catch (e) { d = { available: false, error: String(e), results: [] }; }
+  if (seq !== histerSeq) return;   // a newer keystroke superseded this
+  const note = t => '<div style="padding:8px 4px;color:var(--text-muted)">' + escHtml(t) + '</div>';
+  if (!d.available) { box.innerHTML = note('Hister unavailable: ' + (d.error || '')); return; }
+  if (!d.results.length) { box.innerHTML = note('No matches. Enter opens full search.'); return; }
+  box.innerHTML = d.results.map(r =>
+    '<a href="' + escHtml(r.url) + '" target="_blank" rel="noopener" style="display:block;padding:8px 4px;text-decoration:none;color:var(--text);border-radius:6px">' +
+    '<div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(r.title) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(r.domain || r.url) + '</div></a>'
+  ).join('') + (d.total > d.results.length ? note(d.total + ' matches total. Enter for all.') : '');
+}
+document.getElementById('hister-input').oninput = (e) => {
+  clearTimeout(histerTimer);
+  const q = e.target.value.trim();
+  histerTimer = setTimeout(() => histerQuick(q), 200);
+};
+document.getElementById('hister-input').onkeydown = (e) => {
+  if (e.key === 'Enter') {
+    const q = e.target.value.trim();
+    if (q) histerFullResults(q);
+    closeHister();
+  } else if (e.key === 'Escape') {
+    closeHister();
+  }
+};
+document.getElementById('hister-overlay').onclick = (e) => {
+  if (e.target.id === 'hister-overlay') closeHister();
+};
+
 document.onkeydown = (e) => {
-  if (e.key === 'Escape') { closeModal(); closeReader(); closeSearxng(); ['sort-modal','bml-modal'].forEach(id => document.getElementById(id).classList.remove('open')); ['bg-modal','ext-modal','backups-modal'].forEach(id => document.getElementById(id).style.display='none'); }
+  if (e.key === 'Escape') { closeModal(); closeReader(); closeSearxng(); closeHister(); ['sort-modal','bml-modal'].forEach(id => document.getElementById(id).classList.remove('open')); ['bg-modal','ext-modal','backups-modal'].forEach(id => document.getElementById(id).style.display='none'); }
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault();
     document.getElementById('search').focus();
@@ -9101,6 +9159,14 @@ document.onkeydown = (e) => {
     if (!editable) {
       e.preventDefault();
       openSearxng();
+    }
+  }
+  if (e.key === '\\' && HISTER_BASE && document.getElementById('hister-overlay').style.display !== 'flex') {
+    const tag = (e.target.tagName || '').toLowerCase();
+    const editable = tag === 'input' || tag === 'textarea' || e.target.isContentEditable;
+    if (!editable) {
+      e.preventDefault();
+      openHister();
     }
   }
   if (e.key === 'Enter' && document.getElementById('modal-overlay').classList.contains('open')) {
@@ -9331,7 +9397,7 @@ async function initConfig() {
       if (cfg.leafwiki_url) TAB_FRAME_URLS.leafwiki = cfg.leafwiki_url;
       if (cfg.dailytxt_url) TAB_FRAME_URLS.journal = cfg.dailytxt_url;
       if (cfg.freshrss_url) TAB_FRAME_URLS.reader = cfg.freshrss_url;
-      if (cfg.hister_url) TAB_FRAME_URLS.hister = cfg.hister_url;
+      if (cfg.hister_url) { TAB_FRAME_URLS.hister = cfg.hister_url; HISTER_BASE = cfg.hister_url; }
       Object.keys(TAB_FRAMES).forEach(loadTabFrame);   // only visible tabs load
     }
   } catch (e) {
