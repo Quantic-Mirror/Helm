@@ -60,14 +60,29 @@ MOP_ITEM = "Mop kitchen & living room floors"
 # Items on a fixed N-day cycle, independent of the weekday rotation:
 # (text, anchor date of the first occurrence, period in days).
 PERIODIC = [
-    ("Disinfect water cooler", date(2026, 10, 25), 21),  # every 3 weeks, Sundays
-    ("Clean CPAP", date(2026, 10, 25), 21),  # same schedule as water cooler
+    ("Clean CPAP", date(2026, 10, 25), 21),  # every 3 weeks, Sundays
 ]
+
+# Monthly on the Nth weekday: (text, weekday Mon=0..Sun=6, nth, one-off first date).
+# The first occurrence is a fixed one-off (Oct 25 is the 4th Sunday, not the
+# 3rd); from then on it follows the nth-weekday rule, so first rule hit is Nov 15.
+MONTHLY_NTH = [
+    ("Disinfect water cooler", 6, 3, date(2026, 10, 25)),
+]
+
+
+def monthly_due(d):
+    out = []
+    for text, wd, nth, first in MONTHLY_NTH:
+        if d == first or (d > first and d.weekday() == wd and (d.day - 1) // 7 + 1 == nth):
+            out.append(text)
+    return out
 
 
 def periodic_due(now):
     d = now.date() if isinstance(now, datetime) else now
-    return [t for t, anchor, n in PERIODIC if d >= anchor and (d - anchor).days % n == 0]
+    return ([t for t, anchor, n in PERIODIC if d >= anchor and (d - anchor).days % n == 0]
+            + monthly_due(d))
 
 
 # Monday=0 .. Sunday=6 (datetime.weekday()). One room/focus per day so
