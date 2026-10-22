@@ -3919,7 +3919,16 @@ function save() {
 // It is always reset on every startup pull so stale cross-session snapshots
 // never interfere.
 
+// Resolves when the startup pull from the server has finished (success, failure or
+// no backend). The extension's #bml save must wait for this: initSync() replaces
+// `state` wholesale with the server copy, which would silently drop a bookmark
+// saved into the pre-sync state on a cold page load.
+let _syncReadyResolve;
+const syncReady = new Promise(r => { _syncReadyResolve = r; });
 async function initSync() {
+  try { await _initSync(); } finally { _syncReadyResolve(); }
+}
+async function _initSync() {
   const indicator = document.getElementById('sync-indicator');
   const hasBackend = await checkLocalBackend();
   if (!hasBackend) {
@@ -9447,7 +9456,7 @@ function handleBmlHash() {
   if (!url) return;
   history.replaceState({}, '', location.pathname);
 
-  setTimeout(() => {
+  Promise.race([syncReady, new Promise(r => setTimeout(r, 10000))]).then(() => setTimeout(() => {
     if (colId && typeof saveToFolder === 'function') {
       // Silent save directly to the chosen folder — no modal
       const saved = saveToFolder(url, title || url, colId);
@@ -9459,7 +9468,7 @@ function handleBmlHash() {
       const firstCol = state.columns[0];
       openModal(null, firstCol ? firstCol.id : null, { url, title });
     }
-  }, 200);
+  }, 50));
 }
 handleBmlHash();
 window.addEventListener('hashchange', handleBmlHash);
