@@ -2297,6 +2297,12 @@ class HelmHandler(SimpleHTTPRequestHandler):
         # the "connection not secure" mixed-content indicator.
         # Ref: https://www.w3.org/TR/upgrade-insecure-requests/
         self.send_header("Content-Security-Policy", "upgrade-insecure-requests")
+        # Static files (index.html, sw.js) are sent with Last-Modified but no
+        # Cache-Control, so browsers apply *heuristic* freshness and keep serving a
+        # stale app shell for a while after a deploy. "no-cache" = always revalidate
+        # (cheap 304 when unchanged), so a fresh browser launch gets the current page.
+        if b"cache-control" not in b"".join(getattr(self, "_headers_buffer", [])).lower():
+            self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
 
