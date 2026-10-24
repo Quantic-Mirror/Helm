@@ -292,6 +292,9 @@ services:
         --no-default-feeds
     volumes:
       - ./freshrss-data:/var/www/FreshRSS/data
+      # Third-party extensions (e.g. xExtension-ThreePaneReader). FreshRSS only loads
+      # these from /var/www/FreshRSS/extensions, so persist that dir on the host.
+      - ./freshrss-extensions:/var/www/FreshRSS/extensions
 
   # helm_tls_proxy.py in front of freshrss: strips X-Frame-Options / rewrites
   # CSP frame-ancestors and Set-Cookie SameSite/Secure so the FreshRSS UI can
