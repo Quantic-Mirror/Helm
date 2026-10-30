@@ -1241,9 +1241,24 @@ def _get_docker_status(container):
         except Exception:
             pass
 
+    # Published host bindings (IP:port), read live from the inspect payload so
+    # they can't drift from docker-compose.yml. Unpublished ports (only reachable
+    # through a sibling proxy container) are omitted -> empty list.
+    ports = []
+    for _cport, binds in ((data.get("NetworkSettings") or {}).get("Ports") or {}).items():
+        for b in binds or []:
+            hip, hport = b.get("HostIp", ""), b.get("HostPort", "")
+            if not hport or ":" in hip:      # skip IPv6 duplicates of the v4 binding
+                continue
+            proto = _cport.split("/")[-1]
+            entry = f"{hip or '0.0.0.0'}:{hport}" + ("" if proto == "tcp" else f"/{proto}")
+            if entry not in ports:
+                ports.append(entry)
+    ports.sort(key=lambda e: (int(e.split(":")[1].split("/")[0]), e))
+
     return {"running": is_running, "status": status_str, "uptime": uptime_str,
             "logs": logs_str, "memory_mb": memory_mb,
-            "restarts": data.get("RestartCount", 0)}
+            "restarts": data.get("RestartCount", 0), "ports": ports}
 
 
 def _get_timer_status(timer_unit, service_unit):

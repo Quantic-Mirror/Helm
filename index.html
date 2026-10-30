@@ -10999,6 +10999,14 @@ function buildServiceCardHTML(svc) {
     }
   }
 
+  // Tailscale IP:port (published bindings from Docker). Empty = no published
+  // port, i.e. only reachable via a sibling proxy container.
+  if (svc.type === 'docker') {
+    extraInfo += (svc.ports && svc.ports.length)
+      ? `<div class="svc-meta svc-addr">Address: ${svc.ports.map(p => `<code>${escHtml(p)}</code>`).join(' ')}</div>`
+      : `<div class="svc-meta svc-addr">Address: <span style="opacity:.6">internal only (no published port)</span></div>`;
+  }
+
   // Control buttons
   let controls = '';
   if (svc.controllable) {
