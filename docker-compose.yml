@@ -79,7 +79,9 @@ services:
       # "Tailscale unavailable" message. No token needed — unix-socket access
       # is already gated on file perms. Safe to remove if you don't run the
       # Tailscale widget.
-      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
+      # Mount the directory, not the socket file: tailscaled recreates the
+      # socket on restart, and a single-file bind mount keeps the dead inode.
+      - /var/run/tailscale:/var/run/tailscale:ro
       # slskd config, read-only, for the Soulseek tab's live search and download
       # (scripts/slskd_live.py reads the API key from it). It also holds slskd's
       # other settings, so this gives the container more than the key alone.
